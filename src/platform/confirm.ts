@@ -6,6 +6,7 @@
 import { readerLabel, type ConfirmPayload, type EgcOutputRow } from "@/lib/importer";
 import { nowStr } from "@/lib/format";
 import { PRODUCTS } from "@/sample";
+import { outletOf } from "@/sample/lists";
 import type { DemoState, HistoryEntry, Order, OrderEvent, OrderLine } from "@/sample";
 import { getState, meOf, update } from "@/state/demo-store";
 
@@ -19,13 +20,14 @@ export interface ConfirmContext {
 
 function lineOf(row: EgcOutputRow, s: Pick<DemoState, "customers">, cust: string): OrderLine {
   const sku = row.cells.sku.value;
-  const unit = (row.cells.quantity.sourceText || (sku && PRODUCTS[sku]?.unit) || "box").toLowerCase();
+  // The product's own unit, as the seeded orders and the prototype show it; the PO's unit only for a line with no SKU.
+  const unit = ((sku && PRODUCTS[sku]?.unit) || row.cells.quantity.sourceText || "box").toLowerCase();
   const manual = Object.values(row.cells).some((c) => c.origin === "manual" && c.value !== null);
   return {
     sku,
     qty: row.cells.quantity.value ?? 0,
     unit,
-    outlet: row.source.outlet || s.customers[cust]?.outlets[0] || "",
+    outlet: (row.source.outlet && outletOf(cust, row.source.outlet)) || s.customers[cust]?.outlets[0] || "",
     origin: manual ? "manual" : "po",
   };
 }

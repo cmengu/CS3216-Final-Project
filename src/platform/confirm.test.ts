@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildPayload, pickSku, type ReadOrder } from "@/lib/add-orders";
-import { readPaste, toRows } from "@/lib/importer";
+import { readPaste, readPdf, toRows } from "@/lib/importer";
 import { PRODUCTS, seed } from "@/sample";
 import { buildLists } from "@/sample/lists";
 import { harbourPo } from "@/test/po";
@@ -53,5 +54,18 @@ describe("the demo confirm", () => {
     // The source card reads "WhatsApp paste" with the time it was read, as the prototype's parsePaste.
     expect(out.orders[0].file).toEqual({ name: "WhatsApp paste", size: 40, at: "2026-10-01 14:05", hash: "", contentHash: "abc" });
     expect(out.events[0].text).toBe("Read WhatsApp order · 1 lines");
+  });
+
+  it("gives a confirmed sample PO the staff's outlet names and the product's unit", async () => {
+    const name = "harbour-hotel-hh-2240.pdf";
+    const result = await readPdf(name, new Uint8Array(readFileSync(`node_modules/po-importer/fixtures/egc/shangri-la/${name}`)));
+    if (result.status !== "parsed" && result.status !== "partial") throw new Error(result.status);
+    const rows = toRows([{ sourceId: "f1", order: result.order }], buildLists());
+    const read: ReadOrder = { fileId: "f1", fileName: name, size: 9395, readerId: result.readerId, fingerprints: result.fingerprints, order: result.order };
+    const out = confirmedFrom(await buildPayload([read], rows), seed(), { by: "Eunice", at: "2026-10-01 14:05", sizes: { [name]: 9395 } });
+    const lines = out.orders[0].lines;
+    expect([...new Set(lines.map((l) => l.outlet))]).toEqual(["Banquet kitchen", "Room service"]);
+    expect([...new Set(lines.map((l) => l.unit))]).toEqual(["box"]);
+    expect(out.orders[0].file?.layout).toBe("Shangri-La");
   });
 });

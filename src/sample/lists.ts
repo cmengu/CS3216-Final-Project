@@ -27,6 +27,19 @@ export const PRINTED_CUSTOMERS: EgcCustomerAlias[] = [
   { buyerName: "Orchard Deli Pte Ltd", outlet: "", customerId: "C10419" },
 ];
 
+/**
+ * The outlet as the customer prints it, to the outlet name staff use (the customer's outlets).
+ * Invented, like the rest; a printed outlet not listed keeps its printed name.
+ */
+export const PRINTED_OUTLETS: Record<string, Record<string, string>> = {
+  C10243: { HHBQT: "Banquet kitchen", HHIRD: "Room service" },
+  C10310: { "2101-Kitchen #1": "Kitchen #1", "2105-Kitchen #5 Madame Fan": "Madame Fan", "2110-In Room Dining": "Room service", "IRD Kitchen": "Room service" },
+  C10388: { "Pavilion Kitchen - Dempsey": "Main" },
+};
+
+/** The staff outlet name for an outlet printed on a customer's PO. */
+export const outletOf = (customerId: string, printed: string): string => PRINTED_OUTLETS[customerId]?.[printed] ?? printed;
+
 /** Customers approved per outlet only; the rest are also approved buyer-wide under their own name. */
 const ONE_OUTLET = new Set(["C10388"]);
 
