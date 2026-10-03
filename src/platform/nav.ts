@@ -1,6 +1,6 @@
 import type { IconName } from "@/components/icons";
 import type { DemoState } from "@/sample";
-import { SAMPLE_MAIL } from "@/sample/mail";
+import { MAIL0 } from "@/sample/mail";
 import type { NavKey } from "./access";
 
 export interface NavItem {
@@ -29,7 +29,7 @@ export function navKeyOf(pathname: string): NavKey | null {
 }
 
 /** New PDFs in the orders mailbox; empty until a mailbox is connected. */
-export const mailbox = (s: DemoState) => (s.cx.mail ? (s.mailbox ?? SAMPLE_MAIL) : []);
+export const mailbox = (s: DemoState) => (s.cx.mail ? (s.mailbox ?? MAIL0) : []);
 
 export const SETTINGS_PANES = [
   ["lists", "Products and customers"],

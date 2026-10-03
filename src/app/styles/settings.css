@@ -1,0 +1,6 @@
+/*
+ * Settings. Every rule the prototype has for these screens is already in globals.css; this file only
+ * evens out the prototype's quirks mode (no doctype), where a line holding nothing but an inline
+ * element does not take the parent's line height. Without these the rows sit 1–2px taller.
+ */
+.setpane .conn .ct small{display:block}
