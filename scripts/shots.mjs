@@ -73,7 +73,8 @@ async function processSamples(page, proto) {
 }
 
 const NAMES = { u1: "May", u2: "Eunice", u3: "Dennis", u4: "Mei", u5: "Farah" };
-const browser = await chromium.launch({ channel: "chrome" });
+// Software raster: GPU text rasterisation varies a little from run to run, which a pixel diff would report.
+const browser = await chromium.launch({ channel: "chrome", args: ["--disable-gpu", "--force-color-profile=srgb"] });
 const differ = await (await browser.newContext()).newPage();
 
 /** Counts differing pixels between two PNGs of the same size and writes a diff image. */

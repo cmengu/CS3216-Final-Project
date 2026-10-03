@@ -193,7 +193,7 @@ export function AliasesPane() {
                 <td className="mono">
                   {a.sku ? (
                     <>
-                      {a.sku} <span className="hint">{PRODUCTS[a.sku]?.name || ""}</span>
+                      {`${a.sku} `}<span className="hint">{PRODUCTS[a.sku]?.name || ""}</span>
                     </>
                   ) : (
                     "—"
