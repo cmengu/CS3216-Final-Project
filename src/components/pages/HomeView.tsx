@@ -198,7 +198,7 @@ export function HomeView() {
                       <Icon name={evIcon(e.kind)} />
                     </span>
                     <span className="tx">
-                      <b>{e.actor}</b> {lc(e.text)}
+                      <b>{e.actor}</b>{` ${lc(e.text)}`}
                       <small>{`${ref(o)} · ${relDay(e.at.slice(0, 10))} ${e.at.slice(11)}`}</small>
                     </span>
                   </Link>

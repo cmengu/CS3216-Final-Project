@@ -15,7 +15,7 @@ function label(it: PaletteHit): ReactNode {
     case "order":
       return (
         <>
-          <b>{it.ref}</b> {it.name}
+          <b>{it.ref}</b>{` ${it.name}`}
         </>
       );
     case "customer":

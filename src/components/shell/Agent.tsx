@@ -209,7 +209,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
                 <div className="ans">{a.prose}</div>
                 <div className="worked">
                   <span>
-                    Worked for {a.total}s · {a.checked}
+                    {`Worked for ${a.total}s · ${a.checked}`}
                   </span>
                   <span className="thumbs">
                     <button onClick={() => thumb(a.key, 1)} className={a.thumb === 1 ? "on" : ""} aria-label="Helpful">

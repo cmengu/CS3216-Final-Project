@@ -110,7 +110,7 @@ export function ListsPane() {
           </div>
           <div className="cbody">
             <div className="hint">
-              {custs.length} customers · {custs.reduce((a, c) => a + c.outlets.length, 0)} outlets
+              {`${custs.length} customers · ${custs.reduce((a, c) => a + c.outlets.length, 0)} outlets`}
             </div>
             <table className="tbl">
               <thead>
@@ -182,11 +182,11 @@ export function AliasesPane() {
             {[...prop, ...appr].map((a) => (
               <tr key={a.text}>
                 <td>
-                  “{a.text}”
+                  <span>{`“${a.text}”`}</span>
                   {a.seen ? (
                     <>
                       {" "}
-                      <span className="hint">· {a.seen}</span>
+                      <span className="hint">{`· ${a.seen}`}</span>
                     </>
                   ) : null}
                 </td>
@@ -203,7 +203,7 @@ export function AliasesPane() {
                   {a.state === "approved" ? (
                     <span className="lbl l-good">
                       <Icon name="check" />
-                      Approved · {a.by}
+                      {`Approved · ${a.by}`}
                     </span>
                   ) : (
                     <span className="lbl l-warn">
@@ -283,10 +283,17 @@ export function RetentionPane() {
   );
 }
 
+/** The key just created, shown until copied, as the prototype keeps S._newKey; in memory only, never stored. */
+let keptKey: string | null = null;
+
 export function AssistantPane() {
   const s = useDemo();
   const { copyText } = useShell();
-  const [newKey, setNewKey] = useState<string | null>(null);
+  const [newKey, setNewKeyState] = useState<string | null>(keptKey);
+  const setNewKey = (k: string | null) => {
+    keptKey = k;
+    setNewKeyState(k);
+  };
   const [who, setWho] = useState(s.people[0]?.id ?? "");
   return (
     <div className="card">
