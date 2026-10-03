@@ -7,7 +7,9 @@
 // palette). Asserts, on the rendered text, titles, form values and the clipboard:
 //  - roles that cannot see prices never receive a price, a money amount or a "$";
 //  - account managers only ever see their own customers' orders and customers;
-//  - non-owners cannot open People or Settings; only Owner and Finance open Invoices.
+//  - non-owners cannot open People or Settings; only Owner and Finance open Invoices. A page a
+//    role may not open draws Home, as the prototype's router does; another customer's order or
+//    customer page says Not found, as the prototype's order and customer views do.
 // The pure part of the same rules is in src/platform/roles.test.ts.
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
@@ -97,27 +99,33 @@ for (const who of [
       ok(!leak, `${tag}: nothing of other customers on ${where}${leak ? ` (${leak.name || leak.po})` : ""}`);
     }
   };
-  const visit = async (path, allowed) => {
+  /** expect: "open" (the page itself), "home" (a route this role may not open), "missing" (Not found). */
+  const visit = async (path, expect) => {
     await page.goto(`${APP}${path}`);
     await page.waitForSelector(".hd h1");
     await settle(page);
-    const title = await h1(page);
-    ok(allowed ? title !== "Not found" : title === "Not found", `${tag}: ${path} ${allowed ? "opens" : "is Not found"} (${title.split("\n")[0]})`);
+    const title = (await h1(page)).split("\n")[0];
+    const home = (await page.locator(".body.home").count()) > 0;
+    const got = title === "Not found" ? "missing" : home && path !== "/home" ? "home" : "open";
+    ok(got === expect, `${tag}: ${path} is ${expect} (got ${got}: ${title})`);
     await check(path, await everything(page));
   };
+  const may = (yes) => (yes ? "open" : "home");
 
   // Every route, every order, every customer, every Settings pane.
-  await visit("/home", true);
-  await visit("/orders", true);
-  for (const tab of ["needs_check", "blocked", "confirmed", "delivered"]) await visit(`/orders?state=${tab}`, true);
-  for (const o of state.orders) await visit(`/orders/${o.id}`, own(o.cust));
-  await visit("/add", ["owner", "coordinator"].includes(who.role));
-  await visit("/customers", true);
-  for (const c of Object.keys(state.customers)) await visit(`/customers/${c}`, own(c));
-  await visit("/invoices", ["owner", "finance"].includes(who.role));
-  await visit("/people", owner);
-  await visit("/history", true);
-  for (const p of PANES) await visit(`/settings/${p}`, owner);
+  await visit("/home", "open");
+  await visit("/orders", "open");
+  for (const tab of ["needs_check", "blocked", "confirmed", "delivered"]) await visit(`/orders?state=${tab}`, "open");
+  for (const o of state.orders) await visit(`/orders/${o.id}`, own(o.cust) ? "open" : "missing");
+  await visit("/orders/o999", "missing");
+  await visit("/add", may(["owner", "coordinator"].includes(who.role)));
+  await visit("/customers", "open");
+  for (const c of Object.keys(state.customers)) await visit(`/customers/${c}`, own(c) ? "open" : "missing");
+  await visit("/invoices", may(["owner", "finance"].includes(who.role)));
+  await visit("/people", may(owner));
+  await visit("/history", "open");
+  for (const p of [...PANES, "nonsense"]) await visit(`/settings/${p}`, may(owner));
+  await visit("/no-such-page", "home");
   ok(owner === (await page.locator('#nav a[href="/people"], #nav a[href^="/settings"]').count()) > 0, `${tag}: People and Settings in the rail only for the owner`);
 
   // Copy lines: the Orders bulk bar and the order page.

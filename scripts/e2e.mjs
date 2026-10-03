@@ -35,7 +35,6 @@ async function fresh() {
   return { ctx, page };
 }
 
-const fileRow = (page, name) => page.locator(".q li", { has: page.locator(".fn", { hasText: name }) });
 const idle = (page) => page.waitForFunction(() => ![...document.querySelectorAll(".q .st")].some((e) => /Checking|Reading/.test(e.textContent || "")), null, { timeout: 30000 });
 const toast = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector(".toast.on")?.textContent || ""), re.source, { timeout: 10000 });
 const text = (page, sel = "main") => page.locator(sel).first().innerText();
