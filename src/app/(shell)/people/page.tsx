@@ -1,9 +1,5 @@
-import { PlainStub, RequireNav } from "@/components/pages/Stubs";
+import { PeopleView } from "@/components/pages/people/PeopleView";
 
 export default function Page() {
-  return (
-    <RequireNav nav="people">
-      <PlainStub title="People" />
-    </RequireNav>
-  );
+  return <PeopleView />;
 }
