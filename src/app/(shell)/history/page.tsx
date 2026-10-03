@@ -1,5 +1,6 @@
-import { PlainStub } from "@/components/pages/Stubs";
+import "@/app/styles/history.css";
+import { HistoryView } from "@/components/pages/history/HistoryView";
 
 export default function Page() {
-  return <PlainStub title="History" />;
+  return <HistoryView />;
 }
