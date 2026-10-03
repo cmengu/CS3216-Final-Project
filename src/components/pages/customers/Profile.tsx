@@ -61,7 +61,7 @@ export function Profile({ c }: { c: Customer }) {
   const shell = useShell();
   const price = canPrice(u);
   const f = profileFigures(s, c.id);
-  const ask = () => shell.openAgent(true, `Catch me up on ${c.name}`);
+  const ask = () => shell.openAssistant({ prompt: `Catch me up on ${c.name}` });
 
   return (
     <>

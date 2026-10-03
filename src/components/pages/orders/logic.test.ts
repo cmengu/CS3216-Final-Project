@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { seed } from "@/sample";
 import type { DemoState, Person, Role } from "@/sample";
-import { ackText, activityByDay, groupOrders, mineOf, orderText, profileOf, richText, sourceRows, stepsOf, summarise, tabsFor, whyText } from "./logic";
+import { ackTextFor } from "@/lib/ack-text";
+import { activityByDay, groupOrders, mineOf, orderText, richText, sourceRows, stepsOf, summarise, tabsFor, whyText } from "./logic";
 
 const S = seed();
 const by = (role: Role): Person => S.people.find((p) => p.role === role)!;
@@ -113,35 +114,27 @@ describe("activityByDay", () => {
   });
 });
 
-describe("ackText", () => {
+describe("ackText (the shared one, as Suggest reply uses it)", () => {
   it("builds the acknowledgement from the opening line, PO, delivery, items and sender", () => {
-    expect(ackText(order(S, "o2"), S, "Eunice")).toBe(
+    const s = seed();
+    s.user = by("coordinator").id;
+    expect(ackTextFor(s, order(s, "o2"))).toBe(
       [
         "Hi Chef, received your order, thanks! Delivering as below.",
         "PO 4810286013 · Delivery Fri, 2 Oct, AM:\n• Pea tendrils 35g · 6 box · Kitchen #1\n• Micro basil 50g · 4 box · Kitchen #1\n• Elderflower 30g · 2 box · Madame Fan\n• Edible flower mix 50g · 2 box · Room service",
-        "Eunice, Edible Garden City",
+        `${by("coordinator").name}, Edible Garden City`,
       ].join("\n\n"),
     );
   });
 
   it("follows the reply options and says 'time to confirm' for an unspecified slot", () => {
     const s = seed();
-    (s.settings as unknown as { reply: object }).reply = { lines: false, date: true, sign: false };
-    expect(ackText(order(s, "o4"), s, "May")).toBe("Hi Chef, received your order, thanks! Delivering as below.\n\nPO RC-0917 · Delivery Mon, 5 Oct, time to confirm");
+    s.settings.reply = { lines: false, date: true, sign: false };
+    expect(ackTextFor(s, order(s, "o4"))).toBe("Hi Chef, received your order, thanks! Delivering as below.\n\nPO RC-0917 · Delivery Mon, 5 Oct, time to confirm");
   });
 });
 
-describe("customer pane", () => {
-  it("counts open, 30 days and on-time, and bills only for price roles", () => {
-    const p = profileOf(S, S.customers.C10310, by("coordinator"));
-    expect([p.open.length, p.m30.length, p.onTime, p.flag]).toEqual([1, 3, 100, "w"]);
-    expect(p.billed30).toBeCloseTo(126);
-    expect(p.lastInv?.invoiced).toBe("INV-2609-008");
-    const packing = profileOf(S, S.customers.C10310, by("packing"));
-    expect(packing.billed30).toBe(0);
-    expect(packing.lastPrice).toEqual([]);
-  });
-
+describe("source card", () => {
   it("lists the source as file, layout, read and fingerprint, or the WhatsApp equivalents", () => {
     expect(sourceRows(order(S, "o2"), S.customers.C10310)).toEqual([
       ["File", "4810286013.pdf"],
@@ -150,5 +143,10 @@ describe("customer pane", () => {
       ["Fingerprint", "b27e5d14"],
     ]);
     expect(sourceRows(order(S, "o3"), S.customers.C10388)[0]).toEqual(["Channel", "WhatsApp paste"]);
+  });
+
+  it("names the layout reader that read a PDF from Add orders", () => {
+    const o = { ...order(S, "o2"), file: { ...order(S, "o2").file!, layout: "Hotel platform" } };
+    expect(sourceRows(o, S.customers.C10310)[1]).toEqual(["Layout", "Hotel platform"]);
   });
 });

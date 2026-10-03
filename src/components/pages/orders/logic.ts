@@ -1,11 +1,12 @@
 /*
  * Pure helpers for the Orders list and the order page, ported from the prototype's
- * ordersView(), orderText(), summarise(), stepper(), ackText() and profile().
+ * ordersView(), orderText(), summarise(), stepper() and sourceCard(). The acknowledgement is
+ * the shared ackText in src/lib/ack-text.ts; the customer pane is the customers area's Profile.
  */
-import { canPrice, seesCustomer, visibleOrders } from "@/platform/access";
-import { COMPANY, PRODUCTS, TODAY } from "@/sample";
+import { seesCustomer, visibleOrders } from "@/platform/access";
+import { PRODUCTS } from "@/sample";
 import type { Customer, DemoState, Order, OrderEvent, OrderState, Person, ToCheck } from "@/sample";
-import { addDays, dayLabel, fmtDay, isOverdue, orderTotal, outlets, ref, relDay, STATE } from "@/lib/format";
+import { dayLabel, fmtDay, isOverdue, outlets, ref, relDay, STATE } from "@/lib/format";
 import type { IconName } from "@/components/icons";
 
 /* ------------------------------------------------------------------ list ---- */
@@ -187,86 +188,7 @@ export function activityByDay(ev: OrderEvent[], showPriceViews: boolean): { d: s
   return byDay;
 }
 
-/* --------------------------------------------------------- acknowledgement ---- */
-
-export interface ReplyOptions {
-  lines: boolean;
-  date: boolean;
-  sign: boolean;
-}
-
-/** Settings > Replies. Until someone changes them, every part is on. */
-export const replyOpt = (s: DemoState): ReplyOptions =>
-  (s.settings as DemoState["settings"] & { reply?: ReplyOptions }).reply ?? { lines: true, date: true, sign: true };
-
-/** The acknowledgement a person sends back: opening line, PO and delivery, the items, and their name. */
-export function ackText(o: Order, s: DemoState, senderName: string): string {
-  const r = replyOpt(s);
-  const c = s.customers[o.cust];
-  const head = [o.po ? "PO " + o.po : "", r.date ? `Delivery ${fmtDay(o.date)}, ${c.slot === "Unspecified" ? "time to confirm" : c.slot}` : ""]
-    .filter(Boolean)
-    .join(" · ");
-  const lines = r.lines ? o.lines.map((l) => `• ${l.sku ? PRODUCTS[l.sku].name : l.desc} · ${l.qty} ${l.unit} · ${l.outlet}`).join("\n") : "";
-  return [s.settings.style, [head && lines ? head + ":" : head, lines].filter(Boolean).join("\n"), r.sign ? `${senderName}, ${COMPANY}` : ""]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-/* ---------------------------------------------------------- customer pane ---- */
-
-export interface Profile {
-  all: Order[];
-  open: Order[];
-  m30: Order[];
-  onTime: number | null;
-  lastInv: Order | undefined;
-  unInv: Order[];
-  billed30: number;
-  lastPrice: [sku: string, price: number, order: Order][];
-  flag: "" | "w" | "b";
-}
-
-/** The numbers behind the customer pane on the order page. */
-export function profileOf(s: DemoState, c: Customer, u: Person): Profile {
-  const all = s.orders.filter((x) => x.cust === c.id).sort((a, b) => b.date.localeCompare(a.date));
-  const open = all.filter((x) => !["delivered", "draft"].includes(x.state));
-  const m30 = all.filter((o) => o.date >= addDays(TODAY, -30) && o.state !== "draft");
-  const deliv = all.filter((o) => o.state === "delivered");
-  const onTime = deliv.length
-    ? Math.round(
-        (100 *
-          deliv.filter((o) => {
-            const d = s.events.find((e) => e.order === o.id && e.kind === "delivered");
-            return !d || d.at.slice(0, 10) <= o.date;
-          }).length) /
-          deliv.length,
-      )
-    : null;
-  const lastInv = [...all].filter((o) => o.invoiced).sort((a, b) => b.date.localeCompare(a.date))[0];
-  const unInv = deliv.filter((o) => !o.invoiced);
-  const last: Record<string, [number, Order]> = {};
-  if (canPrice(u))
-    [...all]
-      .filter((x) => x.state !== "draft")
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .forEach((x) =>
-        x.lines.forEach((l) => {
-          if (l.sku) last[l.sku] = [PRODUCTS[l.sku].price, x];
-        }),
-      );
-  const flag = open.some((o) => o.state === "needs_check") ? "w" : open.some((o) => o.state === "blocked") ? "b" : "";
-  return {
-    all,
-    open,
-    m30,
-    onTime,
-    lastInv,
-    unInv,
-    billed30: canPrice(u) ? m30.filter((o) => o.state === "delivered").reduce((a, o) => a + orderTotal(o), 0) : 0,
-    lastPrice: Object.entries(last).map(([k, [p, x]]) => [k, p, x]),
-    flag,
-  };
-}
+/* ----------------------------------------------------------------- source ---- */
 
 /** The Source rows: file, layout, read time and fingerprint (or the WhatsApp equivalents). */
 export function sourceRows(o: Order, c: Customer): [string, string][] {
@@ -278,7 +200,7 @@ export function sourceRows(o: Order, c: Customer): [string, string][] {
       ]
     : [
         ["File", o.file ? o.file.name : "—"],
-        ["Layout", c.layout || "—"],
+        ["Layout", o.file?.layout || c.layout || "—"],
         ["Read", o.file ? o.file.at : "—"],
         ["Fingerprint", o.file ? o.file.hash : "—"],
       ];

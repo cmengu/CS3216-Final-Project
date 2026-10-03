@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Lbl, OverdueLbl } from "@/components/bits";
 import { Icon } from "@/components/icons";
+import { Profile } from "@/components/pages/customers/Profile";
+import { NotFound } from "@/components/shell/Guard";
 import { Header } from "@/components/shell/Header";
+import { SidePane } from "@/components/shell/SidePane";
 import { useShell } from "@/components/shell/context";
+import { ackTextFor } from "@/lib/ack-text";
 import { canDeliver, canEdit, canInvoice, canPrice, lines, seesCustomer, type PricedLine } from "@/platform/access";
 import { PRODUCTS } from "@/sample";
 import type { Customer, DemoState, Order, ToCheck } from "@/sample";
@@ -29,30 +32,8 @@ import {
 } from "@/state/actions/orders";
 import { meOf, useDemo } from "@/state/demo-store";
 import { evIcon, fmtDay, lc, money, orderTotal, ref, relDay } from "@/lib/format";
-import { Profile, SourceCard } from "./CustomerPane";
-import { ackText, activityByDay, orderText, stepsOf, summarise, type Rich } from "./logic";
-
-const noop = () => () => {};
-
-/** The main element the side pane sits in, once the shell has drawn it. */
-function useMainEl(): HTMLElement | null {
-  return useSyncExternalStore(
-    noop,
-    () => document.getElementById("main"),
-    () => null,
-  );
-}
-
-function NotFound() {
-  return (
-    <>
-      <Header>Not found</Header>
-      <div className="body">
-        <div className="hint">No such order in your view.</div>
-      </div>
-    </>
-  );
-}
+import { SourceCard } from "./SourceCard";
+import { activityByDay, orderText, stepsOf, summarise, type Rich } from "./logic";
 
 const RichSpan = ({ r }: { r: Rich }) => (
   <span>
@@ -178,14 +159,13 @@ export function OrderView({ id }: { id: string }) {
     if (ok && pr && !viewed) run(viewPrices, id);
   }, [ok, pr, viewed, id]);
 
-  if (!o || !ok) return <NotFound />;
+  if (!o || !ok) return <NotFound hint="No such order in your view." />;
   return <OrderPage s={s} o={o} />;
 }
 
 function OrderPage({ s, o }: { s: DemoState; o: Order }) {
   const u = meOf(s);
   const shell = useShell();
-  const main = useMainEl();
   const [cmt, setCmt] = useState(false);
   const cmtRef = useRef<HTMLTextAreaElement>(null);
   const c = s.customers[o.cust];
@@ -201,31 +181,25 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
   };
   const rows = lines(o, u);
 
-  // The order page opens with the customer pane beside it.
-  useEffect(() => {
-    if (!main) return;
-    main.classList.add("withpane");
-    return () => main.classList.remove("withpane");
-  }, [main]);
-
   useEffect(() => {
     if (cmt) cmtRef.current?.focus();
   }, [cmt]);
 
+  // The order page opens with the customer pane beside it.
   const pane = (
-    <aside className="pane">
+    <SidePane>
       <div className="ph">
         Customer
         <Link className="ib" href={`/customers/${c.id}`} title="Open customer page">
           <Icon name="chev" />
         </Link>
-        <button className="ib" title="Hide" onClick={() => main?.classList.remove("withpane")}>
+        <button className="ib" title="Hide" onClick={() => shell.setPane("hidden")}>
           <Icon name="x" />
         </button>
       </div>
-      <Profile s={s} c={c} u={u} />
+      <Profile c={c} />
       <SourceCard o={o} c={c} />
-    </aside>
+    </SidePane>
   );
 
   return (
@@ -262,7 +236,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
                 <Icon name="undo" />
               </button>
             ) : null}
-            <button className="ib" title="Ask about this order" onClick={() => shell.openAgent(true)}>
+            <button className="ib" title="Ask about this order" onClick={() => shell.openAssistant({ orderIds: [o.id] })}>
               <Icon name="spark" />
             </button>
           </>
@@ -376,12 +350,12 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {edit || u.role === "account_manager" ? (
-            <button className="btn s" onClick={() => run(suggest, o.id, ackText(o, s, u.name))}>
+            <button className="btn s" onClick={() => run(suggest, o.id, ackTextFor(s, o))}>
               <Icon name="spark" />
               Suggest reply
             </button>
           ) : null}
-          <button className="btn s g" onClick={() => shell.openAgent(true)}>
+          <button className="btn s g" onClick={() => shell.openAssistant({ orderIds: [o.id] })}>
             <Icon name="spark" />
             Ask
           </button>
@@ -453,7 +427,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
           </div>
         </div>
       </div>
-      {main ? createPortal(pane, main) : null}
+      {pane}
     </>
   );
 }

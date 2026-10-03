@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Lbl, OverdueLbl } from "@/components/bits";
 import { Icon } from "@/components/icons";
+import { NotFound } from "@/components/shell/Guard";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
 import { canEdit, canPrice, seesCustomer } from "@/platform/access";
@@ -21,7 +22,7 @@ export function CustomerView({ id }: { id: string }) {
   const [flt, setFlt] = useState<ActivityFilter>("all");
   const [note, setNote] = useState("");
   const c = s.customers[id];
-  if (!c || !seesCustomer(u, id)) return <Header>Not found</Header>;
+  if (!c || !seesCustomer(u, id)) return <NotFound />;
 
   const price = canPrice(u);
   const mine = customerOrders(s, id);
@@ -40,7 +41,7 @@ export function CustomerView({ id }: { id: string }) {
     <>
       <Header
         acts={
-          <button className="btn s g" onClick={() => shell.openAgent(true, `Catch me up on ${c.name}`)}>
+          <button className="btn s g" onClick={() => shell.openAssistant({ prompt: `Catch me up on ${c.name}` })}>
             <Icon name="spark" />
             Ask
           </button>

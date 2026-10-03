@@ -7,6 +7,7 @@ import { CustomerMark, Lbl, OverdueLbl } from "@/components/bits";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
+import { summarisePrompt } from "@/platform/assistant";
 import { canDeliver, canEdit } from "@/platform/access";
 import type { Order } from "@/sample";
 import { bulkDeliver, deliver, run } from "@/state/actions/orders";
@@ -215,7 +216,7 @@ export function OrdersView() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          shell.openAgent(true);
+                          shell.openAssistant({ orderIds: [o.id] });
                         }}
                       >
                         <Icon name="spark" />
@@ -258,7 +259,10 @@ export function OrdersView() {
               <Icon name="copy" />
               Copy lines
             </button>
-            <button className="btn s" onClick={() => shell.openAgent(true, `Summarise ${pickedOrders.map((o) => ref(o)).join(", ")}`)}>
+            <button className="btn s" onClick={() =>
+                // The prototype's bulk Ask always prefills "Summarise <refs>"; it never scopes to one order.
+                shell.openAssistant(pickedOrders.length > 1 ? { orderIds: pickedOrders.map((o) => o.id) } : { prompt: summarisePrompt(pickedOrders) })
+              }>
               <Icon name="spark" />
               Ask
             </button>
