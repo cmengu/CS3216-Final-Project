@@ -114,9 +114,21 @@ export function exportRows(rows: readonly EgcOutputRow[], priced: boolean): EgcO
   });
 }
 
-/** Copy table: the visible columns, with a header row as the prototype copies it. */
+/**
+ * Copy table, as the prototype copies it: a header row of the on-screen column names, then one
+ * line per row, Sheet included. The cell values are the importer's clipboard text. People who
+ * cannot see prices get no Price or Total column.
+ */
 export function copyTable(rows: readonly EgcOutputRow[], visible: readonly string[], priced: boolean): string {
-  return clipboardText(exportRows(rows, priced), exportColumns(visible, priced), { includeHeaders: true });
+  const ids = exportColumns(visible, priced);
+  const names = visible.filter((n) => COL_ID[n] === null || ids.includes(COL_ID[n]!));
+  const sheets = sheetOf(rows);
+  const body = rows.length ? clipboardText(exportRows(rows, priced), ids).split("\n") : [];
+  const lines = body.map((line, i) => {
+    const cells = line.split("\t");
+    return names.map((n) => (COL_ID[n] === null ? (sheets.get(rows[i].id) ?? "") : cells[ids.indexOf(COL_ID[n]!)])).join("\t");
+  });
+  return [names.join("\t"), ...lines].join("\n");
 }
 
 /** Each row's worksheet name, as the Excel download names it (one sheet per PO). */

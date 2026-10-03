@@ -30,7 +30,7 @@ import {
   unconfirm,
   viewPrices,
 } from "@/state/actions/orders";
-import { meOf, useDemo } from "@/state/demo-store";
+import { meOf, subscribe, useDemo } from "@/state/demo-store";
 import { evIcon, fmtDay, lc, money, orderTotal, ref, relDay } from "@/lib/format";
 import { SourceCard } from "./SourceCard";
 import { activityByDay, orderText, stepsOf, summarise, type Rich } from "./logic";
@@ -51,7 +51,7 @@ const CTag = ({ c }: { c: Customer }) => (
 
 const selStyle = { padding: "4px 8px", fontSize: 12 };
 
-function ReviewCard({ t, edit, toast }: { t: ToCheck; edit: boolean; toast: (m: string) => void }) {
+function ReviewCard({ t, toast }: { t: ToCheck; toast: (m: string) => void }) {
   const [pick, setPick] = useState("");
   if (t.kind === "revision")
     return (
@@ -71,25 +71,23 @@ function ReviewCard({ t, edit, toast }: { t: ToCheck; edit: boolean; toast: (m: 
             </Fragment>
           ))}
         </div>
-        {edit ? (
-          <div className="acts">
-            <button className="btn p s" onClick={() => toast(run(approve, t.id))}>
-              Approve change
-            </button>
-            <button className="btn s" onClick={() => toast(run(keepOld, t.id))}>
-              Keep {t.diff[0].old}, note it
-            </button>
-            <select aria-label="Dismiss reason" style={selStyle} value={pick} onChange={(e) => setPick(e.target.value)}>
-              <option value="">Dismiss, reason…</option>
-              {DISMISS_REASONS.map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
-            <button className="btn s g" onClick={() => toast(run(dismiss, t.id, pick))}>
-              Dismiss
-            </button>
-          </div>
-        ) : null}
+        <div className="acts">
+          <button className="btn p s" onClick={() => toast(run(approve, t.id))}>
+            Approve change
+          </button>
+          <button className="btn s" onClick={() => toast(run(keepOld, t.id))}>
+            Keep {t.diff[0].old}, note it
+          </button>
+          <select aria-label="Dismiss reason" style={selStyle} value={pick} onChange={(e) => setPick(e.target.value)}>
+            <option value="">Dismiss, reason…</option>
+            {DISMISS_REASONS.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+          <button className="btn s g" onClick={() => toast(run(dismiss, t.id, pick))}>
+            Dismiss
+          </button>
+        </div>
       </div>
     );
   return (
@@ -98,21 +96,19 @@ function ReviewCard({ t, edit, toast }: { t: ToCheck; edit: boolean; toast: (m: 
         <Lbl state="blocked" />
         <b>{t.text}</b>
       </div>
-      {edit ? (
-        <div className="acts">
-          <select aria-label="Pick SKU" style={selStyle} value={pick} onChange={(e) => setPick(e.target.value)}>
-            <option value="">Pick a SKU…</option>
-            {Object.keys(PRODUCTS).map((k) => (
-              <option key={k} value={k}>
-                {k} · {PRODUCTS[k].name}
-              </option>
-            ))}
-          </select>
-          <button className="btn p s" onClick={() => toast(run(fillCell, t.id, pick))}>
-            Fill and remember
-          </button>
-        </div>
-      ) : null}
+      <div className="acts">
+        <select aria-label="Pick SKU" style={selStyle} value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">Pick a SKU…</option>
+          {Object.keys(PRODUCTS).map((k) => (
+            <option key={k} value={k}>
+              {k} · {PRODUCTS[k].name}
+            </option>
+          ))}
+        </select>
+        <button className="btn p s" onClick={() => toast(run(fillCell, t.id, pick))}>
+          Fill and remember
+        </button>
+      </div>
     </div>
   );
 }
@@ -180,6 +176,20 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
     if (m) shell.toast(m);
   };
   const rows = lines(o, u);
+
+  // The prototype logs "Viewed prices" while it draws the page, so the entry appears from the next
+  // redraw on (the next change anywhere), not on the first view. The first change after opening is
+  // the log itself.
+  const [viewedAtOpen] = useState(() => s.events.some((e) => e.order === o.id && e.kind === "price_viewed" && e.actor === u.name));
+  const [showView, setShowView] = useState(viewedAtOpen);
+  useEffect(() => {
+    if (showView) return;
+    let n = 0;
+    return subscribe(() => {
+      if (++n > 1) setShowView(true);
+    });
+  }, [showView]);
+  const shownEv = showView ? ev : ev.filter((e) => !(e.kind === "price_viewed" && e.actor === u.name));
 
   useEffect(() => {
     if (cmt) cmtRef.current?.focus();
@@ -285,7 +295,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
           ))}
         </div>
         {checks.map((t) => (
-          <ReviewCard key={t.id} t={t} edit={edit} toast={toast} />
+          <ReviewCard key={t.id} t={t} toast={toast} />
         ))}
         <div className="scroll">
           <table className="tbl">
@@ -394,7 +404,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
         <div className="card">
           <h3>Activity</h3>
           <div className="log tl">
-            {activityByDay(ev, pr).map((g) => (
+            {activityByDay(shownEv, pr).map((g) => (
               <Fragment key={g.d}>
                 <div className="day">{`${relDay(g.d)} · ${fmtDay(g.d)}`}</div>
                 {g.items.map((e, i) => {
@@ -407,7 +417,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
                           <Icon name={evIcon(e.kind)} />
                         </span>
                         <span className="tx">
-                          <b>{e.actor}</b> {lc(e.text)}
+                          <b>{e.actor}</b>{` ${lc(e.text)}`}
                         </span>
                         <span className="at">{e.at.slice(11)}</span>
                       </div>

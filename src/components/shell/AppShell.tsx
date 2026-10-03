@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { isPicked, useMounted } from "@/state/session";
 import { Agent } from "./Agent";
-import { RouteGuard, useRouteAllowed } from "./Guard";
+import { RouteGuard } from "./Guard";
 import { ShellContext, type AssistantRequest, type PaneState, type ShellApi } from "./context";
 import { Kbar } from "./Kbar";
 import { Palette } from "./Palette";
@@ -22,7 +22,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const picked = mounted && isPicked();
-  const allowed = useRouteAllowed();
 
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentReq, setAgentReq] = useState<AssistantRequest & { n: number }>({ n: 0 });
@@ -126,7 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className={`main${pane === "on" ? " withpane" : ""}`} id="main" ref={mainRef}>
           <div className="content">
             <RouteGuard>{children}</RouteGuard>
-            <Kbar kind={allowed && LIST_ROUTES.includes(pathname) ? "list" : "page"} />
+            <Kbar kind={LIST_ROUTES.includes(pathname) ? "list" : "page"} />
           </div>
           {pane !== "off" ? <aside className="pane" ref={setPaneHost} /> : null}
         </main>

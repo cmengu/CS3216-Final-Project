@@ -18,7 +18,6 @@ import { addDays, fileSize, fmtDay, money, nowStr } from "@/lib/format";
 import {
   cellText,
   EGC_OUTPUT_COLUMNS,
-  egcFileName,
   groupPoSheets,
   setManualValue,
   validate,
@@ -153,7 +152,8 @@ export function AddView() {
 
   const download = async () => {
     const blob = await writeExcel(exportRows(rows, priced), { columnOrder: exportColumns(names, priced) });
-    const name = egcFileName(new Date());
+    // The prototype's file name and toast: one sheet per PO.
+    const name = "EGC Tracker.xlsx";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name;
@@ -201,7 +201,9 @@ export function AddView() {
       );
     }
     if (id === "quantity") {
-      const unit = c.sourceText ?? ""; // the unit as the PO prints it
+      // The line's unit as the prototype shows it: the product's own unit once a SKU is known, else the PO's.
+      const sku = r.cells.sku.value;
+      const unit = ((sku && PRODUCTS[sku]?.unit) || c.sourceText || "").toLowerCase();
       return td(
         c.value === null ? "flag" : "",
         <div className="cv">
@@ -481,7 +483,6 @@ export function AddView() {
             setOver(false);
             const files = [...e.dataTransfer.files];
             if (!files.length) return;
-            setSrc("pdf");
             void stageFiles(files);
           }}
         >

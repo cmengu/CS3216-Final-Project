@@ -103,7 +103,10 @@ describe("what leaves the screen", () => {
     const plain = copyTable(rows, visible, false);
     expect(priced).toContain("5.40");
     expect(priced).toContain("PO price 4.50");
-    expect(plain.split("\n")[0]).toBe("SKU\tQuantity\tPO Number\tSales Notes");
+    // The header is the on-screen column names, as the prototype copies it, Sheet included.
+    expect(plain.split("\n")[0]).toBe("Sheet\tSKU\tQuantity\tPO Number\tSales Notes");
+    expect(priced.split("\n")[0]).toBe("Sheet\tSKU\tQuantity\tPrice\tTotal\tPO Number\tSales Notes");
+    expect(priced.split("\n")[1].split("\t")[0]).toBe("HH-2240");
     expect(plain).not.toMatch(/\d+\.\d\d/);
     expect(exportRows(rows, false)[1].cells.salesNotes.value).toBeNull();
   });

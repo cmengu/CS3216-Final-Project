@@ -251,8 +251,8 @@ export function OrdersView() {
             <button
               className="btn s"
               onClick={() => {
+                // As the prototype: the bar and the ticks stay after copying.
                 const t = pickedOrders.map((o) => orderText(o, cust(o))).join("\n\n");
-                setPicked([]);
                 shell.copyText(t, "Copied");
               }}
             >

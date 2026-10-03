@@ -15,11 +15,21 @@ import { evIcon, fmtShort, lc, money, orderTotal, outlets, ref, relDay } from "@
 import { ACTIVITY_FILTERS, activity, customerOrders, highlights, type ActivityFilter } from "./figures";
 import { Profile } from "./Profile";
 
+/** The Activity filter, kept for the session and shared by every customer page, as the prototype keeps S._cf. */
+let keptFlt: ActivityFilter = "all";
+const keepFlt = (f: ActivityFilter) => {
+  keptFlt = f;
+};
+
 export function CustomerView({ id }: { id: string }) {
   const s = useDemo();
   const u = meOf(s);
   const shell = useShell();
-  const [flt, setFlt] = useState<ActivityFilter>("all");
+  const [flt, setFltState] = useState<ActivityFilter>(keptFlt);
+  const setFlt = (f: ActivityFilter) => {
+    keepFlt(f);
+    setFltState(f);
+  };
   const [note, setNote] = useState("");
   const c = s.customers[id];
   if (!c || !seesCustomer(u, id)) return <NotFound />;

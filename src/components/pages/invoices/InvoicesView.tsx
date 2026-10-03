@@ -17,11 +17,18 @@ import { meOf, useDemo } from "@/state/demo-store";
 import { money, orderTotal, ref, relDay } from "@/lib/format";
 import { deliveredOn, groupByCustomer, invoiceCsv, invoiceLists, listTotal, type InvoiceTab } from "./invoices";
 
+/** The open tab, kept for the session as the prototype keeps S._it. */
+let keptTab: InvoiceTab = "open";
+
 export function InvoicesView() {
   const s = useDemo();
   const u = meOf(s);
   const shell = useShell();
-  const [tab, setTab] = useState<InvoiceTab>("open");
+  const [tab, setTabState] = useState<InvoiceTab>(keptTab);
+  const setTab = (t: InvoiceTab) => {
+    keptTab = t;
+    setTabState(t);
+  };
 
   const price = canPrice(u);
   const { open, done } = invoiceLists(s, u);

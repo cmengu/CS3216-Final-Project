@@ -9,10 +9,17 @@ import { setReplyStyle, toggleReply } from "@/state/actions/settings";
 import { ackTextFor, replyOpt } from "@/lib/ack-text";
 import { ref } from "@/lib/format";
 
+/** The previewed order, kept for the session as the prototype keeps S._rs. */
+let keptRs = "o1";
+
 export function RepliesPane() {
   const s = useDemo();
   const r = replyOpt(s.settings);
-  const [rs, setRs] = useState("o1");
+  const [rs, setRsState] = useState(keptRs);
+  const setRs = (v: string) => {
+    keptRs = v;
+    setRsState(v);
+  };
   const so = s.orders.find((o) => o.id === rs) || s.orders[0];
   const wa = so.source === "whatsapp";
 

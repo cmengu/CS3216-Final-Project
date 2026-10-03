@@ -59,7 +59,8 @@ export function reset() {
   emit();
 }
 
-function subscribe(l: () => void) {
+/** Called after every change to the demo state. Returns the unsubscribe function. */
+export function subscribe(l: () => void) {
   listeners.add(l);
   return () => {
     listeners.delete(l);
