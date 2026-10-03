@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPayload, pickSku, type ReadOrder } from "@/lib/add-orders";
-import { toRows } from "@/lib/importer";
+import { readPaste, toRows } from "@/lib/importer";
 import { PRODUCTS, seed } from "@/sample";
 import { buildLists } from "@/sample/lists";
 import { harbourPo } from "@/test/po";
@@ -40,5 +40,17 @@ describe("the demo confirm", () => {
       ["exported", "Eunice", "Exported to Excel"],
     ]);
     expect(out.history).toHaveLength(3);
+  });
+
+  it("confirms a pasted WhatsApp order under its generated reference", async () => {
+    const { order, unparsed } = readPaste("Hi, order for Mon pls\nPea tendrils 4box\nthanks!", { customerId: "C10388", name: "Pavilion Kitchen" }, "2026-10-05");
+    const rows = toRows([{ sourceId: "wa1", order }], buildLists());
+    expect(unparsed).toEqual(["Hi, order for Mon pls", "thanks!"]);
+    expect(rows[0].cells.salesNotes.value).toContain("Hi, order for Mon pls");
+    const read: ReadOrder = { fileId: "wa1", fileName: "WhatsApp paste", size: 40, readerId: "whatsapp-paste", fingerprints: { fileHash: null, contentHash: "abc" }, order };
+    const out = confirmedFrom(await buildPayload([read], rows), seed(), { by: "Eunice", at: "2026-10-01 14:05", sizes: {} });
+    expect(out.orders[0]).toMatchObject({ cust: "C10388", po: "WA-C10388-0510", source: "whatsapp", lines: [{ sku: "EGC-PTND", qty: 4, unit: "box", outlet: "Main", origin: "po" }] });
+    expect(out.orders[0].file).toBeUndefined();
+    expect(out.events[0].text).toBe("Read WhatsApp order · 1 lines");
   });
 });

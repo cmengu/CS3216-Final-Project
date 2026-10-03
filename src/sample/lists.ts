@@ -18,14 +18,30 @@ import type { Alias, Customer, Product } from "./types";
  */
 export const PRINTED_BUYERS: Record<string, string[]> = {
   C10243: ["Harbour Hotel Pte Ltd"],
-  C10310: ["Marina Grand Hotel"],
+  C10310: ["Marina Grand Hotel Singapore", "Marina Grand Hotel Pte Ltd, trading as Marina Grand Hotel Singapore"],
   C10388: ["Pavilion Kitchen Pte Ltd"],
   C10402: ["Riverside Club"],
   C10419: ["Orchard Deli Pte Ltd"],
 };
 
-/** Item wording the customers print, approved for one customer (customerId) or for all (null). */
-export const PRINTED_ITEMS: EgcProductAlias[] = [];
+/** Item wording the customers print, approved for one customer. */
+export const PRINTED_ITEMS: EgcProductAlias[] = [
+  // Harbour Hotel prints long descriptions.
+  { customerId: "C10243", sourceText: "MICROGREEN PEA SHOOTS LOCAL FARM 35G BOX GRADE A", sku: "EGC-PTND" },
+  { customerId: "C10243", sourceText: "MICROGREEN BASIL GREEN 50G BOX GRADE A", sku: "EGC-MBAS" },
+  { customerId: "C10243", sourceText: "SORREL RED VEIN LEAF 35G BOX GRADE A", sku: "EGC-RVSO" },
+  { customerId: "C10243", sourceText: "NASTURTIUM LEAF VARIEGATED 20 PCS BOX GRADE A", sku: "EGC-NAST" },
+  { customerId: "C10243", sourceText: "EDIBLE FLOWERS ASSORTED 50G BOX GRADE A", sku: "EGC-EFMX" },
+  { customerId: "C10243", sourceText: "SORREL WOOD LEAF 35G BOX GRADE A", sku: "EGC-WOOD" },
+  // Marina Grand prints its own item codes.
+  { customerId: "C10310", sourceText: "MG00001101", sku: "EGC-PTND" },
+  { customerId: "C10310", sourceText: "MG00001102", sku: "EGC-MBAS" },
+  { customerId: "C10310", sourceText: "MG00001103", sku: "EGC-ELDF" },
+  { customerId: "C10310", sourceText: "MG00001104", sku: "EGC-EFMX" },
+  { customerId: "C10310", sourceText: "MG-F0101", sku: "EGC-WOOD" },
+  { customerId: "C10310", sourceText: "MG-F0102", sku: "EGC-ESFR" },
+  { customerId: "C10310", sourceText: "MG-F0103", sku: "EGC-RVSO" },
+];
 
 export function buildLists(
   products: Record<string, Product> = PRODUCTS,

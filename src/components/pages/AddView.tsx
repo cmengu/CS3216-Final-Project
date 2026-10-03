@@ -20,7 +20,6 @@ import {
   EGC_OUTPUT_COLUMNS,
   egcFileName,
   groupPoSheets,
-  readPastedOrder,
   setManualValue,
   validate,
   writeExcel,
@@ -33,6 +32,7 @@ import { submitConfirm } from "@/platform/confirm";
 import { mailbox } from "@/platform/nav";
 import { GROUP_LOGIN, PRODUCTS, TODAY } from "@/sample";
 import {
+  addPaste,
   assignCustomer,
   clearQueue,
   editRow,
@@ -126,8 +126,8 @@ export function AddView() {
   };
 
   const readOrder = async () => {
-    const r = await readPastedOrder(paste, pcust, pdate);
-    shell.toast(r.detail);
+    const r = await addPaste(paste, pcust, s.customers[pcust]?.name ?? "", pdate || addDays(TODAY, 4));
+    shell.toast(r.lines ? `${r.lines} lines read${r.unparsed ? `, ${r.unparsed} kept as notes` : ""}` : "No order lines found");
   };
 
   // The prototype's dropExport: a sample chat export links three messages and proposes one change.
@@ -215,7 +215,7 @@ export function AddView() {
       );
     }
     if (id === "quantity") {
-      const unit = (c.sourceText ?? "").toLowerCase();
+      const unit = c.sourceText ?? ""; // the unit as the PO prints it
       return td(
         c.value === null ? "flag" : "",
         <div className="cv">

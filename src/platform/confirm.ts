@@ -3,7 +3,7 @@
  * is no database yet, so submitConfirm writes confirmed orders into the demo store instead,
  * in the shape the seeded orders use, with the events the prototype's confirmAll records.
  */
-import type { ConfirmPayload, EgcOutputRow } from "@/lib/importer";
+import { readerLabel, type ConfirmPayload, type EgcOutputRow } from "@/lib/importer";
 import { nowStr } from "@/lib/format";
 import { PRODUCTS } from "@/sample";
 import type { DemoState, HistoryEntry, Order, OrderEvent, OrderLine } from "@/sample";
@@ -67,9 +67,8 @@ export function confirmedFrom(payload: ConfirmPayload, s: Pick<DemoState, "custo
         o.file = { name: co.source.fileName, size: ctx.sizes[co.source.fileName] ?? 0, at: ctx.at, hash: (fp.fileHash ?? fp.contentHash).slice(0, 8), contentHash: fp.contentHash };
       }
       orders.push(o);
-      const layout = s.customers[cust]?.layout;
       const n = o.lines.length;
-      ev(o.id, "read", "Reader", `Read ${po ? `PO ${po} (${layout || "PDF"} layout)` : "WhatsApp order"} · ${n} lines`);
+      ev(o.id, "read", "Reader", `Read ${o.source === "pdf" && po ? `PO ${po} (${readerLabel(co.readerId)} layout)` : "WhatsApp order"} · ${n} lines`);
       ev(o.id, "confirmed", ctx.by, `Confirmed ${n} lines`);
       ev(o.id, "exported", ctx.by, "Exported to Excel");
     }

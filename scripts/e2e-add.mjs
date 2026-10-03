@@ -145,6 +145,39 @@ for (const theme of ["dark", "light"]) {
       const home = await page.textContent("main, body");
       ok(custs.every((c) => home.includes(c)), `confirmed customers on Home (${custs.join(", ")})`);
       await page.screenshot({ path: `${OUT}/home-after-confirm-${theme}-app.png` });
+
+      // The same PO again, under another name, after it was confirmed.
+      const hh = samples.find((x) => /hh-2240/i.test(x.name));
+      if (hh) {
+        await page.goto(`${APP}/add`);
+        const bytes = Buffer.from(await (await fetch(`${APP}/samples/${hh.name}`)).arrayBuffer());
+        await page.setInputFiles('input[type=file][accept="application/pdf"]', [{ name: "again.pdf", mimeType: "application/pdf", buffer: bytes }]);
+        await settled(page);
+        await page.click("text=Process 1 file");
+        await settled(page);
+        const d = await fileRow(page, "again.pdf").locator(".fs").textContent();
+        ok((await fileRow(page, "again.pdf").locator(".st").textContent()) === "Duplicate" && /Same content as HH-2240, confirmed \d\d:\d\d · skipped/.test(d), `confirmed PO comes back Duplicate (${d})`);
+        ok((await page.textContent(".toolbar")).includes("No rows yet"), "a duplicate adds no rows");
+        await page.click("text=Start over");
+      }
+
+      // WhatsApp: turn the paste connection on in the demo store, read the example, see its rows.
+      await page.goto(`${APP}/add`);
+      await page.click(".src button:has-text('WhatsApp order')");
+      await page.evaluate(() => {
+        const s = JSON.parse(localStorage.getItem("pot-demo-v1"));
+        s.cx.paste = true;
+        localStorage.setItem("pot-demo-v1", JSON.stringify(s));
+      });
+      await page.reload();
+      await page.click("button:has-text('Example')");
+      await page.click("button:has-text('Read order')");
+      await page.waitForSelector("text=/\\d+ lines read/");
+      const line = await page.textContent(".toolbar");
+      ok(/\d+ rows from 1 PO\b/.test(line), `WhatsApp rows in the table (${line.match(/\d+ rows from 1 PO/)?.[0]})`);
+      ok((await page.textContent(".grid14 tbody")).includes("Hi, order for Mon pls"), "unparsed lines reach Sales Notes");
+      ok((await page.textContent(".grid14 tbody")).includes("WA-C10243-"), "generated WA reference");
+      await page.screenshot({ path: `${OUT}/add-whatsapp-${theme}-app.png` });
     }
   }
   await ctx.close();

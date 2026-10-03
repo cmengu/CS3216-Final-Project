@@ -17,10 +17,12 @@ import {
   type ReadOrder,
 } from "@/lib/add-orders";
 import {
+  contentHash,
   enqueueFiles,
   fileFingerprint,
   processEgcQueue,
   readerLabel,
+  readPaste,
   readPdf,
   toRows,
   validate,
@@ -179,3 +181,24 @@ export function assignCustomer(sourceId: string, customerId: string) {
   });
 }
 
+
+/**
+ * WhatsApp: the importer reads the pasted message for the chosen customer and delivery date;
+ * its rows join the same table. Returns how many lines were read and how many were kept as notes.
+ */
+export async function addPaste(text: string, customerId: string, name: string, deliveryDate: string) {
+  const { order, unparsed } = readPaste(text, { customerId, name }, deliveryDate);
+  if (!order.lines.length) return { lines: 0, unparsed: unparsed.length };
+  const id = "wa-" + (globalThis.crypto?.randomUUID?.() ?? String(Date.now()));
+  const read: ReadOrder = {
+    fileId: id,
+    fileName: "WhatsApp paste",
+    size: text.length,
+    readerId: "whatsapp-paste",
+    fingerprints: { fileHash: null, contentHash: await contentHash(text) },
+    order,
+  };
+  const rows = toRows([{ sourceId: id, order }], currentLists());
+  set({ ...batch, reads: [...batch.reads, read], rows: [...batch.rows, ...rows] });
+  return { lines: order.lines.length, unparsed: unparsed.length };
+}

@@ -5,6 +5,8 @@
  */
 export {
   readPdf,
+  readPaste,
+  contentHash,
   toRows,
   validate,
   writeExcel,
@@ -35,6 +37,7 @@ export type {
   EgcMasterData,
   EgcOrderSource,
   EgcOutputRow,
+  EgcPasteResult,
   EgcPdfResult,
   EgcProductAlias,
   EgcPurchaseOrder,
@@ -47,21 +50,12 @@ export type {
 
 /**
  * The name staff see for the layout reader that read a PDF. The library returns only the
- * reader's id with a result; until it also exposes the reader's label, the id is shown.
+ * reader's id with a result and does not export its readers' labels yet, so the labels are
+ * written out here; an id not listed shows as itself.
  */
-export function readerLabel(readerId: string): string {
-  return readerId;
-}
-
-export type PasteResult = { status: "unavailable"; detail: string };
-
-/**
- * Reads a pasted WhatsApp order. The library's readPaste is not published yet, so this
- * reports that reading pasted orders is not available.
- */
-export async function readPastedOrder(text: string, customerId: string, deliveryDate: string): Promise<PasteResult> {
-  void text;
-  void customerId;
-  void deliveryDate;
-  return { status: "unavailable", detail: "Reading WhatsApp orders is not available yet" };
-}
+const READER_LABELS: Record<string, string> = {
+  buynow: "Buynow",
+  "shangri-la": "Shangri-La",
+  "marriott-platform": "Hotel platform",
+};
+export const readerLabel = (readerId: string): string => READER_LABELS[readerId] ?? readerId;

@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { toRows, validate } from "@/lib/importer";
+import { readPdf, toRows, validate, type EgcOutputRow } from "@/lib/importer";
 import { harbourPo } from "@/test/po";
 import { buildLists } from "./lists";
 import { CUSTOMERS, PRODUCTS } from ".";
@@ -35,5 +36,29 @@ describe("buildLists", () => {
     expect(rows[1].cells.sku.value).toBe("EGC-MBAS"); // the product's own name
     expect(rows[2].cells.sku.origin).toBe("unresolved");
     expect(validate(rows).blockers.some((b) => b.rowId === rows[2].id && b.field === "sku")).toBe(true);
+  });
+});
+
+describe("the importer's look-alike sample POs", () => {
+  const dir = "node_modules/po-importer/fixtures/egc";
+  const manifest = JSON.parse(readFileSync(`${dir}/manifest.json`, "utf8")) as {
+    layoutFixtures?: { pdfs: { pdf: string; reader: string | null; expectedRows?: string; expect?: string }[] };
+  };
+  const pdfs = manifest.layoutFixtures?.pdfs ?? [];
+
+  it.each(pdfs.filter((p) => p.expectedRows))("$pdf maps with the app's own lists exactly as the importer expects", async ({ pdf, reader, expectedRows }) => {
+    const name = pdf.split("/").pop()!;
+    const result = await readPdf(name, new Uint8Array(readFileSync(`${dir}/${pdf}`)));
+    expect(result.status === "parsed" || result.status === "partial").toBe(true);
+    if (result.status !== "parsed" && result.status !== "partial") return;
+    expect(result.readerId).toBe(reader);
+    const expected = JSON.parse(readFileSync(`${dir}/${expectedRows}`, "utf8")) as EgcOutputRow[];
+    const rows = toRows([{ sourceId: expected[0].source.sourceId, order: result.order }], buildLists());
+    expect(rows).toEqual(expected);
+  });
+
+  it.each(pdfs.filter((p) => p.expect))("$pdf is refused", async ({ pdf, expect: status }) => {
+    const result = await readPdf(pdf.split("/").pop()!, new Uint8Array(readFileSync(`${dir}/${pdf}`)));
+    expect(result.status === "unsupported" && result.reason).toBe(status);
   });
 });
