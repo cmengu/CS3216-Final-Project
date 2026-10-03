@@ -139,6 +139,14 @@ export interface MailItem {
   file: string;
   at: string;
   size: number;
+  sample?: string; // which invented sample PO this file reads as
+}
+
+/** What the acknowledgement includes (prototype: S.settings.reply). */
+export interface ReplyOptions {
+  lines: boolean;
+  date: boolean;
+  sign: boolean;
 }
 
 export interface Settings {
@@ -147,6 +155,7 @@ export interface Settings {
   skuCount: number;
   skuDate: string;
   style: string;
+  reply?: ReplyOptions; // unset until a reply toggle is touched; defaults to all on
 }
 
 export interface DemoState {
