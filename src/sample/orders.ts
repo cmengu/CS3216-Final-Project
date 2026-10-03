@@ -12,9 +12,19 @@ const L = (sku: string | null, qty: number, unit: string, outlet: string, origin
 // The prototype draws a random fingerprint; fixed invented values keep the seed deterministic.
 const F = (name: string, size: number, at: string, hash: string): SourceFile => ({ name, size, at, hash });
 
+/**
+ * HH-2231's fingerprints, as the importer's demo set records them for PO_HH-2231.pdf
+ * (fixtures/egc/demo-set/fingerprints.json; src/sample/orders.test.ts checks they still match).
+ * Reading that file again on Add orders then comes back Duplicate of this order.
+ */
+export const HH2231_FINGERPRINTS = {
+  fileHash: "c98e3e5dff1a6d4cd885fa620b110f67de5659e57b0630e915b3990f08f3313f",
+  contentHash: "f0852ebae8fe330faa9a1cfa83614bba6adf32c6224a0e9d21c5dd4e1b86fb1d",
+};
+
 export function seedOrders(): Order[] {
   const orders: Order[] = [
-    { id: "o1", cust: "C10243", po: "HH-2231", date: "2026-10-02", state: "confirmed", source: "pdf", exported: true, confirmedBy: "Eunice", file: F("PO_HH-2231.pdf", 188416, "2026-10-01 09:12", "3fa1c09e"), lines: [L("EGC-PTND", 4, "box", "Banquet kitchen"), L("EGC-MBAS", 2, "box", "Banquet kitchen"), L("EGC-RVSO", 2, "box", "Banquet kitchen"), L("EGC-NAST", 1, "box", "Room service"), L("EGC-EFMX", 1, "box", "Room service"), L("EGC-WOOD", 1, "box", "Room service")] },
+    { id: "o1", cust: "C10243", po: "HH-2231", date: "2026-10-02", state: "confirmed", source: "pdf", exported: true, confirmedBy: "Eunice", file: { ...F("PO_HH-2231.pdf", 188416, "2026-10-01 09:12", "3fa1c09e"), ...HH2231_FINGERPRINTS }, lines: [L("EGC-PTND", 4, "box", "Banquet kitchen"), L("EGC-MBAS", 2, "box", "Banquet kitchen"), L("EGC-RVSO", 2, "box", "Banquet kitchen"), L("EGC-NAST", 1, "box", "Room service"), L("EGC-EFMX", 1, "box", "Room service"), L("EGC-WOOD", 1, "box", "Room service")] },
     { id: "o2", cust: "C10310", po: "4810286013", date: "2026-10-02", state: "needs_check", source: "pdf", exported: true, confirmedBy: "Eunice", file: F("4810286013.pdf", 96256, "2026-09-30 16:02", "b27e5d14"), lines: [L("EGC-PTND", 6, "box", "Kitchen #1"), L("EGC-MBAS", 4, "box", "Kitchen #1"), L("EGC-ELDF", 2, "box", "Madame Fan"), L("EGC-EFMX", 2, "box", "Room service")] },
     { id: "o3", cust: "C10388", po: null, date: "2026-10-01", state: "confirmed", source: "whatsapp", exported: true, confirmedBy: "Eunice", lines: [L("EGC-ELDF", 2, "box", "Main"), L("EGC-MBAS", 2, "box", "Main"), L("EGC-NAST", 1, "box", "Main")] },
     { id: "o4", cust: "C10402", po: "RC-0917", date: "2026-10-05", state: "blocked", source: "pdf", exported: false, confirmedBy: null, file: F("RC-0917_Ariba.pdf", 412000, "2026-10-01 08:30", "e8d0a771"), lines: [L("EGC-PTND", 3, "box", "Clubhouse"), { ...L(null, 2, "tray", "Clubhouse", "unresolved"), desc: "Edible flower mix (tray)" }] },

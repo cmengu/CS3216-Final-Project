@@ -1,26 +1,17 @@
 /*
  * The look-alike sample POs, served from public/samples/ (copied from the importer package by
- * scripts/copy-samples.mjs). Fetched as bytes and staged like dropped files.
+ * scripts/copy-samples.mjs). Which files they are is src/sample/sample-pos.json. Fetched as
+ * bytes and staged like dropped files.
  */
-export interface SampleFile {
-  name: string;
-  size: number;
-}
+import SAMPLE_POS from "@/sample/sample-pos.json";
 
-export async function sampleIndex(): Promise<SampleFile[]> {
-  try {
-    const res = await fetch("/samples/index.json", { cache: "no-store" });
-    return res.ok ? ((await res.json()) as SampleFile[]) : [];
-  } catch {
-    return [];
-  }
-}
+/** The sample set's file names, in the order "use the four sample POs" queues them. */
+export const SAMPLE_NAMES: readonly string[] = SAMPLE_POS.files;
 
-/** The named sample PDFs (all of them when no names are given) as File objects. Missing ones are left out. */
-export async function sampleFiles(names?: readonly string[]): Promise<File[]> {
-  const want = names ?? (await sampleIndex()).map((s) => s.name);
+/** The named sample PDFs (the whole set when no names are given) as File objects. Missing ones are left out. */
+export async function sampleFiles(names: readonly string[] = SAMPLE_NAMES): Promise<File[]> {
   const files = await Promise.all(
-    want.map(async (name) => {
+    names.map(async (name) => {
       try {
         const res = await fetch(`/samples/${encodeURIComponent(name)}`, { cache: "no-store" });
         if (!res.ok) return null;

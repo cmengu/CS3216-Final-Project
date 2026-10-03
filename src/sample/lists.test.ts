@@ -5,6 +5,7 @@ import { harbourPo } from "@/test/po";
 import { buildLists } from "./lists";
 import { CUSTOMERS, PRODUCTS } from ".";
 import type { Alias } from "./types";
+import { HH2231_FINGERPRINTS, seedOrders } from "./orders";
 
 describe("buildLists", () => {
   const lists = buildLists();
@@ -42,10 +43,16 @@ describe("buildLists", () => {
 
 describe("the importer's look-alike sample POs", () => {
   const dir = "node_modules/po-importer/fixtures/egc";
-  const manifest = JSON.parse(readFileSync(`${dir}/manifest.json`, "utf8")) as {
-    layoutFixtures?: { pdfs: { pdf: string; reader: string | null; expectedRows?: string; expect?: string }[] };
-  };
-  const pdfs = manifest.layoutFixtures?.pdfs ?? [];
+  type Pdf = { pdf: string; reader: string | null; expectedRows?: string; expect?: string; extraMasterData?: string };
+  const manifest = JSON.parse(readFileSync(`${dir}/manifest.json`, "utf8")) as { layoutFixtures?: { pdfs: Pdf[] }; demoSet?: { pdfs: Pdf[]; fingerprints: string } };
+  // The look-alikes that need only the demo lists (the newer layouts bring customers the app does not have), and the demo set.
+  const pdfs = [...(manifest.layoutFixtures?.pdfs ?? []).filter((p) => !p.extraMasterData), ...(manifest.demoSet?.pdfs ?? [])];
+
+  it("seeds HH-2231 with the demo set's fingerprints for PO_HH-2231.pdf", () => {
+    const fp = JSON.parse(readFileSync(`${dir}/${manifest.demoSet!.fingerprints}`, "utf8")) as Record<string, { fileHash: string; contentHash: string }>;
+    expect(HH2231_FINGERPRINTS).toEqual(fp["PO_HH-2231.pdf"]);
+    expect(seedOrders().find((o) => o.po === "HH-2231")?.file).toMatchObject(fp["PO_HH-2231.pdf"]);
+  });
 
   it.each(pdfs.filter((p) => p.expectedRows))("$pdf maps with the app's own lists exactly as the importer expects", async ({ pdf, reader, expectedRows }) => {
     const name = pdf.split("/").pop()!;

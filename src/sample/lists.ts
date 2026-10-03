@@ -62,6 +62,32 @@ export const PRINTED_ITEMS: EgcProductAlias[] = [
   { customerId: "C10310", sourceText: "MG-F0103", sku: "EGC-RVSO" },
 ];
 
+/**
+ * Short names staff and chefs type in WhatsApp orders, approved for every customer: the
+ * wording the prototype's paste reader recognises for its eight products ("pea tendrils",
+ * "red veined sorrel", "egyptian star flower" and the rest), in the forms its example and
+ * placeholder messages use. The importer matches approved wording exactly (spacing and case
+ * aside), so each form is listed. Invented demo data.
+ */
+export const PASTE_WORDING: EgcProductAlias[] = [
+  ["Pea tendrils", "EGC-PTND"],
+  ["Pea tendril", "EGC-PTND"],
+  ["Micro basil", "EGC-MBAS"],
+  ["Red veined sorrel", "EGC-RVSO"],
+  ["Red vein sorrel", "EGC-RVSO"],
+  ["Sorrel", "EGC-RVSO"],
+  ["Nasturtium", "EGC-NAST"],
+  ["Nasturtium variegated", "EGC-NAST"],
+  ["Edible flower", "EGC-EFMX"],
+  ["Edible flowers", "EGC-EFMX"],
+  ["Edible flower mix", "EGC-EFMX"],
+  ["Elderflower", "EGC-ELDF"],
+  ["Egyptian star flower", "EGC-ESFR"],
+  ["Egyptian star flower red", "EGC-ESFR"],
+  ["Star flower red", "EGC-ESFR"],
+  ["Wood sorrel", "EGC-WOOD"],
+].map(([sourceText, sku]) => ({ customerId: null, sourceText, sku }));
+
 export function buildLists(
   products: Record<string, Product> = PRODUCTS,
   customers: Record<string, Customer> = CUSTOMERS,
@@ -78,6 +104,7 @@ export function buildLists(
       .filter((a): a is Alias & { sku: string } => a.state === "approved" && !!a.sku && !!products[a.sku])
       .map((a) => ({ customerId: null, sourceText: a.text, sku: a.sku })),
     ...PRINTED_ITEMS,
+    ...PASTE_WORDING,
   ];
   return {
     skus,
