@@ -62,9 +62,13 @@ export function confirmedFrom(payload: ConfirmPayload, s: Pick<DemoState, "custo
         confirmedBy: ctx.by,
         lines: rows.map((r) => lineOf(r, s, cust)),
       };
+      const fp = co.fingerprints;
       if (co.source.kind === "pdf") {
-        const fp = co.fingerprints;
-        o.file = { name: co.source.fileName, size: ctx.sizes[co.source.fileName] ?? 0, at: ctx.at, hash: (fp.fileHash ?? fp.contentHash).slice(0, 8), contentHash: fp.contentHash };
+        const name = co.source.fileName;
+        o.file = { name, size: ctx.sizes[name] ?? 0, at: ctx.at, hash: (fp.fileHash ?? fp.contentHash).slice(0, 8), contentHash: fp.contentHash, layout: readerLabel(co.readerId) };
+      } else {
+        // As the prototype's parsePaste: the paste is the order's source, with no file fingerprint.
+        o.file = { name: "WhatsApp paste", size: ctx.sizes["WhatsApp paste"] ?? 0, at: ctx.at, hash: "", contentHash: fp.contentHash };
       }
       orders.push(o);
       const n = o.lines.length;

@@ -29,8 +29,8 @@ import {
 import { sampleFiles } from "@/lib/samples";
 import { canEdit, canPrice } from "@/platform/access";
 import { submitConfirm } from "@/platform/confirm";
-import { mailbox } from "@/platform/nav";
 import { GROUP_LOGIN, PRODUCTS, TODAY } from "@/sample";
+import { PASTE_EXAMPLE } from "@/sample/mail";
 import {
   addPaste,
   assignCustomer,
@@ -43,9 +43,9 @@ import {
   startOver,
   useAddBatch,
 } from "@/state/add-batch";
+import { checkMail as markChecked, dropExport as importExport, exportImported, mailFlow } from "@/state/actions/settings";
 import { meOf, update, useDemo } from "@/state/demo-store";
-
-const EXAMPLE = "Hi, order for Mon pls\nPea tendrils 4box\nRed veined sorrel-2\nEgyptian star flower red x1\nthanks!";
+import { conn, mailboxFiles, mailboxOn, pasteOn } from "@/state/selectors/connections";
 const colDef = (id: EgcColumnId) => EGC_OUTPUT_COLUMNS.find((c) => c.id === id)!;
 
 export function AddView() {
@@ -60,7 +60,9 @@ export function AddView() {
   const [pcust, setPcust] = useState(Object.keys(s.customers)[0]);
   const [pdate, setPdate] = useState(addDays(TODAY, 4));
   const relRef = useRef<HTMLSpanElement>(null);
-  const mail = mailbox(s);
+  // The tabs read the connections Settings › Connections writes.
+  const mail = mailboxFiles(s);
+  const cx = conn(s);
   const owner = u.role === "owner";
   const priced = canPrice(u);
 
@@ -119,9 +121,7 @@ export function AddView() {
   };
 
   const checkMail = () => {
-    update((d) => {
-      if (d.cx.mail) d.cx.mail.at = nowStr().slice(11);
-    });
+    update((d) => markChecked(d, nowStr().slice(11)));
     shell.toast("Checked the mailbox");
   };
 
@@ -132,22 +132,8 @@ export function AddView() {
 
   // The prototype's dropExport: a sample chat export links three messages and proposes one change.
   const dropExport = () => {
-    if (s.messages.some((m) => m.id === "m3")) return shell.toast("Already imported");
-    update((d) => {
-      const add = [
-        { id: "m3", order: "o1", at: "2026-10-01 11:05", from: "Chef Lim", source: "WhatsApp", text: "Pls send invoice to accounts@ this time thx", linkedBy: "rule" },
-        { id: "m4", order: "o2", at: "2026-10-01 10:52", from: "Ms Tan", source: "WhatsApp", text: "4810286013 also add 1 box elderflower for Madame Fan", linkedBy: "rule" },
-        { id: "m5", order: "o3", at: "2026-10-01 09:30", from: "Chef Ravi", source: "WhatsApp", text: "thanks received yesterday all good", linkedBy: "rule" },
-      ];
-      for (const m of add) {
-        if (d.messages.some((x) => x.id === m.id)) continue;
-        d.messages.push(m);
-        d.events.push({ order: m.order, at: m.at, kind: "message_linked", actor: "Rule", text: `Linked a WhatsApp message from ${m.from}` });
-      }
-      d.toCheck.push({ id: "t4", kind: "revision", order: "o2", diff: [{ line: 2, field: "Qty", old: "2", new: "3", outlet: "Madame Fan" }], from: "WhatsApp · Ms Tan · 10:52" });
-      const o2 = d.orders.find((x) => x.id === "o2");
-      if (o2) o2.state = "needs_check";
-    });
+    if (exportImported(s)) return shell.toast("Already imported");
+    update(importExport);
     shell.toast("41 messages read · 3 linked · 1 change to review");
   };
 
@@ -387,7 +373,7 @@ export function AddView() {
     </div>
   ) : null;
 
-  const step1Mail = s.cx.mail ? (
+  const step1Mail = mailboxOn(s) && cx.mail ? (
     <>
       <div className="lead">
         <div>
@@ -406,7 +392,7 @@ export function AddView() {
       </div>
       {mailList}
       <div className="hint">
-        {GROUP_LOGIN} · {s.cx.mail.kind} · checked {s.cx.mail.at} · PDFs are read on this device
+        {GROUP_LOGIN} · {cx.mail.kind} · checked {cx.mail.at} · PDFs are read on this device
       </div>
     </>
   ) : (
@@ -416,7 +402,7 @@ export function AddView() {
         <h2>The orders mailbox is not connected</h2>
       </div>
       {owner ? (
-        <Link className="btn p" href="/settings/connections" onClick={() => update((d) => void (d.cx.mailFlow = "pick"))}>
+        <Link className="btn p" href="/settings/connections" onClick={() => update((d) => mailFlow(d, "pick"))}>
           Connect a mailbox
         </Link>
       ) : (
@@ -425,7 +411,7 @@ export function AddView() {
     </div>
   );
 
-  const step1Wa = !s.cx.paste ? (
+  const step1Wa = !pasteOn(s) ? (
     <div className="lead">
       <div>
         <div className="step">Step 1</div>
@@ -471,7 +457,7 @@ export function AddView() {
         <button className="btn p" onClick={() => void readOrder()}>
           Read order
         </button>
-        <button className="btn g" onClick={() => setPaste(EXAMPLE)}>
+        <button className="btn g" onClick={() => setPaste(PASTE_EXAMPLE)}>
           Example
         </button>
       </div>

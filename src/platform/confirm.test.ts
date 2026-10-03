@@ -26,7 +26,7 @@ describe("the demo confirm", () => {
         source: "pdf",
         exported: true,
         confirmedBy: "Eunice",
-        file: { name: "PO_HH-2240.pdf", size: 4321, at: "2026-10-01 14:05", hash: "abcdef01", contentHash: "c0ffee" },
+        file: { name: "PO_HH-2240.pdf", size: 4321, at: "2026-10-01 14:05", hash: "abcdef01", contentHash: "c0ffee", layout: "Buynow" },
         lines: [
           { sku: "EGC-PTND", qty: 4, unit: "box", outlet: "Banquet kitchen", origin: "po" },
           { sku: "EGC-MBAS", qty: 2, unit: "box", outlet: "Banquet kitchen", origin: "po" },
@@ -48,9 +48,10 @@ describe("the demo confirm", () => {
     expect(unparsed).toEqual(["Hi, order for Mon pls", "thanks!"]);
     expect(rows[0].cells.salesNotes.value).toContain("Hi, order for Mon pls");
     const read: ReadOrder = { fileId: "wa1", fileName: "WhatsApp paste", size: 40, readerId: "whatsapp-paste", fingerprints: { fileHash: null, contentHash: "abc" }, order };
-    const out = confirmedFrom(await buildPayload([read], rows), seed(), { by: "Eunice", at: "2026-10-01 14:05", sizes: {} });
+    const out = confirmedFrom(await buildPayload([read], rows), seed(), { by: "Eunice", at: "2026-10-01 14:05", sizes: { "WhatsApp paste": 40 } });
     expect(out.orders[0]).toMatchObject({ cust: "C10388", po: "WA-C10388-0510", source: "whatsapp", lines: [{ sku: "EGC-PTND", qty: 4, unit: "box", outlet: "Main", origin: "po" }] });
-    expect(out.orders[0].file).toBeUndefined();
+    // The source card reads "WhatsApp paste" with the time it was read, as the prototype's parsePaste.
+    expect(out.orders[0].file).toEqual({ name: "WhatsApp paste", size: 40, at: "2026-10-01 14:05", hash: "", contentHash: "abc" });
     expect(out.events[0].text).toBe("Read WhatsApp order · 1 lines");
   });
 });

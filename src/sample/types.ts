@@ -57,6 +57,8 @@ export interface SourceFile {
   hash: string;
   /** The importer's fingerprint of the PDF's text, for recognising the same PO again. */
   contentHash?: string;
+  /** The layout reader that read it (Add orders); seeded orders use the customer's layout. */
+  layout?: string;
 }
 
 export interface Order {
