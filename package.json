@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "next": "16.3.8",
-    "po-importer": "github:neokh719/PO-Transformer-KH#egc/front-door",
+    "po-importer": "github:neokh719/PO-Transformer-KH#v0.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
