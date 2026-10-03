@@ -78,3 +78,6 @@ export const STATE: Record<OrderState, [cls: string, label: string, icon: IconNa
 };
 
 export const fileSize = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`);
+
+/** "YYYY-MM-DD HH:MM" on the demo's fixed today, at the current clock time (the prototype's nowStr). */
+export const nowStr = (d: Date = new Date()) => TODAY + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");

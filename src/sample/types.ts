@@ -55,6 +55,8 @@ export interface SourceFile {
   size: number;
   at: string;
   hash: string;
+  /** The importer's fingerprint of the PDF's text, for recognising the same PO again. */
+  contentHash?: string;
 }
 
 export interface Order {
@@ -119,13 +121,6 @@ export interface HistoryEntry {
   text: string;
 }
 
-export interface QueueFile {
-  name: string;
-  size: number;
-  st: "validating" | "ready" | "processing" | "parsed" | "partial" | "unsupported" | "failed" | "duplicate";
-  detail?: string;
-}
-
 export interface Connections {
   mail: { kind: string; at: string } | null;
   mailFlow: string | null;
@@ -159,7 +154,6 @@ export interface DemoState {
   aliases: Alias[];
   history: HistoryEntry[];
   drafts: { order: string; text: string }[];
-  queue: QueueFile[];
   comments: { order: string; at: string; who: string; text: string }[];
   keys: { id: string; label: string; who: string; masked: string }[];
   cols: string[] | null;
