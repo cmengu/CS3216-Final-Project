@@ -28,7 +28,6 @@ export function seed(): DemoState {
     aliases: seedAliases(),
     history: [],
     drafts: [],
-    queue: [],
     comments: [],
     keys: [],
     cols: null,

@@ -1,3 +1,5 @@
+import type { EgcColumnId } from "@/lib/importer";
+
 /* The Add orders table's columns and KH's header colours: yellow = from the PO, blue = from your lists, grey = computed. */
 export const COLS: readonly (readonly [name: string, bg: string])[] = [
   ["Sheet", "#FFD966"],
@@ -16,6 +18,25 @@ export const COLS: readonly (readonly [name: string, bg: string])[] = [
   ["PO Number", "#FFD966"],
   ["Sales Notes", "#FFD966"],
 ];
+
+/** Which importer column each on-screen column shows. "Sheet" is the PO's worksheet name, not an output column. */
+export const COL_ID: Readonly<Record<string, EgcColumnId | null>> = {
+  Sheet: null,
+  SKU: "sku",
+  "SKU Lookup": "skuLookup",
+  Quantity: "quantity",
+  Price: "price",
+  Total: "total",
+  "Order Date": "orderDate",
+  "Date Converted": "dateConverted",
+  Customer: "customer",
+  "Customer ID": "customerId",
+  "Delivery / Pickup": "deliveryOrPickup",
+  Location: "location",
+  "AM / PM": "session",
+  "PO Number": "poNumber",
+  "Sales Notes": "salesNotes",
+};
 
 export const LAYOUTS = { egc: "EGC Tracker", packing: "Packing sheet" } as const;
 

@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent worktrees and copied sample files are not this app's source.
+    ".claude/**",
+    "public/samples/**",
   ]),
 ]);
 
