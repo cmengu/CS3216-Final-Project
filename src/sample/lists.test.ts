@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+import { toRows, validate } from "@/lib/importer";
+import { harbourPo } from "@/test/po";
+import { buildLists } from "./lists";
+import { CUSTOMERS, PRODUCTS } from ".";
+import type { Alias } from "./types";
+
+describe("buildLists", () => {
+  const lists = buildLists();
+
+  it("lists every product and customer once", () => {
+    expect(lists.skus.map((s) => s.sku).sort()).toEqual(Object.keys(PRODUCTS).sort());
+    expect(lists.skus.find((s) => s.sku === "EGC-PTND")).toEqual({ sku: "EGC-PTND", description: "Pea tendrils 35g", unitPrice: 5.4 });
+    expect(lists.customers.map((c) => c.customerId).sort()).toEqual(Object.keys(CUSTOMERS).sort());
+    expect(lists.customers.find((c) => c.customerId === "C10402")).toEqual({ customerId: "C10402", name: "Riverside Club", location: "Members entrance", deliveryMethod: "Delivery", session: "Unspecified" });
+  });
+
+  it("carries approved aliases only", () => {
+    const aliases: Alias[] = [
+      { text: "pea shoots", sku: "EGC-PTND", state: "approved", by: "May" },
+      { text: "mystery leaf", sku: "EGC-MBAS", state: "proposed", by: null },
+      { text: "Edible flower mix (tray)", sku: null, state: "proposed", by: null },
+    ];
+    const texts = buildLists(PRODUCTS, CUSTOMERS, aliases).productAliases.map((a) => a.sourceText);
+    expect(texts).toContain("pea shoots");
+    expect(texts).not.toContain("mystery leaf");
+    expect(texts).not.toContain("Edible flower mix (tray)");
+  });
+
+  it("maps every outlet of a customer to its one Customer ID", () => {
+    const rows = toRows([harbourPo()], lists);
+    expect(rows.map((r) => r.cells.customerId.value)).toEqual(["C10243", "C10243", "C10243"]);
+    expect(rows.map((r) => r.source.outlet)).toEqual(["Banquet kitchen", "Banquet kitchen", "Room service"]);
+    expect(rows[0].cells.sku.value).toBe("EGC-PTND"); // approved alias "pea tendrils"
+    expect(rows[1].cells.sku.value).toBe("EGC-MBAS"); // the product's own name
+    expect(rows[2].cells.sku.origin).toBe("unresolved");
+    expect(validate(rows).blockers.some((b) => b.rowId === rows[2].id && b.field === "sku")).toBe(true);
+  });
+});
