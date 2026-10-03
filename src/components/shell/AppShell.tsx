@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { isPicked, useMounted } from "@/state/session";
 import { Agent } from "./Agent";
-import { ShellContext, type ShellApi } from "./context";
+import { ShellContext, type AssistantRequest, type ShellApi } from "./context";
 import { Kbar } from "./Kbar";
 import { Palette } from "./Palette";
 import { Rail } from "./Rail";
@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const picked = mounted && isPicked();
 
   const [agentOpen, setAgentOpen] = useState(false);
-  const [prefill, setPrefill] = useState("");
+  const [agentReq, setAgentReq] = useState<AssistantRequest & { n: number }>({ n: 0 });
   const [pal, setPal] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [toastText, setToastText] = useState("");
@@ -76,7 +76,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       },
       openAgent: (open, text) => {
         setAgentOpen(open);
-        if (text) setPrefill(text);
+        if (text) setAgentReq((r) => ({ n: r.n + 1, prompt: text }));
+      },
+      openAssistant: (req = {}) => {
+        setAgentOpen(true);
+        setAgentReq((r) => ({ ...req, n: r.n + 1 }));
       },
       agentOpen,
       openPalette: setPal,
@@ -120,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </main>
         <Agent
-          prefill={prefill}
+          req={agentReq}
           onResize={(w, done) => {
             setAgentW(w + "px");
             if (done) {
