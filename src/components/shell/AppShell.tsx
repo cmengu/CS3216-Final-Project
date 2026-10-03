@@ -4,7 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { isPicked, useMounted } from "@/state/session";
 import { Agent } from "./Agent";
-import { ShellContext, type AssistantRequest, type ShellApi } from "./context";
+import { RouteGuard, useRouteAllowed } from "./Guard";
+import { ShellContext, type AssistantRequest, type PaneState, type ShellApi } from "./context";
 import { Kbar } from "./Kbar";
 import { Palette } from "./Palette";
 import { Rail } from "./Rail";
@@ -21,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const picked = mounted && isPicked();
+  const allowed = useRouteAllowed();
 
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentReq, setAgentReq] = useState<AssistantRequest & { n: number }>({ n: 0 });
@@ -39,6 +41,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mainRef = useRef<HTMLElement>(null);
   const [lastPath, setLastPath] = useState(pathname);
+  const [pane, setPane] = useState<PaneState>("off");
+  const [paneHost, setPaneHost] = useState<HTMLElement | null>(null);
 
   // A new page: close the mobile rail (state adjusted during render, as React recommends).
   if (lastPath !== pathname) {
@@ -85,8 +89,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       agentOpen,
       openPalette: setPal,
       toggleRail: () => setRailOpen((v) => !v),
+      paneHost,
+      setPane,
     }),
-    [toast, agentOpen],
+    [toast, agentOpen, paneHost],
   );
 
   useEffect(() => {
@@ -117,11 +123,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     <ShellContext.Provider value={api}>
       <div className={`app${agentOpen ? " agent-open" : ""}`} id="app" style={style}>
         <Rail open={railOpen} />
-        <main className="main" id="main" ref={mainRef}>
+        <main className={`main${pane === "on" ? " withpane" : ""}`} id="main" ref={mainRef}>
           <div className="content">
-            {children}
-            <Kbar kind={LIST_ROUTES.includes(pathname) ? "list" : "page"} />
+            <RouteGuard>{children}</RouteGuard>
+            <Kbar kind={allowed && LIST_ROUTES.includes(pathname) ? "list" : "page"} />
           </div>
+          {pane !== "off" ? <aside className="pane" ref={setPaneHost} /> : null}
         </main>
         <Agent
           req={agentReq}

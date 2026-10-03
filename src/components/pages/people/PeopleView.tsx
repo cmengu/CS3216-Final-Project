@@ -13,7 +13,7 @@ import { canEdit, canInvoice, canPrice, isOwner, needsPin } from "@/platform/acc
 import { GROUP_LOGIN, ROLES } from "@/sample";
 import type { Person, Role } from "@/sample";
 import { addPerson } from "@/state/actions/people";
-import { meOf, useDemo } from "@/state/demo-store";
+import { useDemo } from "@/state/demo-store";
 import { pick } from "@/state/session";
 import { initials } from "@/lib/format";
 
@@ -25,20 +25,11 @@ const asRole = (role: Role): Person => ({ id: "", name: "", email: "", role, cus
 
 export function PeopleView() {
   const s = useDemo();
-  const u = meOf(s);
   const shell = useShell();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const blank = { name: "", email: "", role: "owner" as Role, customer: "all" };
   const [form, setForm] = useState(blank);
-
-  if (!isOwner(u))
-    return (
-      <>
-        <Header>Not found</Header>
-        <div className="body" />
-      </>
-    );
 
   // The prototype's askWho(): Owner and Finance confirm with a PIN unless it is already them.
   const askWho = (id: string) => {

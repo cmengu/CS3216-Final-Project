@@ -21,7 +21,13 @@ export interface ShellApi {
   agentOpen: boolean;
   openPalette: (open: boolean) => void;
   toggleRail: () => void;
+  /** The side pane beside the page (the order page's customer pane); null while no page has one. */
+  paneHost: HTMLElement | null;
+  /** "on" shows the pane in its column, "hidden" drops the column (the pane's Hide), "off" removes it. */
+  setPane: (state: PaneState) => void;
 }
+
+export type PaneState = "off" | "on" | "hidden";
 
 export const ShellContext = createContext<ShellApi | null>(null);
 

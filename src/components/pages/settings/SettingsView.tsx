@@ -6,9 +6,8 @@
  */
 import Link from "next/link";
 import { Header } from "@/components/shell/Header";
-import { isOwner } from "@/platform/access";
 import { SETTINGS_PANES } from "@/platform/nav";
-import { meOf, useDemo } from "@/state/demo-store";
+import { useDemo } from "@/state/demo-store";
 import { connOn } from "@/state/selectors/connections";
 import { AliasesPane, AssistantPane, ListsPane, RetentionPane } from "./Panes";
 import { ConnectionsPane } from "./Connections";
@@ -26,13 +25,6 @@ const PANES: Record<PaneId, () => React.JSX.Element> = {
 
 export function SettingsView({ pane }: { pane: PaneId }) {
   const s = useDemo();
-  if (!isOwner(meOf(s)))
-    return (
-      <>
-        <Header>Not found</Header>
-        <div className="body" />
-      </>
-    );
   const prop = s.aliases.filter((a) => a.state === "proposed").length;
   const on = connOn(s);
   const title = SETTINGS_PANES.find((t) => t[0] === pane)![1];

@@ -22,7 +22,6 @@ export function InvoicesView() {
   const u = meOf(s);
   const shell = useShell();
   const [tab, setTab] = useState<InvoiceTab>("open");
-  if (!canInvoice(u)) return <Header>Not found</Header>;
 
   const price = canPrice(u);
   const { open, done } = invoiceLists(s, u);
