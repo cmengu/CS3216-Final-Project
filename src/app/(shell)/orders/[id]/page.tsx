@@ -1,6 +1,7 @@
-import { OrderStub } from "@/components/pages/Stubs";
+import { OrderView } from "@/components/pages/orders/OrderView";
+import "@/app/styles/orders.css";
 
 export default async function Page({ params }: PageProps<"/orders/[id]">) {
   const { id } = await params;
-  return <OrderStub id={id} />;
+  return <OrderView key={id} id={id} />;
 }
