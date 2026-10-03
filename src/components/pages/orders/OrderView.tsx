@@ -31,7 +31,7 @@ import {
   viewPrices,
 } from "@/state/actions/orders";
 import { meOf, subscribe, useDemo } from "@/state/demo-store";
-import { evIcon, fmtDay, lc, money, orderTotal, ref, relDay } from "@/lib/format";
+import { evIcon, fmtDay, lc, money, orderTotal, ref, relDay, custOf } from "@/lib/format";
 import { SourceCard } from "./SourceCard";
 import { activityByDay, orderText, stepsOf, summarise, type Rich } from "./logic";
 
@@ -164,7 +164,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
   const shell = useShell();
   const [cmt, setCmt] = useState(false);
   const cmtRef = useRef<HTMLTextAreaElement>(null);
-  const c = s.customers[o.cust];
+  const c = custOf(s.customers, o.cust);
   const ev = s.events.filter((e) => e.order === o.id);
   const msgs = s.messages.filter((m) => m.order === o.id);
   const cmts = s.comments.filter((x) => x.order === o.id);

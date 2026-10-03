@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Sprout } from "@/components/Sprout";
-import { ref } from "@/lib/format";
+import { ref, custOf } from "@/lib/format";
 import { visibleOrders } from "@/platform/access";
 import { ask, suggestions, summarisePrompt, type Answer } from "@/platform/assistant";
 import { TODAY } from "@/sample";
@@ -246,7 +246,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
             {ctxOrder ? (
               <span className="tag">
                 <Icon name="doc" />
-                {ref(ctxOrder)} · {s.customers[ctxOrder.cust].name}
+                {ref(ctxOrder)} · {custOf(s.customers, ctxOrder.cust).name}
                 <button type="button" onClick={() => setCtx(null)} aria-label="Remove context" style={{ marginLeft: 2, color: "var(--ink3)" }}>
                   ×
                 </button>

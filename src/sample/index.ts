@@ -40,6 +40,8 @@ export function seed(): DemoState {
     },
     cx: { mail: null, mailFlow: null, paste: false, wa: null },
     mailbox: null,
+    queue: [],
+    notice: "",
     user: "u2",
     chat: [],
     seq: 100,

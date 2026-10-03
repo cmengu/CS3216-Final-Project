@@ -5,7 +5,7 @@
 import { canEdit, navAllowed, seesCustomer, visibleOrders } from "@/platform/access";
 import { NAV, type NavItem } from "@/platform/nav";
 import type { DemoState, Person } from "@/sample";
-import { ref, relDay, STATE } from "@/lib/format";
+import { ref, relDay, STATE, custOf } from "@/lib/format";
 
 export type PaletteAction = "add" | "ask" | "theme";
 
@@ -20,9 +20,9 @@ export function paletteHits(s: DemoState, me: Person, query: string): PaletteHit
   const q = query.trim().toLowerCase();
   const out: PaletteHit[] = [];
   visibleOrders(s.orders, me)
-    .filter((o) => !q || (s.customers[o.cust].name + " " + ref(o) + " " + STATE[o.state][1]).toLowerCase().includes(q))
+    .filter((o) => !q || (custOf(s.customers, o.cust).name + " " + ref(o) + " " + STATE[o.state][1]).toLowerCase().includes(q))
     .slice(0, q ? 8 : 4)
-    .forEach((o) => out.push({ g: "Orders", kind: "order", id: o.id, ref: ref(o), name: s.customers[o.cust].name, m: `${STATE[o.state][1]} · ${relDay(o.date)}` }));
+    .forEach((o) => out.push({ g: "Orders", kind: "order", id: o.id, ref: ref(o), name: custOf(s.customers, o.cust).name, m: `${STATE[o.state][1]} · ${relDay(o.date)}` }));
   Object.values(s.customers)
     .filter((c) => seesCustomer(me, c.id) && (!q || c.name.toLowerCase().includes(q)))
     .slice(0, q ? 5 : 3)

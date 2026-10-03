@@ -12,6 +12,11 @@ export {
   writeExcel,
   clipboardText,
   setManualValue,
+  pickSku,
+  pickCustomer,
+  salesNotesParts,
+  readerLabel,
+  findDuplicate,
   cellText,
   enqueueFiles,
   fileFingerprint,
@@ -34,6 +39,7 @@ export type {
   EgcCustomerAlias,
   EgcCustomerRecord,
   EgcFingerprints,
+  EgcKnownFingerprints,
   EgcMasterData,
   EgcOrderSource,
   EgcOutputRow,
@@ -47,15 +53,3 @@ export type {
   EgcValidationIssue,
   EgcValidationResult,
 } from "po-importer";
-
-/**
- * The name staff see for the layout reader that read a PDF. The library returns only the
- * reader's id with a result and does not export its readers' labels yet, so the labels are
- * written out here; an id not listed shows as itself.
- */
-const READER_LABELS: Record<string, string> = {
-  buynow: "Buynow",
-  "shangri-la": "Shangri-La",
-  "marriott-platform": "Hotel platform",
-};
-export const readerLabel = (readerId: string): string => READER_LABELS[readerId] ?? readerId;

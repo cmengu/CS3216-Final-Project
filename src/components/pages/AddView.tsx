@@ -12,36 +12,29 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
-import { buildPayload, copyTable, exportColumns, exportRows, pickSku, proposeAlias, sheetOf } from "@/lib/add-orders";
+import { addDrafts, copyTable, exportColumns, rowIndex, sheetOf, tableRows } from "@/lib/add-orders";
 import { activeCols, COL_ID, COLS, colOn, LAYOUTS, QL, stClass, toggleCol } from "@/lib/columns";
 import { addDays, fileSize, fmtDay, money, nowStr } from "@/lib/format";
-import {
-  cellText,
-  EGC_OUTPUT_COLUMNS,
-  groupPoSheets,
-  setManualValue,
-  validate,
-  writeExcel,
-  type EgcColumnId,
-  type EgcOutputRow,
-} from "@/lib/importer";
-import { sampleFiles } from "@/lib/samples";
+import { cellText, EGC_OUTPUT_COLUMNS, groupPoSheets, salesNotesParts, validate, writeExcel, type EgcColumnId, type EgcOutputRow } from "@/lib/importer";
 import { canEdit, canPrice } from "@/platform/access";
-import { submitConfirm } from "@/platform/confirm";
 import { GROUP_LOGIN, PRODUCTS, TODAY } from "@/sample";
 import { PASTE_EXAMPLE } from "@/sample/mail";
 import {
+  addFromMail as queueMail,
   addPaste,
-  assignCustomer,
+  addSample as queueSamples,
   clearQueue,
-  editRow,
+  confirmAll as confirmDrafts,
+  pick as pickSku,
+  pickCustomer,
   processFiles,
   removeFile,
   retryFailed,
+  setCell,
+  setQty,
   stageFiles,
   startOver,
-  useAddBatch,
-} from "@/state/add-batch";
+} from "@/state/actions/add";
 import { checkMail as markChecked, dropExport as importExport, exportImported, mailFlow } from "@/state/actions/settings";
 import { meOf, update, useDemo } from "@/state/demo-store";
 import { conn, mailboxFiles, mailboxOn, pasteOn } from "@/state/selectors/connections";
@@ -52,7 +45,6 @@ export function AddView() {
   const u = meOf(s);
   const shell = useShell();
   const router = useRouter();
-  const b = useAddBatch();
   const [colpop, setColpop] = useState(false);
   const [over, setOver] = useState(false);
   const [paste, setPaste] = useState("");
@@ -87,7 +79,7 @@ export function AddView() {
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
-  const q = b.files;
+  const q = s.queue;
   const ready = q.filter((f) => f.st === "ready");
   const failed = q.filter((f) => f.st === "failed" || f.st === "unsupported");
   const done = q.filter((f) => f.st === "parsed" || f.st === "partial");
@@ -96,27 +88,22 @@ export function AddView() {
   const names = cols.map((c) => c[0]);
   const setSrc = (src: typeof s.src) => update((d) => void (d.src = src));
 
-  const rows = b.rows;
+  // The Step 3 table is the drafts that came from Add orders (the prototype's `drafts`), drawn from their stored rows.
+  const drafts = useMemo(() => addDrafts(s.orders), [s.orders]);
+  const rows = useMemo(() => tableRows(drafts), [drafts]);
+  const where = useMemo(() => rowIndex(drafts), [drafts]);
   const { blockers, warnings } = useMemo(() => validate(rows), [rows]);
   const sheets = useMemo(() => sheetOf(rows), [rows]);
   const red = blockers.length > 0;
-  const pos = new Set(rows.map((r) => r.source.sourceId)).size;
+  const pos = drafts.length;
   const priceNote = new Map(warnings.filter((w) => w.field === "price" && w.rowId).map((w) => [w.rowId!, w.message]));
 
   const addSample = async () => {
-    const files = await sampleFiles();
-    if (!files.length) return shell.toast("No sample POs yet");
-    void stageFiles(files);
+    if (!(await queueSamples())) shell.toast("No sample POs yet");
   };
 
   const addFromMail = async () => {
-    const files = await sampleFiles(mail.filter((m) => !q.some((f) => f.name === m.file)).map((m) => m.file));
-    if (!files.length) return shell.toast("No sample POs yet");
-    update((d) => {
-      d.mailbox = mail.filter((m) => !files.some((f) => f.name === m.file));
-      d.src = "pdf";
-    });
-    void stageFiles(files);
+    if (!(await queueMail(mail))) shell.toast("No sample POs yet");
   };
 
   const checkMail = () => {
@@ -136,22 +123,20 @@ export function AddView() {
     shell.toast("41 messages read · 3 linked · 1 change to review");
   };
 
-  const lineDesc = (r: EgcOutputRow) =>
-    b.reads.find((x) => x.fileId === r.source.sourceId)?.order.lines.find((l) => l.lineNumber === r.source.lineNumber)?.description ?? r.cells.sku.sourceText ?? "";
+  /** The row's draft and line. */
+  const at = (r: EgcOutputRow) => where.get(r.id)!;
+  const lineDesc = (r: EgcOutputRow) => at(r).order.lines[at(r).i]?.desc ?? r.cells.sku.sourceText ?? "";
 
   const pick = (r: EgcOutputRow, sku: string) => {
-    const p = PRODUCTS[sku];
-    if (!p) return;
-    const desc = lineDesc(r);
-    editRow(r.id, (x) => pickSku(x, p));
-    update((d) => void (d.aliases = proposeAlias(d.aliases, desc, sku, r.cells.poNumber.value ?? "")));
-    shell.toast(`“${desc}” → ${sku} · alias proposed`);
+    if (!PRODUCTS[sku]) return;
+    const t = pickSku(at(r).order.id, r.id, sku);
+    if (t) shell.toast(t);
   };
 
   const copy = () => shell.copyText(copyTable(rows, names, priced), `Copied ${rows.length} rows`);
 
   const download = async () => {
-    const blob = await writeExcel(exportRows(rows, priced), { columnOrder: exportColumns(names, priced) });
+    const blob = await writeExcel(rows, { columnOrder: exportColumns(names, priced), omitPrices: !priced });
     // The prototype's file name and toast: one sheet per PO.
     const name = "EGC Tracker.xlsx";
     const a = document.createElement("a");
@@ -164,9 +149,7 @@ export function AddView() {
   };
 
   const confirmAll = async () => {
-    const payload = await buildPayload(b.reads, rows);
-    const n = await submitConfirm(payload, Object.fromEntries(b.reads.map((r) => [r.fileName, r.size])));
-    startOver();
+    const n = await confirmDrafts();
     router.push("/orders");
     shell.toast(`${n} order${n === 1 ? "" : "s"} confirmed`);
   };
@@ -202,23 +185,25 @@ export function AddView() {
     }
     if (id === "quantity") {
       // The line's unit as the prototype shows it: the product's own unit once a SKU is known, else the PO's.
-      const sku = r.cells.sku.value;
-      const unit = ((sku && PRODUCTS[sku]?.unit) || c.sourceText || "").toLowerCase();
+      const { order, i } = at(r);
+      // The prototype's setQty runs on the input's change event: when the value is committed, not on every key.
+      const commit = (el: HTMLInputElement) => {
+        if (String(c.value ?? "") !== el.value) setQty(order.id, r.id, el.value);
+      };
       return td(
         c.value === null ? "flag" : "",
         <div className="cv">
           <input
+            key={String(c.value)}
             type="number"
             min={1}
             defaultValue={c.value ?? ""}
             style={{ width: 56, padding: "2px 6px", border: 0, background: "transparent", font: "inherit" }}
-            onChange={(e) => {
-              const v = parseInt(e.target.value, 10);
-              if (v >= 1) editRow(r.id, (x) => setManualValue(x, "quantity", v));
-            }}
+            onBlur={(e) => commit(e.currentTarget)}
+            onKeyDown={(e) => e.key === "Enter" && commit(e.currentTarget)}
             aria-label="Quantity"
           />{" "}
-          {unit}
+          {order.lines[i]?.unit ?? ""}
         </div>,
         null,
         n,
@@ -231,7 +216,7 @@ export function AddView() {
     if (id === "customer" && un) {
       return td(
         "flag",
-        <select value="" onChange={(e) => e.target.value && assignCustomer(r.source.sourceId, e.target.value)} aria-label="Pick customer">
+        <select value="" onChange={(e) => e.target.value && pickCustomer(at(r).order.id, e.target.value)} aria-label="Pick customer">
           <option value="">No match</option>
           {Object.values(s.customers).map((x) => (
             <option key={x.id} value={x.id}>
@@ -248,7 +233,7 @@ export function AddView() {
       return td(
         "flag",
         <div className="cv">
-          <input type="date" style={{ padding: "2px 6px", border: 0, background: "transparent", font: "inherit" }} onChange={(e) => e.target.value && editRow(r.id, (x) => setManualValue(x, "orderDate", e.target.value))} aria-label="Order Date" />
+          <input type="date" style={{ padding: "2px 6px", border: 0, background: "transparent", font: "inherit" }} onChange={(e) => e.target.value && setCell(at(r).order.id, r.id, "orderDate", e.target.value)} aria-label="Order Date" />
         </div>,
         null,
         n,
@@ -258,13 +243,15 @@ export function AddView() {
       return td(
         "flag",
         <div className="cv">
-          <input style={{ width: 110, padding: "2px 6px", border: 0, background: "transparent", font: "inherit" }} onBlur={(e) => e.target.value.trim() && editRow(r.id, (x) => setManualValue(x, "poNumber", e.target.value.trim()))} aria-label="PO Number" />
+          <input style={{ width: 110, padding: "2px 6px", border: 0, background: "transparent", font: "inherit" }} onBlur={(e) => e.target.value.trim() && setCell(at(r).order.id, r.id, "poNumber", e.target.value.trim())} aria-label="PO Number" />
         </div>,
         null,
         n,
       );
     }
-    const text = id === "dateConverted" ? (c.value ? fmtDay(String(c.value)) : "") : cellText(r, colDef(id));
+    // Sales Notes without the "PO price" note for people who cannot see prices.
+    const text =
+      id === "dateConverted" ? (c.value ? fmtDay(String(c.value)) : "") : id === "salesNotes" && !priced ? salesNotesParts(r).remarks : cellText(r, colDef(id));
     const mono = id === "customerId" || id === "poNumber";
     return td(un && id !== "salesNotes" ? "flag" : "", cv(text, mono), null, n);
   };
@@ -299,7 +286,7 @@ export function AddView() {
       <div className="drop" tabIndex={0}>
         <b>Drop PDFs here</b>or paste an email attachment
       </div>
-      {b.notice ? <div className="hint">{b.notice}</div> : null}
+      {s.notice ? <div className="hint">{s.notice}</div> : null}
       {q.length ? (
         <>
           <div className="lead" style={{ marginTop: 6 }}>

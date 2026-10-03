@@ -6,7 +6,7 @@
 import { visibleOrders } from "@/platform/access";
 import { TODAY } from "@/sample";
 import type { DemoState, Order, Person } from "@/sample";
-import { addDays, ref, relDay, STATE } from "@/lib/format";
+import { addDays, ref, relDay, STATE, custOf } from "@/lib/format";
 import { tools, type FindParams } from "./tools";
 
 export interface Step {
@@ -46,7 +46,7 @@ export interface AskOptions {
   clock?: () => number;
 }
 
-const title = (s: DemoState, o: Order) => `${s.customers[o.cust].name} · ${ref(o)}`;
+const title = (s: DemoState, o: Order) => `${custOf(s.customers, o.cust).name} · ${ref(o)}`;
 
 export function ask(s: DemoState, me: Person, raw: string, opt: AskOptions = {}): Answer {
   const clock = opt.clock ?? (() => performance.now());
@@ -95,7 +95,7 @@ export function ask(s: DemoState, me: Person, raw: string, opt: AskOptions = {})
     if (wantsDay) p.date = /friday|tomorrow/.test(q) ? addDays(TODAY, 1) : /monday/.test(q) ? addDays(TODAY, 4) : TODAY;
     if (!custName && !wantsOpen && !wantsDay && !wantsNeeds && !refs.length && orderId) {
       const o = mine.find((x) => x.id === orderId)!;
-      p.customer = s.customers[o.cust].name.toLowerCase();
+      p.customer = custOf(s.customers, o.cust).name.toLowerCase();
       p.state = "open";
     }
     const found = T.find_orders(p);
@@ -117,7 +117,7 @@ export function ask(s: DemoState, me: Person, raw: string, opt: AskOptions = {})
       });
     }
     const lines = found.reduce((a, o) => a + o.lines.length, 0);
-    records = found.map((o) => ({ id: o.id, text: `${ref(o)} · ${s.customers[o.cust].name} · ${o.lines.length} lines`, meta: `${STATE[o.state][1]} · ${relDay(o.date)}` }));
+    records = found.map((o) => ({ id: o.id, text: `${ref(o)} · ${custOf(s.customers, o.cust).name} · ${o.lines.length} lines`, meta: `${STATE[o.state][1]} · ${relDay(o.date)}` }));
     prose = found.length
       ? `${found.length} order${found.length > 1 ? "s" : ""}, ${lines} lines.${found.some((o) => o.state === "needs_check") ? " One has a revision waiting." : ""}${found.some((o) => o.state === "blocked") ? " One is blocked on a SKU." : ""}`
       : "Nothing matches.";

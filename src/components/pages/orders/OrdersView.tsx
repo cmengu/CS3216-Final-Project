@@ -12,7 +12,7 @@ import { canDeliver, canEdit } from "@/platform/access";
 import type { Order } from "@/sample";
 import { bulkDeliver, deliver, run } from "@/state/actions/orders";
 import { meOf, useDemo } from "@/state/demo-store";
-import { ref, relDay } from "@/lib/format";
+import { ref, relDay, custOf } from "@/lib/format";
 import { filterCustomers, groupOrders, mineOf, orderText, searchKey, TABIC, tabsFor, whyText, type Sort } from "./logic";
 
 // The prototype keeps the customer filter and grouping on its in-memory state (S._fc, S._sort):
@@ -55,7 +55,7 @@ export function OrdersView() {
   const { tabs, counts } = tabsFor(mine);
   const groups = groupOrders(mine, s.customers, f, fc, sort);
   const custs = filterCustomers(s, u);
-  const cust = (o: Order) => s.customers[o.cust];
+  const cust = (o: Order) => custOf(s.customers, o.cust);
   const shown = (o: Order) => searchKey(o, cust(o)).includes(q.toLowerCase());
   const rows = groups.flatMap((g) => g.items).filter(shown);
   const curId = cur >= 0 && cur < rows.length ? rows[cur].id : null;

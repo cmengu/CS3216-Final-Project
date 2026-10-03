@@ -4,7 +4,7 @@
  */
 import type { DemoState, Order, OrderEvent, Person } from "@/sample";
 import { canPrice, visibleOrders } from "@/platform/access";
-import { orderTotal, ref } from "@/lib/format";
+import { orderTotal, ref, custOf } from "@/lib/format";
 
 export type InvoiceTab = "open" | "done";
 
@@ -47,7 +47,7 @@ export function invoiceCsv(s: Pick<DemoState, "orders" | "customers">, u: Person
     "Customer,Customer ID,PO,Delivered,Lines,Total,Invoice",
     ...list.map(
       (o) =>
-        `${s.customers[o.cust].name},${o.cust},${ref(o)},${o.date},${o.lines.length},${canPrice(u) ? orderTotal(o).toFixed(2) : ""},${o.invoiced || ""}`,
+        `${custOf(s.customers, o.cust).name},${o.cust},${ref(o)},${o.date},${o.lines.length},${canPrice(u) ? orderTotal(o).toFixed(2) : ""},${o.invoiced || ""}`,
     ),
   ].join("\n");
 }

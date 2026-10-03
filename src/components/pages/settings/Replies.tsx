@@ -7,7 +7,7 @@ import type { ReplyOptions } from "@/sample";
 import { useDemo, update } from "@/state/demo-store";
 import { setReplyStyle, toggleReply } from "@/state/actions/settings";
 import { ackTextFor, replyOpt } from "@/lib/ack-text";
-import { ref } from "@/lib/format";
+import { ref, custOf } from "@/lib/format";
 
 /** The previewed order, kept for the session as the prototype keeps S._rs. */
 let keptRs = "o1";
@@ -79,7 +79,7 @@ export function RepliesPane() {
               .slice(0, 5)
               .map((o) => (
                 <option key={o.id} value={o.id}>
-                  {s.customers[o.cust].name} · {ref(o)}
+                  {custOf(s.customers, o.cust).name} · {ref(o)}
                 </option>
               ))}
           </select>

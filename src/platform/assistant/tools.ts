@@ -5,7 +5,7 @@
  */
 import { canPrice, visibleOrders } from "@/platform/access";
 import type { DemoState, Order, OrderEvent, Person } from "@/sample";
-import { ref } from "@/lib/format";
+import { ref, custOf } from "@/lib/format";
 
 export interface FindParams {
   /** Lower-cased customer name; matches when the customer's name contains it. */
@@ -34,7 +34,7 @@ export function tools(s: DemoState, me: Person): Tools {
     find_orders: (p) =>
       orders().filter(
         (o) =>
-          (!p.customer || s.customers[o.cust].name.toLowerCase().includes(p.customer)) &&
+          (!p.customer || custOf(s.customers, o.cust).name.toLowerCase().includes(p.customer)) &&
           (!p.state ||
             (p.state === "open"
               ? !["delivered", "draft"].includes(o.state)

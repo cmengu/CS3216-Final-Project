@@ -1,99 +1,42 @@
 /*
  * Confirm. The one place that would POST the reviewed rows to the server; for the demo there
- * is no database yet, so submitConfirm writes confirmed orders into the demo store instead,
- * in the shape the seeded orders use, with the events the prototype's confirmAll records.
+ * is no database yet, so submitConfirm turns the drafts the payload was built from into
+ * confirmed orders in the demo store, with the events the prototype's confirmAll records.
  */
-import { readerLabel, type ConfirmPayload, type EgcOutputRow } from "@/lib/importer";
-import { nowStr } from "@/lib/format";
-import { PRODUCTS } from "@/sample";
-import { outletOf } from "@/sample/lists";
-import type { DemoState, HistoryEntry, Order, OrderEvent, OrderLine } from "@/sample";
+import type { ConfirmPayload } from "@/lib/importer";
+import { custOf, nowStr } from "@/lib/format";
+import type { DemoState } from "@/sample";
+import { addEvent, type Ctx } from "@/state/actions/orders";
 import { getState, meOf, update } from "@/state/demo-store";
 
-/** What the demo store needs besides the payload. The server gets these from the session and the upload record. */
-export interface ConfirmContext {
-  by: string;
-  at: string;
-  /** File sizes by file name, for the order's source-file card. */
-  sizes: Record<string, number>;
-}
-
-function lineOf(row: EgcOutputRow, s: Pick<DemoState, "customers">, cust: string): OrderLine {
-  const sku = row.cells.sku.value;
-  // The product's own unit, as the seeded orders and the prototype show it; the PO's unit only for a line with no SKU.
-  const unit = ((sku && PRODUCTS[sku]?.unit) || row.cells.quantity.sourceText || "box").toLowerCase();
-  const manual = Object.values(row.cells).some((c) => c.origin === "manual" && c.value !== null);
-  return {
-    sku,
-    qty: row.cells.quantity.value ?? 0,
-    unit,
-    outlet: (row.source.outlet && outletOf(cust, row.source.outlet)) || s.customers[cust]?.outlets[0] || "",
-    origin: manual ? "manual" : "po",
-  };
-}
-
 /**
- * The confirmed orders and their events, from a payload. A PO whose rows name several
- * customers becomes one order per customer.
+ * The prototype's confirmAll on these drafts: each becomes confirmed and exported, keeps its id,
+ * leaves the Add orders table, and gets the read, confirmed and exported events.
  */
-export function confirmedFrom(payload: ConfirmPayload, s: Pick<DemoState, "customers" | "seq">, ctx: ConfirmContext) {
-  let seq = s.seq;
-  const orders: Order[] = [];
-  const events: OrderEvent[] = [];
-  const history: HistoryEntry[] = [];
-  const ev = (order: string, kind: string, actor: string, text: string) => {
-    events.push({ order, at: ctx.at, kind, actor, text });
-    history.push({ at: ctx.at, who: actor, kind, order, text });
-  };
-  for (const co of payload.orders) {
-    const byCust = new Map<string, EgcOutputRow[]>();
-    for (const r of co.rows) {
-      const c = r.cells.customerId.value ?? "";
-      byCust.set(c, [...(byCust.get(c) ?? []), r]);
-    }
-    for (const [cust, rows] of byCust) {
-      const po = rows[0].cells.poNumber.value?.trim() || null;
-      const o: Order = {
-        id: "o" + ++seq,
-        cust,
-        po,
-        date: rows[0].cells.orderDate.value ?? ctx.at.slice(0, 10),
-        state: "confirmed",
-        source: co.source.kind === "pdf" ? "pdf" : "whatsapp",
-        exported: true,
-        confirmedBy: ctx.by,
-        lines: rows.map((r) => lineOf(r, s, cust)),
-      };
-      const fp = co.fingerprints;
-      if (co.source.kind === "pdf") {
-        const name = co.source.fileName;
-        o.file = { name, size: ctx.sizes[name] ?? 0, at: ctx.at, hash: (fp.fileHash ?? fp.contentHash).slice(0, 8), contentHash: fp.contentHash, layout: readerLabel(co.readerId) };
-      } else {
-        // As the prototype's parsePaste: the paste is the order's source, with no file fingerprint.
-        o.file = { name: "WhatsApp paste", size: ctx.sizes["WhatsApp paste"] ?? 0, at: ctx.at, hash: "", contentHash: fp.contentHash };
-      }
-      orders.push(o);
-      const n = o.lines.length;
-      ev(o.id, "read", "Reader", `Read ${o.source === "pdf" && po ? `PO ${po} (${readerLabel(co.readerId)} layout)` : "WhatsApp order"} · ${n} lines`);
-      ev(o.id, "confirmed", ctx.by, `Confirmed ${n} lines`);
-      ev(o.id, "exported", ctx.by, "Exported to Excel");
-    }
+export function confirmDrafts(s: DemoState, c: Ctx, ids: readonly string[]) {
+  for (const id of ids) {
+    const o = s.orders.find((x) => x.id === id);
+    if (!o) continue;
+    o.state = "confirmed";
+    o.fromAdd = false;
+    o.confirmedBy = c.me;
+    o.exported = true;
+    const n = o.lines.length;
+    const layout = o.file?.layout || custOf(s.customers, o.cust).layout || "PDF";
+    addEvent(s, c, id, "read", `Read ${o.po ? `PO ${o.po} (${layout} layout)` : "WhatsApp order"} · ${n} lines`, "Reader");
+    addEvent(s, c, id, "confirmed", `Confirmed ${n} lines`);
+    addEvent(s, c, id, "exported", "Exported to Excel");
   }
-  return { orders, events, history, seq };
 }
 
 /**
- * Sends the confirmed batch. Later: POST /api/orders/confirm with the payload. Today: writes the
- * orders into the demo store. Returns how many orders were confirmed.
+ * Sends the confirmed batch. Later: POST /api/orders/confirm with the payload, and the server
+ * creates the orders. Today: the drafts it was built from (ids, in the payload's order) become
+ * confirmed orders in the demo store. Returns how many orders were confirmed.
  */
-export async function submitConfirm(payload: ConfirmPayload, sizes: Record<string, number> = {}): Promise<number> {
-  const s = getState();
-  const made = confirmedFrom(payload, s, { by: meOf(s).name, at: nowStr(), sizes });
-  update((d) => {
-    d.orders.push(...made.orders);
-    d.events.push(...made.events);
-    d.history.push(...made.history);
-    d.seq = made.seq;
-  });
-  return made.orders.length;
+export async function submitConfirm(payload: ConfirmPayload, ids: readonly string[]): Promise<number> {
+  if (payload.orders.length !== ids.length) throw new Error("Each confirmed order needs its draft");
+  const c: Ctx = { me: meOf(getState()).name, at: nowStr() };
+  update((d) => confirmDrafts(d, c, ids));
+  return ids.length;
 }

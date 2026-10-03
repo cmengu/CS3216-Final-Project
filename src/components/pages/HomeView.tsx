@@ -12,11 +12,11 @@ import { TODAY } from "@/sample";
 import type { DemoState, Order, Person } from "@/sample";
 import { meOf, update, useDemo } from "@/state/demo-store";
 import { markGreeted, shouldGreet } from "@/state/session";
-import { addDays, dayLabel, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, relDay, slotText } from "@/lib/format";
+import { addDays, dayLabel, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, relDay, slotText, custOf } from "@/lib/format";
 
 /** The Handover digest, one line per item, as plain text. */
 export function digestLines(s: DemoState, u: Person, mine: Order[]): string[] {
-  const c = (o: Order) => s.customers[o.cust];
+  const c = (o: Order) => custOf(s.customers, o.cust);
   const tmr = addDays(TODAY, 1);
   const out: string[] = [];
   const tO = mine.filter((o) => o.date === tmr && o.state !== "delivered");
@@ -47,7 +47,7 @@ export function HomeView() {
   const [greet] = useState(shouldGreet);
   useEffect(markGreeted, []);
 
-  const cust = (o: Order) => s.customers[o.cust];
+  const cust = (o: Order) => custOf(s.customers, o.cust);
   const mine = visibleOrders(s.orders, u);
   const edit = canEdit(u);
   const waiting = edit ? s.toCheck : [];

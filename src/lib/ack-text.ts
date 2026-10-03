@@ -5,6 +5,7 @@
 import { COMPANY, PRODUCTS } from "@/sample";
 import type { Customer, DemoState, Order, Product, ReplyOptions, Settings } from "@/sample";
 import { fmtDay } from "./format";
+import { custOf } from "@/lib/format";
 
 export const DEFAULT_REPLY: ReplyOptions = { lines: true, date: true, sign: true };
 
@@ -40,5 +41,5 @@ export function ackText(o: Pick<Order, "po" | "date" | "lines">, ctx: AckContext
 /** ackText with everything read from the demo state, signed by the person working now. */
 export function ackTextFor(s: DemoState, o: Order): string {
   const me = s.people.find((p) => p.id === s.user) ?? s.people[0];
-  return ackText(o, { customer: s.customers[o.cust], style: s.settings.style, reply: replyOpt(s.settings), sender: me.name });
+  return ackText(o, { customer: custOf(s.customers, o.cust), style: s.settings.style, reply: replyOpt(s.settings), sender: me.name });
 }

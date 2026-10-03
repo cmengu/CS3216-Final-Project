@@ -6,7 +6,7 @@
 import { seesCustomer, visibleOrders } from "@/platform/access";
 import { PRODUCTS } from "@/sample";
 import type { Customer, DemoState, Order, OrderEvent, OrderState, Person, ToCheck } from "@/sample";
-import { dayLabel, fmtDay, isOverdue, outlets, ref, relDay, STATE } from "@/lib/format";
+import { dayLabel, fmtDay, isOverdue, outlets, ref, relDay, STATE, custOf } from "@/lib/format";
 import type { IconName } from "@/components/icons";
 
 /* ------------------------------------------------------------------ list ---- */
@@ -57,7 +57,7 @@ const DATE_ORDER = ["Today", "Tomorrow", "This week", "Later", "Earlier this wee
 
 /** Filter by tab and customer, sort, and group (by delivery day, customer or status). */
 export function groupOrders(mine: Order[], customers: Record<string, Customer>, f: string, fc: string, sort: Sort): Group[] {
-  const name = (o: Order) => customers[o.cust].name;
+  const name = (o: Order) => custOf(customers, o.cust).name;
   const list = mine.filter((o) => f === "all" || (f === "overdue" ? isOverdue(o) : o.state === f)).filter((o) => !fc || o.cust === fc);
   list.sort((a, b) =>
     sort === "customer"

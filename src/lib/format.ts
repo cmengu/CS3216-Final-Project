@@ -22,6 +22,29 @@ export function addDays(d: string, n: number): string {
   return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
 }
 
+/**
+ * The order's customer. A PO read on Add orders whose buyer is not in the customer list waits
+ * as a draft with no customer until one is picked; it shows under this stand-in until then.
+ */
+export const custOf = (customers: Record<string, Customer>, id: string): Customer =>
+  customers[id] ?? {
+    id,
+    name: "No customer match",
+    kind: "Customer",
+    color: "#777",
+    logo: "",
+    layout: "",
+    outlets: [],
+    location: "",
+    delivery: "Delivery",
+    slot: "Unspecified",
+    sender: "—",
+    channel: "—",
+    days: "—",
+    terms: "—",
+    notes: [],
+  };
+
 /** The order's reference: its PO number, or WA-MMDD-<last two of the customer ID> for WhatsApp orders. */
 export const ref = (o: Pick<Order, "po" | "date" | "cust">) => o.po || "WA-" + o.date.slice(5).replace("-", "") + "-" + o.cust.slice(-2);
 
