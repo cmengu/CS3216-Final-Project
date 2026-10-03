@@ -209,6 +209,28 @@ async function switchTo(page, name, pin) {
   ok(grid.includes(`WA-${cid}-${ddmm}`), `WhatsApp rows carry WA-${cid}-${ddmm}`);
   await shot(page, "08-add-whatsapp");
 
+  // Retention off hides Confirm, on Add orders and on the order page (an unconfirmed order is a draft).
+  ok(await page.locator(".toolbar button:has-text('Confirm')").isVisible(), "Confirm shows on Add orders while retention is on");
+  const other = made.find((o) => o.id !== pdfOrder.id);
+  await page.goto(`${APP}/orders/${other.id}`);
+  await page.click(".hd .ib[title='Unconfirm']");
+  await toast(page, /Unconfirmed/);
+  ok(await page.locator(".hd button:has-text('Confirm')").isVisible(), "an unconfirmed order offers Confirm");
+  await page.goto(`${APP}/settings/retention`);
+  await page.uncheck("#ret");
+  await page.goto(`${APP}/orders/${other.id}`);
+  await page.waitForSelector(".hd h1");
+  ok(!(await page.locator(".hd button:has-text('Confirm')").count()), "retention off: no Confirm on the order page");
+  await page.goto(`${APP}/add`);
+  await page.click(".src button:has-text('WhatsApp order')");
+  await page.waitForSelector("#paste");
+  await page.click("button:has-text('Example')");
+  await page.click("button:has-text('Read order')");
+  await toast(page, /\d+ lines read/);
+  ok((await page.locator(".grid14 tbody td:not(.emptyc)").count()) > 0 && !(await page.locator(".toolbar button:has-text('Confirm')").count()), "retention off: no Confirm on Add orders");
+  await page.goto(`${APP}/settings/retention`);
+  await page.check("#ret");
+
   // The assistant: a suggested question.
   await page.keyboard.press("Meta+i");
   await page.waitForSelector(".agent .qa button");
