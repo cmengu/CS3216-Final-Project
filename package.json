@@ -12,7 +12,9 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "shots": "node scripts/shots.mjs",
-    "e2e": "node scripts/e2e-add.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "e2e:add": "node scripts/e2e-add.mjs",
+    "e2e:roles": "node scripts/e2e-roles.mjs"
   },
   "dependencies": {
     "next": "16.3.8",

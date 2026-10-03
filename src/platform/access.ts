@@ -24,6 +24,8 @@ export const canInvoice = (p: Person): boolean => INVOICE_ROLES.includes(p.role)
 export const isOwner = (p: Person): boolean => p.role === "owner";
 /** Owner and Finance confirm their tile with a four-digit PIN. */
 export const needsPin = (p: Person): boolean => PIN_ROLES.includes(p.role);
+/** The demo's PIN rule: any four digits. Anything else is refused and the box clears. */
+export const pinOk = (pin: string): boolean => /^\d{4}$/.test(pin);
 
 /** Whether this person looks after this customer. */
 export const seesCustomer = (p: Person, customerId: string): boolean =>

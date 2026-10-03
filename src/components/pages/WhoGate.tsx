@@ -6,7 +6,7 @@
  */
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { needsPin } from "@/platform/access";
+import { needsPin, pinOk } from "@/platform/access";
 import { GROUP_LOGIN, ROLES } from "@/sample";
 import { useDemo } from "@/state/demo-store";
 import { pick, useMounted } from "@/state/session";
@@ -46,7 +46,7 @@ export function WhoGate({ pinFor }: { pinFor?: string }) {
               onSubmit={(e) => {
                 e.preventDefault();
                 const el = pinRef.current;
-                if (el && /^\d{4}$/.test(el.value)) setWho(p.id);
+                if (el && pinOk(el.value)) setWho(p.id);
                 else if (el) {
                   el.value = "";
                   el.focus();
