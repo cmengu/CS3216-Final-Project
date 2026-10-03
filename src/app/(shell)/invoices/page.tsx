@@ -1,9 +1,5 @@
-import { PlainStub, RequireNav } from "@/components/pages/Stubs";
+import { InvoicesView } from "@/components/pages/invoices/InvoicesView";
 
 export default function Page() {
-  return (
-    <RequireNav nav="invoices">
-      <PlainStub title="Invoices" />
-    </RequireNav>
-  );
+  return <InvoicesView />;
 }

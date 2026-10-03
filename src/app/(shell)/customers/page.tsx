@@ -1,5 +1,5 @@
-import { CustomersStub } from "@/components/pages/Stubs";
+import { CustomersView } from "@/components/pages/customers/CustomersView";
 
 export default function Page() {
-  return <CustomersStub />;
+  return <CustomersView />;
 }
