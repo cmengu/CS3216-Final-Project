@@ -94,89 +94,141 @@ for (const theme of ["dark", "light"]) {
   await page.screenshot({ path: `${OUT}/add-fixture-${theme}-app.png` });
 
   if (samples.length) {
+    const ordersCount = async () => Number((await page.locator('#nav a[href="/orders"] .cnt').textContent().catch(() => "0")) || 0);
     await page.click("text=Start over");
+    const before = await ordersCount();
     await page.click("text=use the four sample POs");
+    await page.waitForFunction((n) => document.querySelectorAll(".q li").length === n, samples.length);
     await settled(page);
+    const names = await page.locator(".q li .fn").allTextContents();
+    ok(JSON.stringify(names) === JSON.stringify(samples.map((x) => x.name)), `the four sample files queued in the prototype's order (${names.join(", ")})`);
     await page.click("button:has-text('Process')");
     await settled(page);
-    for (const li of await page.locator(".q li").all()) console.log(`     ${await li.locator(".fn").textContent()}: ${await li.locator(".st").textContent()} · ${await li.locator(".fs").textContent()}`);
-    await page.waitForSelector(".grid14 tbody tr td:not(.emptyc)", { timeout: 10000 });
-    ok(true, "rows in the table");
+    const files = async () => {
+      const out = [];
+      for (const li of await page.locator(".q li").all()) out.push([await li.locator(".st").textContent(), (await li.locator(".fs").textContent()).replace(/^\d+ KB · /, "")]);
+      return out;
+    };
+    const want = [
+      ["Ready", "Buynow · 3 rows"],
+      ["Needs review", "Buynow · 2 rows, 1 cell to fill"],
+      ["Duplicate", "Same content as HH-2231, confirmed 09:40 · skipped"],
+      ["Unsupported", "This PO layout is not one of the supported customer layouts."],
+    ];
+    const got = await files();
+    ok(JSON.stringify(got) === JSON.stringify(want), `files read as the prototype shows them (${got.map((x) => x.join(": ")).join(" | ")})`);
+    const bar = async () => (await page.textContent(".toolbar")).replace(/\s+/g, " ");
+    ok((await bar()).includes("5 rows from 2 POs · highlighted cells need a value"), "Step 3: 5 rows from 2 POs · highlighted cells need a value");
+    ok(await page.locator("button:has-text('Confirm 2 orders')").isVisible(), "Confirm 2 orders");
+    ok(await page.locator("button:has-text('Retry 1 failed file')").isVisible(), "Retry 1 failed file");
+    ok((await ordersCount()) === before + 2, `the two drafts count in the rail, as the prototype counts them (${before} -> ${await ordersCount()})`);
     await page.screenshot({ path: `${OUT}/add-${theme}-app.png` });
 
     if (theme === "dark") {
-      // Fill the flagged SKU cells, then Copy, Download Excel and Confirm.
+      // Reload: the queue's entries, the Step 3 rows and the draft orders are still there.
+      await page.reload();
+      await page.waitForSelector(".grid14 tbody td:not(.emptyc)");
+      ok(JSON.stringify(await files()) === JSON.stringify(want), "after a reload the Step 2 list is the same");
+      ok((await bar()).includes("5 rows from 2 POs"), "after a reload the Step 3 rows are the same");
+
+      // Orders: the Draft tab, as the prototype shows it when there are drafts.
+      await page.click('#nav a[href="/orders"]');
+      await page.waitForSelector(".tabs");
+      const tabs = (await page.textContent(".tabs")).replace(/\s+/g, " ");
+      ok(/Draft ?2/.test(tabs), `Orders has the Draft tab with 2 (${tabs.trim().slice(0, 60)})`);
+      await page.click('.tabs a:has-text("Draft")');
+      await page.waitForFunction(() => document.querySelectorAll(".orow").length === 2);
+      const listed = await page.locator(".orow .sub b").allTextContents();
+      ok(JSON.stringify(listed.sort()) === JSON.stringify(["HH-2240", "PK-331"]), `Draft tab lists HH-2240 and PK-331 (${listed.join(", ")})`);
+
+      // Open the HH-2240 draft and confirm it there.
+      await page.click('.orow:has-text("HH-2240")');
+      await page.waitForURL(/\/orders\/o\d+/);
+      const draftUrl = page.url();
+      ok((await page.textContent(".summary")).includes("Read, not yet confirmed."), "the draft's order page: Read, not yet confirmed.");
+      await page.click(".hd button:has-text('Confirm')");
+      await page.waitForSelector(".labels .lbl:has-text('Confirmed')");
+      ok(true, "Confirm on the order page confirms the draft");
+      await page.goto(`${APP}/add`);
+      ok((await bar()).includes("2 rows from 1 PO"), "the confirmed order has left the Add orders table");
+
+      // Unconfirm: its rows are back in the Add orders table.
+      await page.goto(draftUrl);
+      await page.click(".hd button[title='Unconfirm']");
+      await page.waitForSelector(".labels .lbl:has-text('Draft')");
+      await page.goto(`${APP}/add`);
+      ok((await bar()).includes("5 rows from 2 POs"), "after Unconfirm its rows are back in the table");
+
+      // Start over removes the drafts that came from Add orders.
+      await page.click("text=Start over");
+      ok((await bar()).includes("No rows yet"), "Start over empties the table");
+      await page.goto(`${APP}/orders`);
+      await page.waitForSelector(".tabs");
+      ok(!/Draft/.test(await page.textContent(".tabs")), "Start over removes the drafts: no Draft tab");
+      ok((await ordersCount()) === before, "the rail's Orders count is back");
+
+      // The whole walk again: fill the flagged SKU cell, Copy, Download Excel and Confirm.
+      await page.goto(`${APP}/add`);
+      await page.click("text=use the four sample POs");
+      await settled(page);
+      await page.click("button:has-text('Process')");
+      await settled(page);
+      await page.waitForSelector(".grid14 tbody tr td:not(.emptyc)", { timeout: 10000 });
       while (await page.locator("select[aria-label='Pick SKU']").count()) {
         const sel = page.locator("select[aria-label='Pick SKU']").first();
         const val = await sel.locator("option").nth(1).getAttribute("value");
         await sel.selectOption(val);
         await page.waitForSelector("text=alias proposed");
       }
-      ok(true, "flagged SKU cells filled");
-      while (await page.locator("select[aria-label='Pick customer']").count()) {
-        const sel = page.locator("select[aria-label='Pick customer']").first();
-        await sel.selectOption({ index: 1 });
-      }
+      ok(true, "flagged SKU cell filled");
       const copy = page.locator("button:has-text('Copy table')");
       ok(await copy.isEnabled(), "Copy table enabled once no cell needs a value");
       await copy.click();
-      await page.waitForSelector("text=/Copied \\d+ rows/");
+      await page.waitForSelector("text=Copied 5 rows");
       const clip = await page.evaluate(() => navigator.clipboard.readText());
-      ok(clip.split("\n").length > 1 && clip.includes("\t"), "clipboard holds tab-separated rows");
+      ok(clip.split("\n").length === 6 && clip.split("\n")[1].startsWith("HH-2240\t"), "clipboard: header and 5 rows, Sheet first");
       const [dl] = await Promise.all([page.waitForEvent("download"), page.click("button:has-text('Download Excel')")]);
       const path = `${OUT}/${dl.suggestedFilename()}`;
       await dl.saveAs(path);
       const head = readFileSync(path).subarray(0, 2).toString();
       ok(statSync(path).size > 0 && head === "PK", `Excel saved (${dl.suggestedFilename()}, ${statSync(path).size} bytes)`);
-      const ordersCount = async () => Number((await page.locator('#nav a[href="/orders"] .cnt').textContent().catch(() => "0")) || 0);
-      const before = await ordersCount();
-      const custs = await page.$$eval(".grid14 thead th", (ths) => {
-        const i = ths.findIndex((th) => th.textContent === "Customer");
-        return [...new Set([...document.querySelectorAll(".grid14 tbody tr")].map((tr) => tr.children[i]?.textContent || ""))];
-      });
-      await page.click("button:has-text('Confirm')");
+      await page.click("button:has-text('Confirm 2 orders')");
       await page.waitForURL(/\/orders/);
-      await page.waitForSelector("text=/order(s)? confirmed/");
+      await page.waitForSelector("text=2 orders confirmed");
       ok(true, "Confirm goes to Orders with the prototype's toast");
       await page.goto(`${APP}/home`);
       await page.waitForTimeout(6500);
-      const after = await ordersCount();
-      ok(after > before, `Orders count ${before} -> ${after}`);
+      ok((await ordersCount()) === before + 2, `Orders count ${before} -> ${await ordersCount()}`);
       const home = await page.textContent("main, body");
-      ok(custs.every((c) => home.includes(c)), `confirmed customers on Home (${custs.join(", ")})`);
+      ok(home.includes("Harbour Hotel") && home.includes("Pavilion Kitchen"), "confirmed customers on Home");
       await page.screenshot({ path: `${OUT}/home-after-confirm-${theme}-app.png` });
 
       // The same PO again, under another name, after it was confirmed.
-      const hh = samples.find((x) => /hh-2240/i.test(x.name));
-      if (hh) {
-        await page.goto(`${APP}/add`);
-        const bytes = Buffer.from(await (await fetch(`${APP}/samples/${hh.name}`)).arrayBuffer());
-        await page.setInputFiles('input[type=file][accept="application/pdf"]', [{ name: "again.pdf", mimeType: "application/pdf", buffer: bytes }]);
-        await settled(page);
-        await page.click("text=Process 1 file");
-        await settled(page);
-        const d = await fileRow(page, "again.pdf").locator(".fs").textContent();
-        ok((await fileRow(page, "again.pdf").locator(".st").textContent()) === "Duplicate" && /Same content as HH-2240, confirmed \d\d:\d\d · skipped/.test(d), `confirmed PO comes back Duplicate (${d})`);
-        ok((await page.textContent(".toolbar")).includes("No rows yet"), "a duplicate adds no rows");
-        await page.click("text=Start over");
-      }
+      await page.goto(`${APP}/add`);
+      const bytes = Buffer.from(await (await fetch(`${APP}/samples/${samples[0].name}`)).arrayBuffer());
+      await page.setInputFiles('input[type=file][accept="application/pdf"]', [{ name: "again.pdf", mimeType: "application/pdf", buffer: bytes }]);
+      await settled(page);
+      await page.click("text=Process 1 file");
+      await settled(page);
+      const d = await fileRow(page, "again.pdf").locator(".fs").textContent();
+      ok((await fileRow(page, "again.pdf").locator(".st").textContent()) === "Duplicate" && /Same content as HH-2240, confirmed \d\d:\d\d · skipped/.test(d), `confirmed PO comes back Duplicate (${d})`);
+      ok((await bar()).includes("No rows yet"), "a duplicate adds no rows");
+      await page.click("text=Start over");
 
       // WhatsApp: turn the paste connection on in the demo store, read the example, see its rows.
-      await page.goto(`${APP}/add`);
       await page.click(".src button:has-text('WhatsApp order')");
       await page.evaluate(() => {
-        const s = JSON.parse(localStorage.getItem("pot-demo-v1"));
+        const s = JSON.parse(localStorage.getItem("pot-demo-v2"));
         s.cx.paste = true;
-        localStorage.setItem("pot-demo-v1", JSON.stringify(s));
+        localStorage.setItem("pot-demo-v2", JSON.stringify(s));
       });
       await page.reload();
       await page.click("button:has-text('Example')");
       await page.click("button:has-text('Read order')");
-      await page.waitForSelector("text=/\\d+ lines read/");
-      const line = await page.textContent(".toolbar");
-      ok(/\d+ rows from 1 PO\b/.test(line), `WhatsApp rows in the table (${line.match(/\d+ rows from 1 PO/)?.[0]})`);
+      await page.waitForSelector("text=3 lines read, 2 kept as notes");
+      ok((await bar()).includes("3 rows from 1 PO") && !(await bar()).includes("highlighted"), "every example line maps to a product, as in the prototype");
+      ok(!(await page.locator("select[aria-label='Pick SKU']").count()), "no SKU left to pick");
       ok((await page.textContent(".grid14 tbody")).includes("Hi, order for Mon pls"), "unparsed lines reach Sales Notes");
-      ok((await page.textContent(".grid14 tbody")).includes("WA-C10243-"), "generated WA reference");
       await page.screenshot({ path: `${OUT}/add-whatsapp-${theme}-app.png` });
     }
   }

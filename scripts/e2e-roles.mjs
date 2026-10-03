@@ -82,7 +82,7 @@ for (const who of [
   await page.waitForURL(/\/home$/);
   await page.waitForSelector(".hd h1");
 
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v1")));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")));
   const me = state.people.find((p) => p.id === who.id);
   const own = (cust) => me.customers === "all" || me.customers.includes(cust);
   const ref = (o) => o.po || `WA-${o.cust}-${o.date.slice(8, 10)}${o.date.slice(5, 7)}`;

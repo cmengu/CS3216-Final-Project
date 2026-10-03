@@ -44,6 +44,12 @@ const SCREENS = [
   ["add", "#add", "/add", {}],
   ["add-processed", "#add", "/add", { act: processSamples }],
   ["add-processed-top", "#add", "/add", { act: processSamples, top: true }],
+  // The drafts the sample POs became: Orders' Draft tab and their order pages (the app's after a reload).
+  ["orders-drafts", "#add", "/add", { act: processSamples, then: ["#orders/draft", "/orders?state=draft"] }],
+  ["orders-all-drafts", "#add", "/add", { act: processSamples, then: ["#orders", "/orders"] }],
+  ["order-draft-hh", "#add", "/add", { act: processSamples, then: ["#order/o101", "/orders/o101"] }],
+  ["order-draft-pk", "#add", "/add", { act: processSamples, then: ["#order/o102", "/orders/o102"] }],
+  ["home-drafts", "#add", "/add", { act: processSamples, then: ["#home", "/home"], wait2: 6500 }],
   ["customers", "#customers", "/customers", {}],
   ["customer-C10310", "#customer/C10310", "/customers/C10310", {}],
   ["customer-C10243-finance", "#customer/C10243", "/customers/C10243", { user: "u5" }],
@@ -162,6 +168,11 @@ for (const theme of ["dark", "light"]) {
       }
       await page.waitForTimeout(o.wait || 1500);
       if (o.act) await o.act(page, proto);
+      if (o.then) {
+        if (proto) await page.evaluate((h) => (location.hash = h), o.then[0]);
+        else await page.goto(`${APP}${o.then[1]}`);
+        await page.waitForTimeout(o.wait2 || 1500);
+      }
       if (o.top) await page.evaluate(() => document.getElementById("main").scrollTo({ top: 0 }));
       if (o.menu) {
         await page.click(".mebtn");

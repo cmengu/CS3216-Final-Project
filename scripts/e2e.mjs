@@ -78,16 +78,17 @@ async function switchTo(page, name, pin) {
   await page.click('#nav a[href="/add"]');
   await page.waitForSelector("text=Add purchase order PDFs");
   await page.click("text=use the four sample POs");
-  await page.waitForSelector(".q li");
+  await page.waitForFunction(() => document.querySelectorAll(".q li").length === 4);
   await idle(page);
   const queued = await page.locator(".q li").count();
-  ok(queued >= 4, `sample POs queued (${queued} files)`);
+  ok(queued === 4, `the four sample files queued (${queued} files)`);
   await page.click("button:has-text('Process')");
   await page.waitForFunction(() => [...document.querySelectorAll(".q .st")].every((e) => !/Queued|Reading|Checking/.test(e.textContent || "")), null, { timeout: 30000 });
   const statuses = [];
   for (const li of await page.locator(".q li").all()) statuses.push(`${await li.locator(".fn").innerText()}: ${await li.locator(".st").innerText()} · ${await li.locator(".fs").innerText()}`);
   statuses.forEach((x) => console.log("     " + x));
-  ok(statuses.filter((x) => /: (Ready|Needs review) ·/.test(x)).length >= 4, "the four sample POs are read");
+  ok(statuses.filter((x) => /: (Ready|Needs review) ·/.test(x)).length === 2, "two sample POs are read, as in the prototype");
+  ok(statuses.some((x) => /PO_HH-2231\.pdf: Duplicate · .*Same content as HH-2231, confirmed 09:40 · skipped/.test(x)), "PO_HH-2231.pdf is a Duplicate of the confirmed HH-2231");
   ok(statuses.some((x) => /slides.*Unsupported/.test(x)), "the slide deck is refused as Unsupported");
   await page.waitForSelector(".grid14 tbody td:not(.emptyc)");
   await shot(page, "03-add-processed");
@@ -124,7 +125,7 @@ async function switchTo(page, name, pin) {
   await toast(page, /orders? confirmed/);
   const ordersAfter = await navCount(page, "/orders");
   ok(ordersAfter === ordersBefore + pos, `rail Orders count ${ordersBefore} → ${ordersAfter} after confirming ${pos} POs`);
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v1")));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")));
   const made = state.orders.filter((o) => Number(o.id.slice(1)) > 100);
   ok(made.length >= pos, `confirmed orders in the store (${made.map((o) => o.po).join(", ")})`);
   const ordersText = await text(page);
@@ -162,7 +163,7 @@ async function switchTo(page, name, pin) {
   await page.click(".cmt button:has-text('Post')");
   await toast(page, /Posted/);
   ok((await text(page, ".card .log")).includes("Packed with the Friday run"), "comment in the timeline");
-  const inv0 = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v1")).orders.filter((o) => o.state === "delivered" && !o.invoiced).length);
+  const inv0 = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")).orders.filter((o) => o.state === "delivered" && !o.invoiced).length);
   await page.click(".hd button:has-text('Mark delivered')");
   await toast(page, /Marked delivered/);
   ok(await page.locator(".labels").innerText().then((t) => t.includes("Delivered")), "order shows Delivered");
