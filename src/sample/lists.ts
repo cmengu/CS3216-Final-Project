@@ -3,26 +3,32 @@
  * EgcMasterData, built from the app's own invented products and customers. One place; later
  * these come from database tables.
  *
- * Outlets: one Customer ID per customer. Every outlet of a customer maps to that customer
- * through a buyer-wide alias (outlet ''), so a PO split across kitchens stays one customer.
+ * Outlets: one Customer ID per customer. A customer whose kitchens share that ID is approved
+ * per kitchen and buyer-wide, and the importer appends the kitchen to Location. A customer with
+ * one outlet is approved for that outlet only, so its Location stays as listed.
  */
-import type { EgcMasterData, EgcProductAlias } from "@/lib/importer";
+import type { EgcCustomerAlias, EgcMasterData, EgcProductAlias } from "@/lib/importer";
 import { CUSTOMERS } from "./customers";
 import { seedAliases } from "./orders";
 import { PRODUCTS } from "./products";
 import type { Alias, Customer, Product } from "./types";
 
-/**
- * Buyer names as the customers print them on their POs, besides the customer's own name.
- * Approved wording, kept as data; invented like everything in this folder.
- */
-export const PRINTED_BUYERS: Record<string, string[]> = {
-  C10243: ["Harbour Hotel Pte Ltd"],
-  C10310: ["Marina Grand Hotel Singapore", "Marina Grand Hotel Pte Ltd, trading as Marina Grand Hotel Singapore"],
-  C10388: ["Pavilion Kitchen Pte Ltd"],
-  C10402: ["Riverside Club"],
-  C10419: ["Orchard Deli Pte Ltd"],
-};
+/** Buyer and outlet as the customers print them on their POs. Approved wording, kept as data; invented. */
+export const PRINTED_CUSTOMERS: EgcCustomerAlias[] = [
+  { buyerName: "HARBOUR HOTEL PTE LTD", outlet: "HHBQT", customerId: "C10243" },
+  { buyerName: "HARBOUR HOTEL PTE LTD", outlet: "HHIRD", customerId: "C10243" },
+  { buyerName: "Harbour Hotel Pte Ltd", outlet: "", customerId: "C10243" },
+  { buyerName: "Marina Grand Hotel Singapore", outlet: "2101-Kitchen #1", customerId: "C10310" },
+  { buyerName: "Marina Grand Hotel Singapore", outlet: "2105-Kitchen #5 Madame Fan", customerId: "C10310" },
+  { buyerName: "Marina Grand Hotel Singapore", outlet: "2110-In Room Dining", customerId: "C10310" },
+  { buyerName: "Marina Grand Hotel Singapore", outlet: "", customerId: "C10310" },
+  { buyerName: "Marina Grand Hotel Pte Ltd, trading as Marina Grand Hotel Singapore", outlet: "", customerId: "C10310" },
+  { buyerName: "Pavilion Kitchen Pte Ltd", outlet: "Pavilion Kitchen - Dempsey", customerId: "C10388" },
+  { buyerName: "Orchard Deli Pte Ltd", outlet: "", customerId: "C10419" },
+];
+
+/** Customers approved per outlet only; the rest are also approved buyer-wide under their own name. */
+const ONE_OUTLET = new Set(["C10388"]);
 
 /** Item wording the customers print, approved for one customer. */
 export const PRINTED_ITEMS: EgcProductAlias[] = [
@@ -70,8 +76,11 @@ export function buildLists(
       session: c.slot,
     })),
     productAliases,
-    customerAliases: Object.values(customers).flatMap((c) =>
-      [c.name, ...(PRINTED_BUYERS[c.id] ?? [])].map((buyerName) => ({ buyerName, outlet: "", customerId: c.id })),
-    ),
+    customerAliases: [
+      ...PRINTED_CUSTOMERS.filter((a) => customers[a.customerId]),
+      ...Object.values(customers)
+        .filter((c) => !ONE_OUTLET.has(c.id))
+        .map((c) => ({ buyerName: c.name, outlet: "", customerId: c.id })),
+    ],
   };
 }

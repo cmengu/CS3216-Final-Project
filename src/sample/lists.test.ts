@@ -32,6 +32,7 @@ describe("buildLists", () => {
     const rows = toRows([harbourPo()], lists);
     expect(rows.map((r) => r.cells.customerId.value)).toEqual(["C10243", "C10243", "C10243"]);
     expect(rows.map((r) => r.source.outlet)).toEqual(["Banquet kitchen", "Banquet kitchen", "Room service"]);
+    expect(rows.map((r) => r.cells.location.value)).toEqual(["Loading dock B · Banquet kitchen", "Loading dock B · Banquet kitchen", "Loading dock B · Room service"]);
     expect(rows[0].cells.sku.value).toBe("EGC-PTND"); // approved alias "pea tendrils"
     expect(rows[1].cells.sku.value).toBe("EGC-MBAS"); // the product's own name
     expect(rows[2].cells.sku.origin).toBe("unresolved");
