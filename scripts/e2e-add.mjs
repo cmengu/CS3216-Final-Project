@@ -1,0 +1,167 @@
+// End-to-end check of Add orders against a running app, with the installed Google Chrome.
+// Usage: APP=http://localhost:3000 OUT=/tmp/add-shots [PROTO=/path/to/prototype.html] node scripts/e2e-add.mjs
+// Stages a synthetic PDF from the importer package, processes it in the browser and asserts what
+// the importer answers. When the importer's sample POs are served (public/samples/index.json lists
+// them) it goes on: process, fill a flagged cell, Copy, Download Excel, Confirm, see it on Home.
+// Screenshots of the app (and of the prototype when PROTO is set) in dark and light go to OUT.
+import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { chromium } from "playwright-core";
+
+const APP = process.env.APP || "http://localhost:3000";
+const OUT = process.env.OUT || "/tmp/po-tracker-add-shots";
+const PROTO = process.env.PROTO;
+const FIXTURE = process.env.FIXTURE || "node_modules/po-importer/fixtures/f1-two-lines.pdf";
+mkdirSync(OUT, { recursive: true });
+
+let failures = 0;
+const ok = (cond, what) => {
+  console.log(`${cond ? "ok  " : "FAIL"} ${what}`);
+  if (!cond) failures++;
+};
+
+const browser = await chromium.launch({ channel: "chrome" });
+
+async function open(theme) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"] });
+  await ctx.addInitScript((theme) => {
+    try {
+      localStorage.setItem("pot-theme", theme);
+      sessionStorage.setItem("pot-who", "1"); // past the Who's working? gate as the default person (Eunice, coordinator)
+    } catch {}
+  }, theme);
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => console.log("page error:", e.message));
+  return { ctx, page };
+}
+
+const fileRow = (page, name) => page.locator(".q li", { has: page.locator(".fn", { hasText: name }) });
+const settled = (page) => page.waitForFunction(() => ![...document.querySelectorAll(".q .st")].some((e) => /Checking|Reading/.test(e.textContent || "")), null, { timeout: 30000 });
+
+const samples = await fetch(`${APP}/samples/index.json`).then((r) => (r.ok ? r.json() : []), () => []);
+console.log(`samples served: ${samples.length}`);
+
+for (const theme of ["dark", "light"]) {
+  const { ctx, page } = await open(theme);
+  await page.goto(`${APP}/add`);
+  await page.waitForSelector("text=Add purchase order PDFs");
+
+  // Step 1: a synthetic PDF and a file that is not a PDF.
+  const name = FIXTURE.split("/").pop();
+  await page.setInputFiles('input[type=file][accept="application/pdf"]', [
+    { name, mimeType: "application/pdf", buffer: readFileSync(FIXTURE) },
+    { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("not a purchase order") },
+  ]);
+  await settled(page);
+  ok((await fileRow(page, name).locator(".st").textContent()) === "Queued", `${name} is Queued`);
+  ok((await fileRow(page, "notes.txt").locator(".st").textContent()) === "Failed", "notes.txt is Failed");
+  ok((await fileRow(page, "notes.txt").locator(".fs").textContent()).includes("Not a PDF"), "notes.txt says Not a PDF");
+
+  // The same name again is skipped with the prototype's notice.
+  await page.setInputFiles('input[type=file][accept="application/pdf"]', [{ name, mimeType: "application/pdf", buffer: readFileSync(FIXTURE) }]);
+  await page.waitForSelector("text=1 duplicate file was skipped");
+  ok(true, "duplicate name skipped with notice");
+
+  // ⌘V with a PDF on the clipboard, and a PDF dropped on the section.
+  const b64 = readFileSync(FIXTURE).toString("base64");
+  await page.evaluate((b64) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "pasted.pdf", { type: "application/pdf" }));
+    window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt }));
+  }, b64);
+  const drop = await page.evaluateHandle((b64) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "dropped.pdf", { type: "application/pdf" }));
+    return dt;
+  }, b64);
+  await page.dispatchEvent("#dropzone", "drop", { dataTransfer: drop });
+  await settled(page);
+  ok((await fileRow(page, "pasted.pdf").locator(".st").textContent()) === "Queued", "pasted PDF is Queued");
+  ok((await fileRow(page, "dropped.pdf").locator(".st").textContent()) === "Queued", "dropped PDF is Queued");
+
+  // Step 2: read them in the browser.
+  await page.click("text=Process 3 files");
+  await settled(page);
+  for (const n of ["pasted.pdf", "dropped.pdf"]) {
+    const s2 = await fileRow(page, n).locator(".st").textContent();
+    ok(["Unsupported", "Duplicate"].includes(s2), `${n} read (${s2})`);
+  }
+  const st = await fileRow(page, name).locator(".st").textContent();
+  const detail = await fileRow(page, name).locator(".fs").textContent();
+  console.log(`     ${name}: ${st} · ${detail}`);
+  if (st === "Unsupported") ok(detail.includes("This PO layout is not one of the supported customer layouts."), "Unsupported shows the importer's detail verbatim");
+  else ok(["Ready", "Needs review"].includes(st), `${name} read (${st})`);
+  ok((await page.textContent(".toolbar")).includes(st === "Unsupported" ? "No rows yet" : "rows from"), "Step 3 row line");
+  await page.screenshot({ path: `${OUT}/add-fixture-${theme}-app.png` });
+
+  if (samples.length) {
+    await page.click("text=Start over");
+    await page.click("text=use the four sample POs");
+    await settled(page);
+    await page.click("button:has-text('Process')");
+    await settled(page);
+    for (const li of await page.locator(".q li").all()) console.log(`     ${await li.locator(".fn").textContent()}: ${await li.locator(".st").textContent()} · ${await li.locator(".fs").textContent()}`);
+    await page.waitForSelector(".grid14 tbody tr td:not(.emptyc)", { timeout: 10000 });
+    ok(true, "rows in the table");
+    await page.screenshot({ path: `${OUT}/add-${theme}-app.png` });
+
+    if (theme === "dark") {
+      // Fill the flagged SKU cells, then Copy, Download Excel and Confirm.
+      while (await page.locator("select[aria-label='Pick SKU']").count()) {
+        const sel = page.locator("select[aria-label='Pick SKU']").first();
+        const val = await sel.locator("option").nth(1).getAttribute("value");
+        await sel.selectOption(val);
+        await page.waitForSelector("text=alias proposed");
+      }
+      ok(true, "flagged SKU cells filled");
+      while (await page.locator("select[aria-label='Pick customer']").count()) {
+        const sel = page.locator("select[aria-label='Pick customer']").first();
+        await sel.selectOption({ index: 1 });
+      }
+      const copy = page.locator("button:has-text('Copy table')");
+      ok(await copy.isEnabled(), "Copy table enabled once no cell needs a value");
+      await copy.click();
+      await page.waitForSelector("text=/Copied \\d+ rows/");
+      const clip = await page.evaluate(() => navigator.clipboard.readText());
+      ok(clip.split("\n").length > 1 && clip.includes("\t"), "clipboard holds tab-separated rows");
+      const [dl] = await Promise.all([page.waitForEvent("download"), page.click("button:has-text('Download Excel')")]);
+      const path = `${OUT}/${dl.suggestedFilename()}`;
+      await dl.saveAs(path);
+      const head = readFileSync(path).subarray(0, 2).toString();
+      ok(statSync(path).size > 0 && head === "PK", `Excel saved (${dl.suggestedFilename()}, ${statSync(path).size} bytes)`);
+      const ordersCount = async () => Number((await page.locator('#nav a[href="/orders"] .cnt').textContent().catch(() => "0")) || 0);
+      const before = await ordersCount();
+      const custs = await page.$$eval(".grid14 thead th", (ths) => {
+        const i = ths.findIndex((th) => th.textContent === "Customer");
+        return [...new Set([...document.querySelectorAll(".grid14 tbody tr")].map((tr) => tr.children[i]?.textContent || ""))];
+      });
+      await page.click("button:has-text('Confirm')");
+      await page.waitForURL(/\/orders/);
+      await page.waitForSelector("text=/order(s)? confirmed/");
+      ok(true, "Confirm goes to Orders with the prototype's toast");
+      await page.goto(`${APP}/home`);
+      await page.waitForTimeout(6500);
+      const after = await ordersCount();
+      ok(after > before, `Orders count ${before} -> ${after}`);
+      const home = await page.textContent("main, body");
+      ok(custs.every((c) => home.includes(c)), `confirmed customers on Home (${custs.join(", ")})`);
+      await page.screenshot({ path: `${OUT}/home-after-confirm-${theme}-app.png` });
+    }
+  }
+  await ctx.close();
+
+  if (PROTO) {
+    const { ctx: pctx, page: p } = await open(theme);
+    await p.goto(`file://${PROTO}#add`);
+    await p.waitForTimeout(800);
+    await p.click("text=use the four sample POs");
+    await p.waitForTimeout(700);
+    await p.click("button:has-text('Process')");
+    await p.waitForTimeout(3500);
+    await p.screenshot({ path: `${OUT}/add-${theme}-proto.png` });
+    await pctx.close();
+  }
+}
+
+await browser.close();
+console.log(failures ? `${failures} check(s) failed` : "all checks passed", "· shots in", OUT);
+process.exit(failures ? 1 : 0);
