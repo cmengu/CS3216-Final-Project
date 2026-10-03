@@ -10,7 +10,7 @@ import { canEdit, canPrice, seesCustomer, visibleOrders } from "@/platform/acces
 import { mailbox } from "@/platform/nav";
 import { TODAY } from "@/sample";
 import type { DemoState, Order, Person } from "@/sample";
-import { meOf, useDemo } from "@/state/demo-store";
+import { meOf, update, useDemo } from "@/state/demo-store";
 import { markGreeted, shouldGreet } from "@/state/session";
 import { addDays, dayLabel, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, relDay, slotText } from "@/lib/format";
 
@@ -136,7 +136,7 @@ export function HomeView() {
             ))}
           </div>
           {edit && mail.length ? (
-            <Link className="mailrow" href="/add">
+            <Link className="mailrow" href="/add" onClick={() => update((d) => void (d.src = "mail"))}>
               <Icon name="mail" />
               <b>
                 {mail.length} new PDF{mail.length > 1 ? "s" : ""} in the orders mailbox

@@ -1,10 +1,10 @@
-import { RequireNav, SettingsStub } from "@/components/pages/Stubs";
+import { notFound } from "next/navigation";
+import { isPaneId } from "@/components/pages/settings/pane-ids";
+import { SettingsView } from "@/components/pages/settings/SettingsView";
+import "@/app/styles/settings.css";
 
 export default async function Page({ params }: PageProps<"/settings/[pane]">) {
   const { pane } = await params;
-  return (
-    <RequireNav nav="settings">
-      <SettingsStub pane={pane} />
-    </RequireNav>
-  );
+  if (!isPaneId(pane)) notFound();
+  return <SettingsView pane={pane} />;
 }
