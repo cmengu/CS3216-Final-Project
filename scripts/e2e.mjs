@@ -269,6 +269,102 @@ async function switchTo(page, name, pin) {
   await ctx.close();
 }
 
+/* --------------------------------------------- what the prototype's redraws do ---- */
+// The prototype draws the whole page again after every change. These checks hold the app to what
+// that redraw does: greet again after a pick, Esc and Enter on the Orders list, the order page's
+// fixed review wording, the pane coming back, events logged without a redraw, the page back at the top.
+{
+  const { ctx, page } = await fresh();
+  await page.goto(`${APP}/who`);
+  await page.click('.whogrid button:has-text("Eunice")');
+  await page.waitForURL(/\/home$/);
+  await page.waitForSelector(".home .lead");
+  await page.waitForTimeout(300);
+  await page.click(".mebtn");
+  await page.click('.pop.up button:has-text("Mei")');
+  await page.waitForTimeout(500);
+  ok((await page.getAttribute(".home .lead", "class")).includes("greet") && (await text(page, ".home .lead")).includes("Hi Mei"), "picking a person while on Home greets them again");
+  await page.click(".mebtn");
+  await page.click('.pop.up button:has-text("Eunice")');
+  await page.waitForTimeout(400);
+
+  // Orders: Esc with a ticked box focused clears the selection and leaves the assistant open.
+  await page.click('#nav a[href="/orders"]');
+  await page.waitForSelector("#olist .orow");
+  await page.keyboard.press("Meta+i");
+  await page.waitForTimeout(200);
+  await page.hover('.orow[data-id="o1"]');
+  await page.click('.orow[data-id="o1"] .sel');
+  ok(await page.locator(".bulk").isVisible(), "a ticked row shows the bulk bar");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  ok(!(await page.locator(".bulk").count()) && (await page.locator("#app.agent-open").count()) === 1, "Esc clears the selection first and leaves the assistant open");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  ok(!(await page.locator("#app.agent-open").count()), "the next Esc closes the assistant");
+  // A hover Mark delivered redraws the list, which clears the selection.
+  await page.hover('.orow[data-id="o3"]');
+  await page.click('.orow[data-id="o3"] .sel');
+  await page.hover('.orow[data-id="o1"]');
+  await page.click('.orow[data-id="o1"] button[title="Mark delivered"]');
+  await toast(page, /Marked delivered/);
+  ok(!(await page.locator(".bulk").count()), "Mark delivered from a row clears the selection");
+  // Enter opens the current row even with the rail link just clicked still focused.
+  await page.click('#nav a[href="/orders"]');
+  await page.waitForTimeout(300);
+  await page.keyboard.press("j");
+  await page.keyboard.press("Enter");
+  await page.waitForURL(/\/orders\/o\d+$/);
+  ok(true, "j then Enter opens the first row");
+
+  // The order page: the Needs check wording is the prototype's fixed text, after a second revision too.
+  await page.goto(`${APP}/orders/o2`);
+  await page.waitForSelector(".summary");
+  await page.click('button:has-text("Approve change")');
+  await toast(page, /Approved/);
+  await switchTo(page, "May", "1234");
+  await page.goto(`${APP}/settings/connections`);
+  await page.click("button[aria-label='WhatsApp paste and chat export']");
+  await page.click("button:has-text('Try a sample export')");
+  await toast(page, /1 change to review/);
+  await page.goto(`${APP}/orders/o2`);
+  await page.waitForSelector(".review");
+  ok((await text(page, ".summary")) === "Revised PO received 10:48. Line 1 qty 4 → 6, unconfirmed.", "a later revision keeps the prototype's summary sentence");
+  await page.click('#nav a[href="/orders"]');
+  await page.waitForSelector('.orow[data-id="o2"]');
+  ok((await text(page, '.orow[data-id="o2"] .sub')).includes("qty 4 → 6 on line 1, unconfirmed"), "and the prototype's row line on Orders");
+
+  // The pane's Hide lasts until the next change; "Viewed prices" and "Asked" show from the next change.
+  await page.goto(`${APP}/orders/o3`);
+  await page.waitForSelector(".pane .prof");
+  const log = () => text(page, ".card .log");
+  ok(!(await log()).includes("May viewed prices"), "opening an order logs Viewed prices without showing it yet");
+  await page.click('.pane button[title="Hide"]');
+  ok(!(await page.locator("#main.withpane").count()), "Hide drops the pane's column");
+  await page.click('.body button:has-text("Ask")');
+  await page.locator(".agent .qa button").first().click();
+  await page.waitForSelector(".agent .ans");
+  ok(!(await log()).includes("May asked"), "an answer scoped to the order is logged without redrawing the page");
+  await page.keyboard.press("Escape");
+  await page.click("button:has-text('Suggest reply')");
+  await page.waitForSelector(".draft");
+  ok((await log()).includes("May viewed prices") && (await log()).includes("May asked"), "the next change shows them");
+  ok((await page.locator("#main.withpane").count()) === 1, "and brings the pane back");
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")).settings.reply);
+  ok(JSON.stringify(stored) === JSON.stringify({ lines: true, date: true, sign: true }), "Suggest reply stores the reply defaults, as the prototype's replyOpt");
+  await page.evaluate(() => document.getElementById("main").scrollTo({ top: 400 }));
+  await page.click("button:has-text('Discard')");
+  await page.waitForTimeout(200);
+  ok((await page.evaluate(() => document.getElementById("main").scrollTop)) === 0, "a change puts the page back at the top");
+
+  // Settings › Assistant access: the person picker goes back to the first person after Create key.
+  await page.goto(`${APP}/settings/assistant`);
+  await page.selectOption("#keyWho", "u4");
+  await page.click("button:has-text('Create key')");
+  ok((await page.inputValue("#keyWho")) === "u1" && (await text(page, ".setpane")).includes("Mei's key"), "Create key, then the picker is back on May");
+  await ctx.close();
+}
+
 /* ------------------------------------------------------ the alias round trip ---- */
 {
   const { ctx, page } = await fresh();

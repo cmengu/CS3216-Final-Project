@@ -174,6 +174,13 @@ for (const theme of ["dark", "light"]) {
       await page.click("button:has-text('Process')");
       await settled(page);
       await page.waitForSelector(".grid14 tbody tr td:not(.emptyc)", { timeout: 10000 });
+      // Retry checks the Unsupported file again and queues it, as the prototype's retryFailed.
+      await page.click("button:has-text('Retry 1 failed file')");
+      await settled(page);
+      ok((await fileRow(page, "slides_week_06.pdf").locator(".st").textContent()) === "Queued" && (await page.locator("button:has-text('Process 1 file')").isVisible()), "Retry queues the Unsupported file again (Process 1 file)");
+      await page.click("button:has-text('Process 1 file')");
+      await settled(page);
+      ok((await fileRow(page, "slides_week_06.pdf").locator(".st").textContent()) === "Unsupported", "processed again, it is Unsupported again");
       while (await page.locator("select[aria-label='Pick SKU']").count()) {
         const sel = page.locator("select[aria-label='Pick SKU']").first();
         const val = await sel.locator("option").nth(1).getAttribute("value");
@@ -181,6 +188,22 @@ for (const theme of ["dark", "light"]) {
         await page.waitForSelector("text=alias proposed");
       }
       ok(true, "flagged SKU cell filled");
+      const pk = page.locator(".grid14 tbody tr", { hasText: "PK-331" }).last();
+      ok((await pk.locator("td").nth(3).innerText()).includes("tray"), "the picked line keeps the PO's unit (tray), as the prototype's pick");
+      // A typed quantity is saved without redrawing: the row's Total follows on the next redraw.
+      const first = page.locator(".grid14 tbody tr").first();
+      const total0 = await first.locator("td").nth(5).innerText();
+      await first.locator("input[aria-label='Quantity']").fill("5");
+      await first.locator("input[aria-label='Quantity']").press("Tab");
+      await page.waitForTimeout(200);
+      ok((await first.locator("td").nth(5).innerText()) === total0, `a typed quantity leaves the Total as drawn (${total0}) until the next redraw`);
+      await page.click("button:has-text('Customise layout')");
+      await page.click(".popc label:has-text('Sales Notes') input");
+      ok(await page.locator(".popc").isVisible(), "a column toggle keeps Customise layout open");
+      await page.click(".popc button:has-text('Reset')");
+      await page.waitForTimeout(200);
+      ok(!(await page.locator(".popc").count()), "Reset closes Customise layout, as the prototype's redraw does");
+      ok((await page.locator(".grid14 tbody tr").first().locator("td").nth(5).innerText()) === "$27.00", "after the redraw the Total follows the typed 5 ($27.00)");
       const copy = page.locator("button:has-text('Copy table')");
       ok(await copy.isEnabled(), "Copy table enabled once no cell needs a value");
       await copy.click();
@@ -229,6 +252,10 @@ for (const theme of ["dark", "light"]) {
       ok((await bar()).includes("3 rows from 1 PO") && !(await bar()).includes("highlighted"), "every example line maps to a product, as in the prototype");
       ok(!(await page.locator("select[aria-label='Pick SKU']").count()), "no SKU left to pick");
       ok((await page.textContent(".grid14 tbody")).includes("Hi, order for Mon pls"), "unparsed lines reach Sales Notes");
+      ok((await page.inputValue("#paste")) === "", "the paste box is empty again after Read order, as the prototype's redraw leaves it");
+      await page.click("button:has-text('Read order')");
+      await page.waitForSelector("text=No order lines found");
+      ok(true, "Read order on an empty box: No order lines found");
       await page.screenshot({ path: `${OUT}/add-whatsapp-${theme}-app.png` });
     }
   }
