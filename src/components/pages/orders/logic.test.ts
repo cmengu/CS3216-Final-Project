@@ -64,9 +64,9 @@ describe("groupOrders", () => {
 
 describe("row text", () => {
   it("explains a revision, a missing SKU, or lists lines and outlets", () => {
-    expect(whyText(order(S, "o2"), S.toCheck)).toBe("qty 4 → 6 on line 1, unconfirmed");
-    expect(whyText(order(S, "o4"), S.toCheck)).toBe("1 cell has no SKU");
-    expect(whyText(order(S, "o1"), S.toCheck)).toBe("6 lines · Banquet kitchen, Room service");
+    expect(whyText(order(S, "o2"))).toBe("qty 4 → 6 on line 1, unconfirmed");
+    expect(whyText(order(S, "o4"))).toBe("1 cell has no SKU");
+    expect(whyText(order(S, "o1"))).toBe("6 lines · Banquet kitchen, Room service");
   });
 
   it("copies lines as tab-separated text", () => {
@@ -78,7 +78,7 @@ describe("row text", () => {
 
 describe("summarise", () => {
   it("reads like the prototype for each state", () => {
-    const t = (id: string) => richText(summarise(order(S, id), evOf(S, id), S.toCheck));
+    const t = (id: string) => richText(summarise(order(S, id), evOf(S, id)));
     expect(t("o2")).toBe("Revised PO received 10:48. Line 1 qty 4 → 6, unconfirmed.");
     expect(t("o4")).toBe("One cell has no SKU. Export is blocked until it is filled.");
     expect(t("o1")).toBe("Confirmed by Eunice today 09:40, exported. Deliver Fri, 2 Oct.");

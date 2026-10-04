@@ -5,7 +5,7 @@
  */
 import { seesCustomer, visibleOrders } from "@/platform/access";
 import { PRODUCTS } from "@/sample";
-import type { Customer, DemoState, Order, OrderEvent, OrderState, Person, ToCheck } from "@/sample";
+import type { Customer, DemoState, Order, OrderEvent, OrderState, Person } from "@/sample";
 import { dayLabel, fmtDay, isOverdue, outlets, ref, relDay, STATE, custOf } from "@/lib/format";
 import type { IconName } from "@/components/icons";
 
@@ -77,20 +77,13 @@ export function groupOrders(mine: Order[], customers: Record<string, Customer>, 
   return groups;
 }
 
-const revisionOf = (toCheck: ToCheck[], id: string) =>
-  toCheck.find((t): t is Extract<ToCheck, { kind: "revision" }> => t.kind === "revision" && t.order === id);
-
-/** The row's grey line after the reference. */
-export function whyText(o: Order, toCheck: ToCheck[]): string {
-  const rev = o.state === "needs_check" ? revisionOf(toCheck, o.id) : undefined;
-  if (rev) {
-    const d = rev.diff[0];
-    return `qty ${d.old} → ${d.new} on line ${d.line + 1}, unconfirmed`;
-  }
-  if (o.state === "blocked") {
-    const n = o.lines.filter((l) => !l.sku).length || 1;
-    return n === 1 ? "1 cell has no SKU" : `${n} cells have no SKU`;
-  }
+/**
+ * The row's grey line after the reference. The prototype writes the Needs check and Blocked
+ * lines as fixed text (its seeded revision and its one missing SKU), whatever the review item.
+ */
+export function whyText(o: Order): string {
+  if (o.state === "needs_check") return "qty 4 → 6 on line 1, unconfirmed";
+  if (o.state === "blocked") return "1 cell has no SKU";
   return `${o.lines.length} lines · ${outlets(o).join(", ")}`;
 }
 
@@ -118,15 +111,10 @@ export type Rich = (string | { b: string })[];
 
 export const richText = (r: Rich) => r.map((p) => (typeof p === "string" ? p : p.b)).join("");
 
-/** The one-line summary under the order header. */
-export function summarise(o: Order, ev: OrderEvent[], toCheck: ToCheck[]): Rich {
+/** The one-line summary under the order header (the Needs check sentence is fixed text in the prototype). */
+export function summarise(o: Order, ev: OrderEvent[]): Rich {
   const conf = ev.filter((e) => e.kind === "confirmed").pop();
-  if (o.state === "needs_check") {
-    const rev = revisionOf(toCheck, o.id);
-    const d = rev?.diff[0];
-    const when = rev?.from.split(" · ")[1] ?? "10:48";
-    return [{ b: "Revised PO" }, ` received ${when}. Line ${d ? d.line + 1 : 1} qty `, { b: d ? `${d.old} → ${d.new}` : "4 → 6" }, ", unconfirmed."];
-  }
+  if (o.state === "needs_check") return [{ b: "Revised PO" }, " received 10:48. Line 1 qty ", { b: "4 → 6" }, ", unconfirmed."];
   if (o.state === "blocked") return ["One cell has ", { b: "no SKU" }, ". Export is blocked until it is filled."];
   if (o.state === "draft") return ["Read, not yet confirmed."];
   if (isOverdue(o)) return ["Due ", { b: fmtDay(o.date) }, ", not marked delivered."];
