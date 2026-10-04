@@ -25,6 +25,11 @@ export interface ShellApi {
   paneHost: HTMLElement | null;
   /** "on" shows the pane in its column, "hidden" drops the column (the pane's Hide), "off" removes it. */
   setPane: (state: PaneState) => void;
+  /**
+   * What Esc does on the page before it closes the assistant (Orders: clear the selection).
+   * The handler returns true when it acted. Null removes it.
+   */
+  setEscape: (fn: (() => boolean) | null) => void;
 }
 
 export type PaneState = "off" | "on" | "hidden";

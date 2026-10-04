@@ -162,6 +162,8 @@ export const addComment: Op<[id: string, text: string]> = (s, c, id, text) => {
 /** Suggest reply: one draft per order. */
 export const suggest: Op<[id: string, text: string]> = (s, _c, id, text) => {
   if (s.drafts.some((d) => d.order === id)) return "";
+  // The prototype's replyOpt() stores the reply defaults the first time a reply is written.
+  s.settings.reply ??= { lines: true, date: true, sign: true };
   s.drafts.push({ order: id, text });
   return "";
 };
@@ -190,10 +192,22 @@ export const viewPrices: Op<[id: string]> = (s, c, id) => {
 
 /** Apply an op through the store as the person working now; returns its toast. */
 export function run<A extends unknown[]>(op: Op<A>, ...args: A): string {
+  return apply(false, op, ...args);
+}
+
+/** As run(), for a change the prototype makes without redrawing the page ("Viewed prices"). */
+export function runQuiet<A extends unknown[]>(op: Op<A>, ...args: A): string {
+  return apply(true, op, ...args);
+}
+
+function apply<A extends unknown[]>(quiet: boolean, op: Op<A>, ...args: A): string {
   const c: Ctx = { me: meOf(getState()).name, at: nowStr() };
   let out = "";
-  update((s) => {
-    out = op(s, c, ...args);
-  });
+  update(
+    (s) => {
+      out = op(s, c, ...args);
+    },
+    { quiet },
+  );
   return out;
 }

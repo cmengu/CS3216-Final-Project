@@ -4,7 +4,7 @@
  */
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { seed } from "@/sample";
 import type { DemoState, Person } from "@/sample";
 import { visibleOrders } from "@/platform/access";
@@ -57,13 +57,75 @@ export function getState(): DemoState {
   return state;
 }
 
-/** Apply a change to a copy of the state, persist it and notify subscribers. */
-export function update(fn: (draft: DemoState) => void) {
-  const next = structuredClone(getState());
+export interface UpdateOptions {
+  /**
+   * A change the prototype makes without redrawing the page (the assistant's answers and its
+   * "Asked" event, thumbs, a new conversation, the "Viewed prices" it logs while drawing an order).
+   * The page shows such events from its next redraw on; see useShownEvents().
+   */
+  quiet?: boolean;
+  /** Notify subscribers even when nothing changed (picking the same person again). */
+  force?: boolean;
+}
+
+let quiet = false;
+/** Whether the change being announced is a quiet one. */
+export const isQuietUpdate = () => quiet;
+
+/**
+ * Apply a change to a copy of the state, persist it and notify subscribers. A change that changes
+ * nothing (an action refused with a toast) notifies no one, as the prototype then draws nothing.
+ */
+export function update(fn: (draft: DemoState) => void, opts: UpdateOptions = {}) {
+  const prev = getState();
+  const next = structuredClone(prev);
   fn(next);
+  if (!opts.force && JSON.stringify(next) === JSON.stringify(prev)) return;
   state = next;
   save();
-  emit();
+  quiet = !!opts.quiet;
+  try {
+    emit();
+  } finally {
+    quiet = false;
+  }
+}
+
+/**
+ * The events as the page last drew them: everything there was when the page opened, and
+ * everything after each change that redraws the page. Events added by a quiet change (the
+ * assistant's "Asked", the "Viewed prices" logged on opening an order) show from the next
+ * redraw on, as in the prototype.
+ */
+export function useShownEvents() {
+  const s = useDemo();
+  const [n, setN] = useState(() => s.events.length);
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (!isQuietUpdate()) setN(getState().events.length);
+      }),
+    [],
+  );
+  return s.events.slice(0, n);
+}
+
+/**
+ * The state as the page last drew it: as it was when the page opened, then after each change
+ * that redraws the page. A quiet change (Add orders' quantity edit, which the prototype saves
+ * without redrawing) shows from the next redraw on.
+ */
+export function useDrawnState(): DemoState {
+  const live = useDemo();
+  const [drawn, setDrawn] = useState(live);
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (!isQuietUpdate()) setDrawn(getState());
+      }),
+    [],
+  );
+  return drawn;
 }
 
 /** "Reset demo data": back to the invented seed. */

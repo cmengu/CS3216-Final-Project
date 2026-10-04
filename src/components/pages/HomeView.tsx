@@ -10,8 +10,8 @@ import { canEdit, canPrice, seesCustomer, visibleOrders } from "@/platform/acces
 import { mailbox } from "@/platform/nav";
 import { TODAY } from "@/sample";
 import type { DemoState, Order, Person } from "@/sample";
-import { meOf, update, useDemo } from "@/state/demo-store";
-import { markGreeted, shouldGreet } from "@/state/session";
+import { meOf, update, useDemo, useShownEvents } from "@/state/demo-store";
+import { markGreeted, pickCount, shouldGreet } from "@/state/session";
 import { addDays, dayLabel, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, relDay, slotText, custOf } from "@/lib/format";
 
 /** The Handover digest, one line per item, as plain text. */
@@ -44,8 +44,12 @@ export function HomeView() {
   const s = useDemo();
   const u = meOf(s);
   const shell = useShell();
-  const [greet] = useState(shouldGreet);
-  useEffect(markGreeted, []);
+  // "Hi <name>" once per page load, and again after each pick of a person, even while on Home.
+  const picks = pickCount();
+  const [greeting, setGreeting] = useState(() => ({ on: shouldGreet(), picks }));
+  if (greeting.picks !== picks) setGreeting({ on: true, picks });
+  const greet = greeting.on;
+  useEffect(markGreeted, [greeting.picks]);
 
   const cust = (o: Order) => custOf(s.customers, o.cust);
   const mine = visibleOrders(s.orders, u);
@@ -75,7 +79,8 @@ export function HomeView() {
     ["Later this week", later],
   ];
   const byId = (id: string) => s.orders.find((o) => o.id === id);
-  const recent = s.events
+  const shownEvents = useShownEvents();
+  const recent = shownEvents
     .filter((e) => {
       const o = byId(e.order);
       return e.kind !== "price_viewed" && !!o && seesCustomer(u, o.cust);
@@ -122,7 +127,7 @@ export function HomeView() {
       </Header>
       <div className="body home">
         <div className="hmain">
-          <p className={`lead${greet ? " greet" : ""}`}>
+          <p className={`lead${greet ? " greet" : ""}`} key={greeting.picks}>
             <span className="hi">Hi {u.name.split(" ")[0]}</span>
             <span className="fm">{formal}</span>
           </p>

@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { isQuietUpdate, subscribe } from "@/state/demo-store";
 import { useShell } from "./context";
 
 /**
@@ -12,7 +13,14 @@ export function SidePane({ children }: { children: ReactNode }) {
   const { paneHost, setPane } = useShell();
   useEffect(() => {
     setPane("on");
-    return () => setPane("off");
+    // The pane's Hide lasts until the page is drawn again: any change that redraws the page brings it back.
+    const off = subscribe(() => {
+      if (!isQuietUpdate()) setPane("on");
+    });
+    return () => {
+      off();
+      setPane("off");
+    };
   }, [setPane]);
   return paneHost ? createPortal(children, paneHost) : null;
 }

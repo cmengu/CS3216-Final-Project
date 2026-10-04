@@ -10,7 +10,7 @@ import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
 import { canEdit, canPrice, seesCustomer } from "@/platform/access";
 import { addNote } from "@/state/actions/customers";
-import { meOf, useDemo } from "@/state/demo-store";
+import { meOf, useDemo, useShownEvents } from "@/state/demo-store";
 import { evIcon, fmtShort, lc, money, orderTotal, outlets, ref, relDay } from "@/lib/format";
 import { ACTIVITY_FILTERS, activity, customerOrders, highlights, type ActivityFilter } from "./figures";
 import { Profile } from "./Profile";
@@ -31,13 +31,14 @@ export function CustomerView({ id }: { id: string }) {
     setFltState(f);
   };
   const [note, setNote] = useState("");
+  const shownEvents = useShownEvents();
   const c = s.customers[id];
   if (!c || !seesCustomer(u, id)) return <NotFound />;
 
   const price = canPrice(u);
   const mine = customerOrders(s, id);
   const hl = highlights(s, id);
-  const ev = activity(s, id, flt);
+  const ev = activity({ ...s, events: shownEvents }, id, flt);
   const byId = (oid: string) => s.orders.find((x) => x.id === oid)!;
 
   const add = () => {

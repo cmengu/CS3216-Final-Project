@@ -25,12 +25,13 @@ import {
   invoice,
   keepOld,
   run,
+  runQuiet,
   sendReply,
   suggest,
   unconfirm,
   viewPrices,
 } from "@/state/actions/orders";
-import { meOf, subscribe, useDemo } from "@/state/demo-store";
+import { meOf, useDemo, useShownEvents } from "@/state/demo-store";
 import { evIcon, fmtDay, lc, money, orderTotal, ref, relDay, custOf } from "@/lib/format";
 import { SourceCard } from "./SourceCard";
 import { activityByDay, orderText, stepsOf, summarise, type Rich } from "./logic";
@@ -152,11 +153,11 @@ export function OrderView({ id }: { id: string }) {
 
   // Opening an order with prices is logged once per person.
   useEffect(() => {
-    if (ok && pr && !viewed) run(viewPrices, id);
+    if (ok && pr && !viewed) runQuiet(viewPrices, id);
   }, [ok, pr, viewed, id]);
 
   if (!o || !ok) return <NotFound hint="No such order in your view." />;
-  return <OrderPage s={s} o={o} />;
+  return <OrderPage key={o.id} s={s} o={o} />;
 }
 
 function OrderPage({ s, o }: { s: DemoState; o: Order }) {
@@ -165,7 +166,9 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
   const [cmt, setCmt] = useState(false);
   const cmtRef = useRef<HTMLTextAreaElement>(null);
   const c = custOf(s.customers, o.cust);
-  const ev = s.events.filter((e) => e.order === o.id);
+  // The events as the page last drew them: "Viewed prices", logged on opening, and the assistant's
+  // "Asked" show from the next redraw on, as in the prototype.
+  const ev = useShownEvents().filter((e) => e.order === o.id);
   const msgs = s.messages.filter((m) => m.order === o.id);
   const cmts = s.comments.filter((x) => x.order === o.id);
   const checks = s.toCheck.filter((t) => t.order === o.id);
@@ -177,19 +180,6 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
   };
   const rows = lines(o, u);
 
-  // The prototype logs "Viewed prices" while it draws the page, so the entry appears from the next
-  // redraw on (the next change anywhere), not on the first view. The first change after opening is
-  // the log itself.
-  const [viewedAtOpen] = useState(() => s.events.some((e) => e.order === o.id && e.kind === "price_viewed" && e.actor === u.name));
-  const [showView, setShowView] = useState(viewedAtOpen);
-  useEffect(() => {
-    if (showView) return;
-    let n = 0;
-    return subscribe(() => {
-      if (++n > 1) setShowView(true);
-    });
-  }, [showView]);
-  const shownEv = showView ? ev : ev.filter((e) => !(e.kind === "price_viewed" && e.actor === u.name));
 
   useEffect(() => {
     if (cmt) cmtRef.current?.focus();
@@ -263,7 +253,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
       <div className="body">
         <div className="summary">
           <Icon name="spark" />
-          <RichSpan r={summarise(o, ev, s.toCheck)} />
+          <RichSpan r={summarise(o, ev)} />
         </div>
         <div className="labels">
           <Lbl state={o.state} />
@@ -404,7 +394,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
         <div className="card">
           <h3>Activity</h3>
           <div className="log tl">
-            {activityByDay(shownEv, pr).map((g) => (
+            {activityByDay(ev, pr).map((g) => (
               <Fragment key={g.d}>
                 <div className="day">{`${relDay(g.d)} · ${fmtDay(g.d)}`}</div>
                 {g.items.map((e, i) => {

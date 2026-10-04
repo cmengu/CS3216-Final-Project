@@ -10,6 +10,7 @@ import { update } from "./demo-store";
 
 const WHO = "pot-who";
 let greetPending = true;
+let picks = 0;
 
 export function isPicked(): boolean {
   try {
@@ -21,9 +22,14 @@ export function isPicked(): boolean {
 
 /** Pick a person: they become the one working, for this browser session. */
 export function pick(personId: string) {
-  update((s) => {
-    s.user = personId;
-  });
+  picks++;
+  greetPending = true;
+  update(
+    (s) => {
+      s.user = personId;
+    },
+    { force: true },
+  );
   try {
     sessionStorage.setItem(WHO, "1");
   } catch {
@@ -31,6 +37,9 @@ export function pick(personId: string) {
   }
   greetPending = true;
 }
+
+/** How many times a person was picked in this page load; Home greets again after each. */
+export const pickCount = () => picks;
 
 /** Home says "Hi <name>" once per page load and once after each pick. */
 export const shouldGreet = () => greetPending;

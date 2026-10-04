@@ -70,17 +70,18 @@ export function OrdersView() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const tag = ((e.target as HTMLElement).tagName || "").toLowerCase();
       if (["input", "textarea", "select"].includes(tag)) return;
-      if (e.key === "Escape" && picked.length) {
-        setPicked([]);
-        return;
-      }
       if (!rows.length) return;
       if (e.key === "j" || e.key === "k" || e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const next = Math.max(0, Math.min(rows.length - 1, cur + (e.key === "j" || e.key === "ArrowDown" ? 1 : -1)));
         setCur(next);
         document.querySelector(`.orow[data-id="${rows[next].id}"]`)?.scrollIntoView({ block: "nearest" });
-      } else if (e.key === "Enter" && cur >= 0 && rows[cur]) router.push(`/orders/${rows[cur].id}`);
+      } else if (e.key === "Enter" && cur >= 0 && rows[cur]) {
+        // Not also the focused link's own Enter (the rail link just clicked keeps focus here,
+        // where the prototype's redraw drops it).
+        e.preventDefault();
+        router.push(`/orders/${rows[cur].id}`);
+      }
       else if (e.key === "x" && cur >= 0 && rows[cur]) {
         const id = rows[cur].id;
         togglePick(id, !picked.includes(id));
@@ -89,6 +90,17 @@ export function OrdersView() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  // Esc clears the selection (the shell asks before it closes the assistant).
+  const { setEscape } = shell;
+  useEffect(() => {
+    setEscape(() => {
+      if (!picked.length) return false;
+      setPicked([]);
+      return true;
+    });
+    return () => setEscape(null);
+  }, [picked, setEscape]);
 
   const pickedOrders = picked.map((id) => s.orders.find((o) => o.id === id)).filter((o): o is Order => !!o);
   const canDel = pickedOrders.every((o) => o.state === "confirmed") && deliverer;
@@ -182,7 +194,7 @@ export function OrdersView() {
                     </span>
                     <span className="sub">
                       <b>{ref(o)}</b>
-                      {whyText(o, s.toCheck)}
+                      {whyText(o)}
                     </span>
                     <span className="when">{relDay(o.date)}</span>
                     <span className="hov">
@@ -193,6 +205,8 @@ export function OrdersView() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            // The prototype redraws the list, which clears the selection.
+                            setPicked([]);
                             shell.toast(run(deliver, o.id));
                           }}
                         >

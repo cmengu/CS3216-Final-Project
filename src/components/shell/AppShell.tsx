@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { isQuietUpdate, subscribe } from "@/state/demo-store";
 import { isPicked, useMounted } from "@/state/session";
 import { Agent } from "./Agent";
 import { RouteGuard } from "./Guard";
@@ -39,6 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mainRef = useRef<HTMLElement>(null);
+  const escRef = useRef<(() => boolean) | null>(null);
   const [lastPath, setLastPath] = useState(pathname);
   const [pane, setPane] = useState<PaneState>("off");
   const [paneHost, setPaneHost] = useState<HTMLElement | null>(null);
@@ -56,6 +58,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
+
+  // The prototype draws the page afresh after every change, which puts the page back at the top.
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (!isQuietUpdate()) mainRef.current?.scrollTo({ top: 0 });
+      }),
+    [],
+  );
 
   const toast = useCallback((t: string) => {
     setToastText(t);
@@ -90,6 +101,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       toggleRail: () => setRailOpen((v) => !v),
       paneHost,
       setPane,
+      setEscape: (fn) => {
+        escRef.current = fn;
+      },
     }),
     [toast, agentOpen, paneHost],
   );
@@ -105,8 +119,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         e.preventDefault();
         setPal((v) => !v);
       }
+      // As the prototype: close ⌘K; else close the assistant when typing in it; else clear the
+      // Orders selection; else close the assistant.
       if (e.key === "Escape") {
         if (pal) setPal(false);
+        else if (document.activeElement?.id === "agentQ") setAgentOpen(false);
+        else if (escRef.current?.()) return;
         else setAgentOpen(false);
       }
     };

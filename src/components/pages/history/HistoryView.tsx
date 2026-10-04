@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
-import { meOf, useDemo } from "@/state/demo-store";
+import { meOf, useDemo, useShownEvents } from "@/state/demo-store";
 import { ref } from "@/lib/format";
 import { applyFilter, filterOptions, historyRows, kindClass, kindText, type HistoryFilter } from "./rows";
 
@@ -26,7 +26,7 @@ export function HistoryView() {
     setF(kept);
   };
 
-  const rows = historyRows(s, u);
+  const rows = historyRows({ ...s, events: useShownEvents() }, u);
   const { kinds, whos } = filterOptions(rows);
   const shown = applyFilter(rows, f);
 

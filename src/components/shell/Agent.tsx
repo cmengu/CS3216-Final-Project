@@ -88,7 +88,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
           d.events.push({ order: pending.ctx, at, kind: "asked", actor: me.name, text });
           d.history.push({ at, who: me.name, kind: "asked", order: pending.ctx, text });
         }
-      });
+      }, { quiet: true });
       setPending(null);
     }, 900);
     return () => clearTimeout(t);
@@ -99,10 +99,13 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
   }, [chat.length, pending]);
 
   const thumb = (key: string, v: 1 | -1) =>
-    update((d) => {
-      const a = (d.chat as Answer[]).find((x) => x.key === key);
-      if (a) a.thumb = a.thumb === v ? 0 : v;
-    });
+    update(
+      (d) => {
+        const a = (d.chat as Answer[]).find((x) => x.key === key);
+        if (a) a.thumb = a.thumb === v ? 0 : v;
+      },
+      { quiet: true },
+    );
 
   const ask1 = (u: { q: string; at: string }) => (
     <div className="u">
@@ -148,9 +151,12 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
           className="ib"
           title="New conversation"
           onClick={() =>
-            update((d) => {
-              d.chat = [];
-            })
+            update(
+              (d) => {
+                d.chat = [];
+              },
+              { quiet: true },
+            )
           }
         >
           <Icon name="plus" />
@@ -255,6 +261,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
           </div>
           <textarea
             ref={box}
+            id="agentQ"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Ask about orders, customers or what changed…"
