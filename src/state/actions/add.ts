@@ -187,8 +187,10 @@ export async function processFiles() {
       signal: abort.signal,
       onFileDone: (item, result) => {
         if (mine !== run) return;
-        bytes.delete(item.id);
         update((d) => settleOp(d, item.id, result, nowStr()));
+        // A failed or unsupported file keeps its bytes, so Retry can check and queue it again (as the prototype's retryFailed).
+        const st = getState().queue.find((f) => f.id === item.id)?.st;
+        if (st !== "failed" && st !== "unsupported") bytes.delete(item.id);
       },
     },
   );
@@ -231,7 +233,8 @@ export function pick(orderId: string, rowId: string, sku: string): string {
   update((d) => void (out = pickOp(d, orderId, rowId, sku)));
   return out;
 }
-export const setQty = (orderId: string, rowId: string, typed: string) => update((d) => setQtyOp(d, orderId, rowId, typed));
+/** Quiet: the prototype's setQty saves without redrawing, so the row's Total shows the change from the next redraw. */
+export const setQty = (orderId: string, rowId: string, typed: string) => update((d) => setQtyOp(d, orderId, rowId, typed), { quiet: true });
 export const setCell = (orderId: string, rowId: string, column: "orderDate" | "poNumber", value: string) =>
   update((d) => setCellOp(d, orderId, rowId, column, value));
 export const pickCustomer = (orderId: string, customerId: string) => update((d) => pickCustomerOp(d, orderId, customerId));

@@ -121,12 +121,13 @@ const typed = (row: EgcOutputRow) => (["sku", "quantity", "price"] as const).som
 
 /**
  * One order line from one row, in the seeded orders' shape: the product's own unit (the PO's
- * only for a line with no SKU), the staff's outlet name for the printed outlet, and the PO's
+ * only for a line with no SKU) when read, kept as it was on later edits, the staff's outlet name for the printed outlet, and the PO's
  * own wording in desc (shown when no SKU matched, and the text an alias is proposed for).
  */
 export function lineOf(row: EgcOutputRow, c: Pick<Customer, "id" | "outlets">, desc: string, prev?: OrderLine): OrderLine {
   const sku = row.cells.sku.value;
-  const unit = ((sku && PRODUCTS[sku]?.unit) || row.cells.quantity.sourceText || "box").toLowerCase();
+  // A line keeps the unit it was read with: picking a SKU or typing a quantity does not change it (prototype: pick, setQty).
+  const unit = prev?.unit || ((sku && PRODUCTS[sku]?.unit) || row.cells.quantity.sourceText || "box").toLowerCase();
   const outlet = prev?.outlet || (row.source.outlet && outletOf(c.id, row.source.outlet)) || c.outlets[0] || "";
   const origin = !sku ? "unresolved" : typed(row) || prev?.origin === "manual" ? "manual" : "po";
   return { sku, qty: row.cells.quantity.value ?? 0, unit, outlet, origin, desc };

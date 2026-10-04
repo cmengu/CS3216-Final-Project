@@ -36,12 +36,14 @@ import {
   startOver,
 } from "@/state/actions/add";
 import { checkMail as markChecked, dropExport as importExport, exportImported, mailFlow } from "@/state/actions/settings";
-import { meOf, update, useDemo } from "@/state/demo-store";
+import { getState, isQuietUpdate, meOf, subscribe, update, useDrawnState } from "@/state/demo-store";
 import { conn, mailboxFiles, mailboxOn, pasteOn } from "@/state/selectors/connections";
 const colDef = (id: EgcColumnId) => EGC_OUTPUT_COLUMNS.find((c) => c.id === id)!;
 
 export function AddView() {
-  const s = useDemo();
+  // The page as last drawn: a typed quantity is saved quietly, as the prototype's setQty, and the
+  // row's Total follows on the next redraw. Copy, Download and Confirm read the saved rows.
+  const s = useDrawnState();
   const u = meOf(s);
   const shell = useShell();
   const router = useRouter();
@@ -65,6 +67,19 @@ export function AddView() {
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [colpop]);
+
+  // The prototype draws the page afresh after every change, which empties the WhatsApp paste box
+  // and puts its customer and date back to their defaults.
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (isQuietUpdate()) return;
+        setPaste("");
+        setPcust(Object.keys(getState().customers)[0]);
+        setPdate(addDays(TODAY, 4));
+      }),
+    [],
+  );
 
   // ⌘V with a PDF on the clipboard adds it, as a dropped file would.
   useEffect(() => {
@@ -133,10 +148,12 @@ export function AddView() {
     if (t) shell.toast(t);
   };
 
-  const copy = () => shell.copyText(copyTable(rows, names, priced), `Copied ${rows.length} rows`);
+  const liveRows = () => tableRows(addDrafts(getState().orders));
+  const copy = () => shell.copyText(copyTable(liveRows(), names, priced), `Copied ${rows.length} rows`);
 
   const download = async () => {
-    const blob = await writeExcel(rows, { columnOrder: exportColumns(names, priced), omitPrices: !priced });
+    const saved = liveRows();
+    const blob = await writeExcel(saved, { columnOrder: exportColumns(names, priced), omitPrices: !priced });
     // The prototype's file name and toast: one sheet per PO.
     const name = "EGC Tracker.xlsx";
     const a = document.createElement("a");
@@ -144,7 +161,7 @@ export function AddView() {
     a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    const n = groupPoSheets(rows).length;
+    const n = groupPoSheets(saved).length;
     shell.toast(`Downloaded ${name} · ${n} sheet${n === 1 ? "" : "s"}`);
   };
 
@@ -184,7 +201,7 @@ export function AddView() {
       );
     }
     if (id === "quantity") {
-      // The line's unit as the prototype shows it: the product's own unit once a SKU is known, else the PO's.
+      // The line's unit, as the prototype shows it next to the quantity.
       const { order, i } = at(r);
       // The prototype's setQty runs on the input's change event: when the value is committed, not on every key.
       const commit = (el: HTMLInputElement) => {
@@ -481,7 +498,13 @@ export function AddView() {
               WhatsApp order
             </button>
             <button className={s.src === "mail" ? "on" : ""} onClick={() => setSrc("mail")}>
-              Mailbox{mail.length ? <span className="cnt">{mail.length}</span> : null}
+              Mailbox
+              {mail.length ? (
+                <>
+                  {" "}
+                  <span className="cnt">{mail.length}</span>
+                </>
+              ) : null}
             </button>
           </div>
           {s.src === "pdf" ? step1Pdf : s.src === "mail" ? step1Mail : step1Wa}
@@ -520,7 +543,15 @@ export function AddView() {
                       {n}
                     </label>
                   ))}
-                  <button className="btn s g" style={{ marginTop: 4 }} onClick={() => update((d) => void (d.cols = null))}>
+                  <button
+                    className="btn s g"
+                    style={{ marginTop: 4 }}
+                    onClick={() => {
+                      // The prototype redraws the page, which closes the popover.
+                      setColpop(false);
+                      update((d) => void (d.cols = null));
+                    }}
+                  >
                     Reset
                   </button>
                 </div>

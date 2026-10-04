@@ -305,7 +305,14 @@ export function AssistantPane() {
           <span style={{ marginLeft: "auto", color: "var(--ink3)" }}>
             {k.masked} · {k.who}
           </span>
-          <button className="ib" onClick={() => update((d) => revokeKey(d, k.id))} title="Revoke">
+          <button
+            className="ib"
+            onClick={() => {
+              update((d) => revokeKey(d, k.id));
+              setWho(s.people[0]?.id ?? "");
+            }}
+            title="Revoke"
+          >
             <Icon name="x" />
           </button>
         </div>
@@ -320,6 +327,7 @@ export function AssistantPane() {
               onClick={() => {
                 copyText(newKey, "Copied key");
                 setNewKey(null);
+                setWho(s.people[0]?.id ?? "");
               }}
             >
               Copy
@@ -344,6 +352,8 @@ export function AssistantPane() {
             const raw = demoKey();
             update((d) => createKey(d, who, raw));
             setNewKey(raw);
+            // The prototype redraws the pane, which puts the person picker back on the first person.
+            setWho(s.people[0]?.id ?? "");
           }}
         >
           Create key
