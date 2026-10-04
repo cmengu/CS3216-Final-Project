@@ -1,0 +1,5 @@
+/* Orders and the order page. globals.css already carries every prototype rule these screens use;
+   this file holds only what the port needs on top. */
+
+/* Search hides rows with the hidden attribute; .row's display:grid would otherwise override it. */
+#olist .orow[hidden]{display:none}

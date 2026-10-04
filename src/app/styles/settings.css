@@ -1,0 +1,11 @@
+/*
+ * Settings. Every rule the prototype has for these screens is already in globals.css; this file only
+ * evens out the prototype's quirks mode (no doctype), where a line holding nothing but an inline
+ * element does not take the parent's line height. Without these the rows sit 1–2px taller.
+ */
+.setpane .conn .ct small{display:block}
+/* The Aliases wording cell: the PO reference wraps onto a line of its own, which in quirks mode
+   takes only the reference's own line height. A zero line height on the cell, with the text's
+   own spans back at normal, draws the same 52px first row. */
+.setpane .tbl td:has(> .hint){line-height:0}
+.setpane .tbl td:has(> .hint)>span{line-height:normal}

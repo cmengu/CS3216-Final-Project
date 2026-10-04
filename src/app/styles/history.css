@@ -1,0 +1,6 @@
+/*
+ * History table. The prototype is drawn in quirks mode, where a table cell whose line holds only
+ * an inline box (the event label, the order link) gets no extra line-height strut, so the box sits
+ * at the top of the cell and each row is 41px. Standards mode adds the strut; this puts it back.
+ */
+.ht td>.lbl,.ht td>a{vertical-align:top}

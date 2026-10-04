@@ -1,0 +1,55 @@
+/*
+ * The one door to the importer library (po-importer). Everything that reads, maps, checks or
+ * writes rows comes from there; the app only shows, keeps and uses the rows. Pages and helpers
+ * import from this module, never from "po-importer" directly, so the seam stays in one place.
+ */
+export {
+  readPdf,
+  readPaste,
+  contentHash,
+  toRows,
+  validate,
+  writeExcel,
+  clipboardText,
+  setManualValue,
+  pickSku,
+  pickCustomer,
+  salesNotesParts,
+  readerLabel,
+  findDuplicate,
+  cellText,
+  enqueueFiles,
+  fileFingerprint,
+  validatePdfFile,
+  processEgcQueue,
+  groupPoSheets,
+  egcSheetKey,
+  egcFileName,
+  businessKey,
+  linesHash,
+  EGC_OUTPUT_COLUMNS,
+} from "po-importer";
+
+export type {
+  ConfirmOrder,
+  ConfirmPayload,
+  EgcCell,
+  EgcColumnDefinition,
+  EgcColumnId,
+  EgcCustomerAlias,
+  EgcCustomerRecord,
+  EgcFingerprints,
+  EgcKnownFingerprints,
+  EgcMasterData,
+  EgcOrderSource,
+  EgcOutputRow,
+  EgcPasteResult,
+  EgcPdfResult,
+  EgcProductAlias,
+  EgcPurchaseOrder,
+  EgcQueueStatus,
+  EgcQueuedFile,
+  EgcSkuRecord,
+  EgcValidationIssue,
+  EgcValidationResult,
+} from "po-importer";

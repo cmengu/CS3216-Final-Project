@@ -1,0 +1,35 @@
+{
+  "name": "po-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "node scripts/copy-samples.mjs",
+    "dev": "next dev",
+    "prebuild": "node scripts/copy-samples.mjs",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "shots": "node scripts/shots.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "e2e:add": "node scripts/e2e-add.mjs",
+    "e2e:roles": "node scripts/e2e-roles.mjs"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "po-importer": "github:neokh719/PO-Transformer-KH#v0.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.8",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5",
+    "vitest": "^5.0.3"
+  }
+}
