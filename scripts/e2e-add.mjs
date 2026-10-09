@@ -241,9 +241,9 @@ for (const theme of ["dark", "light"]) {
       // WhatsApp: turn the paste connection on in the demo store, read the example, see its rows.
       await page.click(".src button:has-text('WhatsApp order')");
       await page.evaluate(() => {
-        const s = JSON.parse(localStorage.getItem("pot-demo-v2"));
+        const s = JSON.parse(localStorage.getItem("pot-demo-v3"));
         s.cx.paste = true;
-        localStorage.setItem("pot-demo-v2", JSON.stringify(s));
+        localStorage.setItem("pot-demo-v3", JSON.stringify(s));
       });
       await page.reload();
       await page.click("button:has-text('Example')");

@@ -16,6 +16,8 @@ The approved design is the Version 16 prototype (`egc-platform-prd/prototype.htm
 
 Where the sample POs come from: they are invented look-alikes that ship inside the importer package (`node_modules/po-importer/fixtures/egc/demo-set/`, with the prototype's file names). Which folder and files is one line in `src/sample/sample-pos.json`; before `dev` and `build`, `scripts/copy-samples.mjs` copies them into `public/samples/`, which git ignores. The seeded HH-2231 carries the fingerprints the package records for `PO_HH-2231.pdf` (`src/sample/orders.ts`; a test checks they still match the package). No real purchase order is in this repo.
 
+Where EGC's real buyers, items and prices are: not in this repo either. `src/sample/egc-samples.ts` reads them from `src/sample/egc-samples.private.json`, which git ignores (`*.private.*`), so they stay on the machine that has the file. On a machine without it, `scripts/private-lists.mjs` writes an empty one after `npm install` and the demo runs on the invented lists alone. To get the real lists, ask for the file and put it at that path; never commit it or paste its contents into a tracked file.
+
 ## Checks
 
 ```

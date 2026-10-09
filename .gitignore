@@ -46,5 +46,8 @@ next-env.d.ts
 !fixtures/**/*.pdf
 !fixtures/**/*.xlsx
 
+# real buyers, items and prices from EGC's sample POs stay on this machine (scripts/private-lists.mjs)
+*.private.*
+
 # sample POs copied from the importer package at dev/build time
 /public/samples/

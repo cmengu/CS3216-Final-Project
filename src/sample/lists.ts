@@ -9,6 +9,7 @@
  */
 import type { EgcCustomerAlias, EgcMasterData, EgcProductAlias } from "@/lib/importer";
 import { CUSTOMERS } from "./customers";
+import { SAMPLE_PRINTED_CUSTOMERS, SAMPLE_PRINTED_ITEMS } from "./egc-samples";
 import { seedAliases } from "./orders";
 import { PRODUCTS } from "./products";
 import type { Alias, Customer, Product } from "./types";
@@ -104,6 +105,7 @@ export function buildLists(
       .filter((a): a is Alias & { sku: string } => a.state === "approved" && !!a.sku && !!products[a.sku])
       .map((a) => ({ customerId: null, sourceText: a.text, sku: a.sku })),
     ...PRINTED_ITEMS,
+    ...SAMPLE_PRINTED_ITEMS.filter((a) => products[a.sku] && a.customerId && customers[a.customerId]),
     ...PASTE_WORDING,
   ];
   return {
@@ -117,7 +119,7 @@ export function buildLists(
     })),
     productAliases,
     customerAliases: [
-      ...PRINTED_CUSTOMERS.filter((a) => customers[a.customerId]),
+      ...[...PRINTED_CUSTOMERS, ...SAMPLE_PRINTED_CUSTOMERS].filter((a) => customers[a.customerId]),
       ...Object.values(customers)
         .filter((c) => !ONE_OUTLET.has(c.id))
         .map((c) => ({ buyerName: c.name, outlet: "", customerId: c.id })),

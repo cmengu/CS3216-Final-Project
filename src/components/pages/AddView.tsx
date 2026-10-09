@@ -559,11 +559,11 @@ export function AddView() {
             </span>
             {rows.length ? (
               <>
-                <button className="btn p" disabled={red} onClick={copy}>
+                <button className="btn p" onClick={copy}>
                   <Icon name="copy" />
                   Copy table
                 </button>
-                <button className="btn" disabled={red} onClick={() => void download()}>
+                <button className="btn" onClick={() => void download()}>
                   <Icon name="dl" />
                   Download Excel
                 </button>

@@ -1,6 +1,7 @@
+import { SAMPLE_CUSTOMERS } from "./egc-samples";
 import type { Customer } from "./types";
 
-/* Invented customers. Names, places and contacts are made up. */
+/* Invented customers (names, places and contacts are made up), then the buyers on EGC's sample POs (egc-samples.ts, from a file git ignores). */
 export const CUSTOMERS: Record<string, Customer> = {
   C10243: {
     id: "C10243",
@@ -87,4 +88,5 @@ export const CUSTOMERS: Record<string, Customer> = {
     terms: "7 days",
     notes: [],
   },
+  ...SAMPLE_CUSTOMERS,
 };

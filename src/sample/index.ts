@@ -9,7 +9,7 @@ export { CUSTOMERS } from "./customers";
 export { PEOPLE, ROLES } from "./people";
 export { PRODUCTS } from "./products";
 
-/* Everything here is invented. Never put a real PO, product, customer or price in this folder. */
+/* Everything here is invented. The real buyers and items on EGC's own sample POs come in through egc-samples.ts from a file git ignores. Never put a real PO, customer or price in a tracked file. */
 export const COMPANY = "Edible Garden City";
 export const APP_NAME = "PO Tracker";
 export const GROUP_LOGIN = "orders@ediblegardencity.example";

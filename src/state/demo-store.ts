@@ -9,7 +9,7 @@ import { seed } from "@/sample";
 import type { DemoState, Person } from "@/sample";
 import { visibleOrders } from "@/platform/access";
 
-const KEY = "pot-demo-v2";
+const KEY = "pot-demo-v3";
 const SERVER: DemoState = seed();
 
 let state: DemoState | null = null;

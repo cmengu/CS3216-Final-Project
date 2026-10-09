@@ -125,7 +125,7 @@ async function switchTo(page, name, pin) {
   await toast(page, /orders? confirmed/);
   const ordersAfter = await navCount(page, "/orders");
   ok(ordersAfter === ordersBefore + pos, `rail Orders count ${ordersBefore} → ${ordersAfter} after confirming ${pos} POs`);
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")));
   const made = state.orders.filter((o) => Number(o.id.slice(1)) > 100);
   ok(made.length >= pos, `confirmed orders in the store (${made.map((o) => o.po).join(", ")})`);
   const ordersText = await text(page);
@@ -163,7 +163,7 @@ async function switchTo(page, name, pin) {
   await page.click(".cmt button:has-text('Post')");
   await toast(page, /Posted/);
   ok((await text(page, ".card .log")).includes("Packed with the Friday run"), "comment in the timeline");
-  const inv0 = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")).orders.filter((o) => o.state === "delivered" && !o.invoiced).length);
+  const inv0 = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")).orders.filter((o) => o.state === "delivered" && !o.invoiced).length);
   await page.click(".hd button:has-text('Mark delivered')");
   await toast(page, /Marked delivered/);
   ok(await page.locator(".labels").innerText().then((t) => t.includes("Delivered")), "order shows Delivered");
@@ -350,7 +350,7 @@ async function switchTo(page, name, pin) {
   await page.waitForSelector(".draft");
   ok((await log()).includes("May viewed prices") && (await log()).includes("May asked"), "the next change shows them");
   ok((await page.locator("#main.withpane").count()) === 1, "and brings the pane back");
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")).settings.reply);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")).settings.reply);
   ok(JSON.stringify(stored) === JSON.stringify({ lines: true, date: true, sign: true }), "Suggest reply stores the reply defaults, as the prototype's replyOpt");
   await page.evaluate(() => document.getElementById("main").scrollTo({ top: 400 }));
   await page.click("button:has-text('Discard')");

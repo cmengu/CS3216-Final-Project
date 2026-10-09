@@ -9,7 +9,8 @@ const C = (id: string) => S.customers[id];
 
 describe("visibleCustomers", () => {
   it("shows every customer to all-customer roles", () => {
-    expect(visibleCustomers(S, by("coordinator")).map((c) => c.id)).toEqual(["C10243", "C10310", "C10388", "C10402", "C10419"]);
+    expect(visibleCustomers(S, by("coordinator")).map((c) => c.id)).toEqual(Object.keys(S.customers));
+    expect(Object.keys(S.customers).slice(0, 5)).toEqual(["C10243", "C10310", "C10388", "C10402", "C10419"]);
   });
   it("keeps an account manager to their own customers", () => {
     expect(visibleCustomers(S, by("account_manager")).map((c) => c.id)).toEqual(["C10243", "C10310"]);
