@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { useInvoices } from "@/checker/api";
+import { summarize } from "@/checker/summary";
 import { canEdit, navAllowed, needsPin, visibleOrders } from "@/platform/access";
 import { NAV, navKeyOf } from "@/platform/nav";
 import { GROUP_LOGIN, ROLES } from "@/sample";
@@ -26,6 +28,7 @@ export function Rail({ open }: { open: boolean }) {
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const mine = visibleOrders(s.orders, u);
+  const { invoices } = useInvoices();
   const route = navKeyOf(pathname);
 
   useEffect(() => {
@@ -40,7 +43,7 @@ export function Rail({ open }: { open: boolean }) {
 
   const count = (key: string): number => {
     if (key === "orders") return mine.filter((o) => o.state !== "delivered").length;
-    if (key === "invoices") return mine.filter((o) => o.state === "delivered" && !o.invoiced).length;
+    if (key === "invoices") return invoices ? summarize(invoices).piles.look.length : 0;
     return 0;
   };
 
