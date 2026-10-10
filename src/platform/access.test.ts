@@ -71,9 +71,7 @@ describe("lines", () => {
 });
 
 describe("navAllowed", () => {
-  it("hides Add orders, Invoices, People and Settings by role", () => {
-    expect(navAllowed("add", by("packing"))).toBe(false);
-    expect(navAllowed("add", by("coordinator"))).toBe(true);
+  it("hides Invoices, People and Settings by role", () => {
     expect(navAllowed("invoices", by("finance"))).toBe(true);
     expect(navAllowed("invoices", by("coordinator"))).toBe(false);
     expect(navAllowed("people", by("owner"))).toBe(true);

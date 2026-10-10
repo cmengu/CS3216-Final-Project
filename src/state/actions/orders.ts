@@ -4,13 +4,10 @@
  * Each op changes a draft of the demo state and writes the same events and history the
  * prototype writes; it returns the toast to show. `run()` applies one through the store.
  */
-import { PRODUCTS, TODAY } from "@/sample";
+import { TODAY } from "@/sample";
 import type { DemoState, Order } from "@/sample";
 import { ref, custOf } from "@/lib/format";
 import { getState, meOf, update } from "@/state/demo-store";
-import { readFor } from "@/lib/add-orders";
-import { validate } from "@/lib/importer";
-import { buildLists } from "@/sample/lists";
 
 /** The demo's clock: the fixed TODAY with the real time of day, as the prototype's nowStr(). */
 export function nowStr(d: Date = new Date()): string {
@@ -65,8 +62,6 @@ export const confirmOrder: Op<[id: string]> = (s, c, id) => {
   const o = find(s, id);
   if (!s.settings.retainsRows) return "Retention is off";
   if (o.lines.some((l) => !l.sku)) return "A cell still has no SKU";
-  // A draft read on Add orders: every cell the importer requires must be filled.
-  if (o.read && validate(o.read.rows).blockers.length) return "A cell still needs a value";
   o.state = "confirmed";
   o.confirmedBy = c.me;
   addEvent(s, c, id, "confirmed", `Confirmed ${o.lines.length} lines`);
@@ -76,11 +71,8 @@ export const confirmOrder: Op<[id: string]> = (s, c, id) => {
 export const unconfirm: Op<[id: string]> = (s, c, id) => {
   const o = find(s, id);
   o.state = "draft";
-  o.fromAdd = true;
-  // Its rows go back in the Add orders table: the rows kept when it was read, or rebuilt from its lines.
-  o.read = readFor(o, buildLists(PRODUCTS, s.customers, s.aliases), s.customers);
   s.toCheck = s.toCheck.filter((t) => t.order !== id);
-  addEvent(s, c, id, "unconfirmed", o.exported ? "Unconfirmed · already exported, re-send the sheet" : "Unconfirmed · rows back in the grid");
+  addEvent(s, c, id, "unconfirmed", o.exported ? "Unconfirmed · already exported, re-send the sheet" : "Unconfirmed · back to draft");
   return "Unconfirmed";
 };
 

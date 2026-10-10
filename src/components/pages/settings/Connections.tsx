@@ -4,13 +4,11 @@
  * Settings › Connections (prototype: connView). One grouped list: orders mailbox, WhatsApp paste and
  * chat export, WhatsApp live. Every flow is a walk-through on demo state; nothing connects for real.
  */
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/icons";
 import { useShell } from "@/components/shell/context";
 import { GROUP_LOGIN } from "@/sample";
-import { MAIL0, PASTE_EXAMPLE } from "@/sample/mail";
+import { MAIL0 } from "@/sample/mail";
 import { useDemo, update } from "@/state/demo-store";
 import { checkMail, connectMail, disconnectMail, dropExport, exportImported, mailFlow, setWa, togglePaste } from "@/state/actions/settings";
 import { conn, mailboxFiles } from "@/state/selectors/connections";
@@ -88,23 +86,9 @@ function QR() {
   );
 }
 
-/** "Try an example": open Add orders on WhatsApp and put the example in its paste box (#paste), as the prototype does. */
-function fillPaste(tries = 40) {
-  const t = document.getElementById("paste") as HTMLTextAreaElement | null;
-  if (!t) {
-    if (tries > 0) setTimeout(() => fillPaste(tries - 1), 50);
-    return;
-  }
-  // Set through the native setter so a React-controlled box sees the change too.
-  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(t, PASTE_EXAMPLE);
-  t.dispatchEvent(new Event("input", { bubbles: true }));
-  t.focus();
-}
-
 export function ConnectionsPane() {
   const s = useDemo();
   const { toast } = useShell();
-  const router = useRouter();
   // Which row's body slides in on this change (prototype: window._cxAnim).
   const [an, setAn] = useState<Row | null>(null);
   const c = conn(s),
@@ -129,11 +113,6 @@ export function ConnectionsPane() {
     setAn(null);
     update(dropExport);
     toast("41 messages read · 3 linked · 1 change to review");
-  };
-  const tryPaste = () => {
-    update((d) => void (d.src = "wa"));
-    router.push("/add");
-    setTimeout(() => fillPaste(), 80);
   };
 
   const mail = (
@@ -190,11 +169,6 @@ export function ConnectionsPane() {
               <div className="hint">Nothing new in the mailbox.</div>
             )}
             <div className="cact">
-              {ms.length ? (
-                <Link className="btn s p" href="/add" onClick={() => update((d) => void (d.src = "mail"))}>
-                  Read {ms.length} PDF{ms.length > 1 ? "s" : ""}
-                </Link>
-              ) : null}
               <button
                 className="btn s"
                 onClick={() => {
@@ -292,17 +266,6 @@ export function ConnectionsPane() {
         "on",
         c.paste ? (
           <div className="how">
-            <div>
-              <h4>Paste an order</h4>
-              <ol>
-                <li>Copy the order message in WhatsApp</li>
-                <li>Paste it under Add orders</li>
-                <li>Pick the customer and delivery date</li>
-              </ol>
-              <button className="btn s" onClick={tryPaste}>
-                Try an example
-              </button>
-            </div>
             <div>
               <h4>Import a chat export</h4>
               <ol>

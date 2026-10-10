@@ -18,25 +18,11 @@ const listeners = new Set<() => void>();
 function load(): DemoState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return afterReload(JSON.parse(raw) as DemoState);
+    if (raw) return JSON.parse(raw) as DemoState;
   } catch {
     /* storage blocked or corrupt: fall back to the seed */
   }
   return seed();
-}
-
-/** What a file's bytes not surviving a reload means for an entry that still needed them. */
-export const LOST_BYTES = "Not kept after a reload · add the file again";
-
-/**
- * The stored state as a fresh page sees it. Add orders' queue keeps each file's name, size,
- * status and detail, but a File cannot be stored: an entry that was still waiting to be checked
- * or read has lost its bytes, so it is marked Failed with a note to add the file again.
- */
-export function afterReload(s: DemoState): DemoState {
-  s.queue = (s.queue ?? []).map((f) => (["validating", "ready", "processing"].includes(f.st) ? { ...f, st: "failed", detail: LOST_BYTES } : f));
-  s.notice ??= "";
-  return s;
 }
 
 function save() {
@@ -112,8 +98,7 @@ export function useShownEvents() {
 
 /**
  * The state as the page last drew it: as it was when the page opened, then after each change
- * that redraws the page. A quiet change (Add orders' quantity edit, which the prototype saves
- * without redrawing) shows from the next redraw on.
+ * that redraws the page. A quiet change (one saved without redrawing) shows from the next redraw on.
  */
 export function useDrawnState(): DemoState {
   const live = useDemo();

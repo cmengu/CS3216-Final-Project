@@ -14,7 +14,6 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { key: "home", label: "Home", icon: "home", href: "/home" },
   { key: "orders", label: "Orders", icon: "list", href: "/orders" },
-  { key: "add", label: "Add orders", icon: "plus", href: "/add" },
   { key: "customers", label: "Customers", icon: "building", href: "/customers" },
   { key: "invoices", label: "Invoices", icon: "inv", href: "/invoices" },
   { key: "people", label: "People", icon: "people", href: "/people" },

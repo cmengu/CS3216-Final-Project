@@ -9,7 +9,7 @@ export { CUSTOMERS } from "./customers";
 export { PEOPLE, ROLES } from "./people";
 export { PRODUCTS } from "./products";
 
-/* Everything here is invented. The real buyers and items on EGC's own sample POs come in through egc-samples.ts from a file git ignores. Never put a real PO, customer or price in a tracked file. */
+/* Everything here is invented. Never put a real PO, product, customer or price in this folder. */
 export const COMPANY = "Edible Garden City";
 export const APP_NAME = "PO Tracker";
 export const GROUP_LOGIN = "orders@ediblegardencity.example";
@@ -30,7 +30,6 @@ export function seed(): DemoState {
     drafts: [],
     comments: [],
     keys: [],
-    cols: null,
     settings: {
       retainsRows: true,
       retentionDays: 365,
@@ -40,12 +39,8 @@ export function seed(): DemoState {
     },
     cx: { mail: null, mailFlow: null, paste: false, wa: null },
     mailbox: null,
-    queue: [],
-    notice: "",
     user: "u2",
     chat: [],
     seq: 100,
-    src: "pdf",
-    layout: "egc",
   } satisfies DemoState);
 }

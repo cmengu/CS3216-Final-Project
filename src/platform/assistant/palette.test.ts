@@ -11,7 +11,7 @@ describe("⌘K palette", () => {
     const h = paletteHits(S, by("coordinator"), "");
     expect(h.filter((x) => x.kind === "order")).toHaveLength(4);
     expect(h.filter((x) => x.kind === "customer")).toHaveLength(3);
-    expect(h.filter((x) => x.kind === "action").map((x) => (x.kind === "action" ? x.label : ""))).toEqual(["Add orders", "Ask the assistant", "Toggle theme"]);
+    expect(h.filter((x) => x.kind === "action").map((x) => (x.kind === "action" ? x.label : ""))).toEqual(["Ask the assistant", "Toggle theme"]);
   });
 
   it("finds orders by PO number, customer name or state", () => {
@@ -32,10 +32,9 @@ describe("⌘K palette", () => {
     expect(other).toEqual([{ g: "Ask", kind: "ask", text: "riverside", m: "" }]);
   });
 
-  it("the packing lead has no Add orders and no Invoices", () => {
+  it("the packing lead has no Invoices", () => {
     const h = paletteHits(S, by("packing"), "");
-    expect(h.some((x) => x.kind === "action" && x.action === "add")).toBe(false);
-    expect(h.some((x) => x.kind === "page" && (x.nav.key === "add" || x.nav.key === "invoices"))).toBe(false);
+    expect(h.some((x) => x.kind === "page" && x.nav.key === "invoices")).toBe(false);
   });
 
   it("nothing found offers to ask the assistant with the words as typed", () => {

@@ -23,8 +23,8 @@ export function addDays(d: string, n: number): string {
 }
 
 /**
- * The order's customer. A PO read on Add orders whose buyer is not in the customer list waits
- * as a draft with no customer until one is picked; it shows under this stand-in until then.
+ * The order's customer. An order whose customer is not in the customer list shows under this
+ * stand-in.
  */
 export const custOf = (customers: Record<string, Customer>, id: string): Customer =>
   customers[id] ?? {

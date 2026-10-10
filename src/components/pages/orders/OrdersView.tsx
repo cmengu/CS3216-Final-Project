@@ -8,7 +8,7 @@ import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
 import { summarisePrompt } from "@/platform/assistant";
-import { canDeliver, canEdit } from "@/platform/access";
+import { canDeliver } from "@/platform/access";
 import type { Order } from "@/sample";
 import { bulkDeliver, deliver, run } from "@/state/actions/orders";
 import { meOf, useDemo } from "@/state/demo-store";
@@ -134,12 +134,6 @@ export function OrdersView() {
                 <Icon name="chevDown" />
               </span>
             </div>
-            {canEdit(u) ? (
-              <Link className="btn p s" href="/add">
-                <Icon name="plus" />
-                Add
-              </Link>
-            ) : null}
           </>
         }
       >

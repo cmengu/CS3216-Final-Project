@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { canEdit, navAllowed, needsPin, visibleOrders } from "@/platform/access";
-import { NAV, mailbox, navKeyOf } from "@/platform/nav";
+import { NAV, navKeyOf } from "@/platform/nav";
 import { GROUP_LOGIN, ROLES } from "@/sample";
 import { meOf, reset, useDemo } from "@/state/demo-store";
 import { pick } from "@/state/session";
@@ -40,7 +40,6 @@ export function Rail({ open }: { open: boolean }) {
 
   const count = (key: string): number => {
     if (key === "orders") return mine.filter((o) => o.state !== "delivered").length;
-    if (key === "add" && canEdit(u)) return mailbox(s).length;
     if (key === "invoices") return mine.filter((o) => o.state === "delivered" && !o.invoiced).length;
     return 0;
   };

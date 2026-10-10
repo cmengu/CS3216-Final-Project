@@ -1,5 +1,4 @@
 /* Types for the invented demo data. A database seed can be generated from the same shapes later. */
-import type { EgcFingerprints, EgcOrderSource, EgcOutputRow } from "@/lib/importer";
 
 export type Role = "owner" | "coordinator" | "account_manager" | "packing" | "finance";
 
@@ -56,39 +55,8 @@ export interface SourceFile {
   size: number;
   at: string;
   hash: string;
-  /** The importer's fingerprint of the PDF's text, for recognising the same PO again. */
-  contentHash?: string;
-  /** The layout reader that read it (Add orders); seeded orders use the customer's layout. */
+  /** The PO layout it was read as; when absent the customer's layout is shown. */
   layout?: string;
-  /** The importer's fingerprint of the file's bytes (null for a paste). */
-  fileHash?: string | null;
-}
-
-/**
- * What Add orders keeps beside an order it read: the importer's rows for that order (plain
- * data: values, origins, the printed text) and its fingerprints. Never the PDF, its text or the
- * reader's evidence. The Step 3 table, Copy, Download Excel and Confirm are computed from these.
- */
-export interface OrderRead {
-  /** The rows' source.sourceId: the queue entry's id, a paste's id, or the order's own id. */
-  sourceId: string;
-  readerId: string;
-  source: EgcOrderSource;
-  fingerprints: EgcFingerprints;
-  /** One per line, in line order (rows[i] is lines[i]). */
-  rows: EgcOutputRow[];
-}
-
-/** The file queue's statuses, in the prototype's words (QL in src/lib/columns.ts). */
-export type AddStatus = "validating" | "ready" | "processing" | "parsed" | "partial" | "unsupported" | "failed" | "duplicate";
-
-/** One file in Add orders' Step 2 list (prototype: S.queue). The bytes are kept in memory only. */
-export interface QueueEntry {
-  id: string;
-  name: string;
-  size: number;
-  st: AddStatus;
-  detail: string;
 }
 
 export interface Order {
@@ -102,11 +70,8 @@ export interface Order {
   confirmedBy: string | null;
   invoiced?: string;
   file?: SourceFile;
-  fromAdd?: boolean;
   unparsed?: string[];
   lines: OrderLine[];
-  /** Kept for orders read on Add orders (and for an unconfirmed order, rebuilt from its lines). */
-  read?: OrderRead;
 }
 
 export interface OrderEvent {
@@ -199,15 +164,10 @@ export interface DemoState {
   drafts: { order: string; text: string }[];
   comments: { order: string; at: string; who: string; text: string }[];
   keys: { id: string; label: string; who: string; masked: string }[];
-  cols: string[] | null;
   settings: Settings;
   cx: Connections;
   mailbox: MailItem[] | null; // PDFs waiting in the orders mailbox, once one is connected
-  queue: QueueEntry[]; // Add orders' Step 2 file list (prototype: S.queue)
-  notice: string; // Add orders' "N duplicate files were skipped" (prototype: S.notice)
   user: string;
   chat: unknown[];
   seq: number;
-  src: "pdf" | "wa" | "mail";
-  layout: "egc" | "packing";
 }

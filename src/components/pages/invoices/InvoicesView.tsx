@@ -3,7 +3,7 @@
 /*
  * Invoices, as the prototype's invoicesView(): delivered orders, To invoice / Invoiced, grouped by customer.
  * Owner and Finance only; everyone else gets Not found. The Excel button only shows a toast, as in the
- * prototype; the real writer comes later from the importer library.
+ * prototype.
  */
 import Link from "next/link";
 import { useState } from "react";
