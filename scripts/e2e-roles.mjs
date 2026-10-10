@@ -3,7 +3,7 @@
 //
 // For each of the five seeded people: pass the gate (Owner and Finance first get wrong-format
 // PINs refused), visit every route, every order and every customer, and use every export path
-// (Copy lines on the list and the order page, Copy CSV, Copy table, the assistant's answers, the
+// (Copy lines on the list and the order page, Copy CSV, the assistant's answers, the
 // palette). Asserts, on the rendered text, titles, form values and the clipboard:
 //  - roles that cannot see prices never receive a price, a money amount or a "$";
 //  - account managers only ever see their own customers' orders and customers;
@@ -82,7 +82,7 @@ for (const who of [
   await page.waitForURL(/\/home$/);
   await page.waitForSelector(".hd h1");
 
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v2")));
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")));
   const me = state.people.find((p) => p.id === who.id);
   const own = (cust) => me.customers === "all" || me.customers.includes(cust);
   const ref = (o) => o.po || `WA-${o.cust}-${o.date.slice(8, 10)}${o.date.slice(5, 7)}`;
@@ -118,7 +118,6 @@ for (const who of [
   for (const tab of ["needs_check", "blocked", "confirmed", "delivered"]) await visit(`/orders?state=${tab}`, "open");
   for (const o of state.orders) await visit(`/orders/${o.id}`, own(o.cust) ? "open" : "missing");
   await visit("/orders/o999", "missing");
-  await visit("/add", may(["owner", "coordinator"].includes(who.role)));
   await visit("/customers", "open");
   for (const c of Object.keys(state.customers)) await visit(`/customers/${c}`, own(c) ? "open" : "missing");
   await visit("/invoices", may(["owner", "finance"].includes(who.role)));
@@ -157,27 +156,6 @@ for (const who of [
     const csv = await clip(page);
     ok(csv.startsWith("Customer,Customer ID,PO,Delivered,Lines,Total,Invoice"), `${tag}: Copy CSV copies the invoice CSV`);
     await check("Copy CSV", csv);
-  }
-
-  // Copy table on Add orders.
-  if (["owner", "coordinator"].includes(who.role)) {
-    await page.goto(`${APP}/add`);
-    await page.click("text=use the four sample POs");
-    await page.waitForSelector(".q li");
-    await page.waitForFunction(() => ![...document.querySelectorAll(".q .st")].some((e) => /Checking/.test(e.textContent || "")));
-    await page.click("button:has-text('Process')");
-    await page.waitForFunction(() => [...document.querySelectorAll(".q .st")].every((e) => !/Queued|Reading|Checking/.test(e.textContent || "")), null, { timeout: 30000 });
-    while (await page.locator("select[aria-label='Pick SKU']").count()) {
-      await page.locator("select[aria-label='Pick SKU']").first().selectOption({ index: 1 });
-      await settle(page, 100);
-    }
-    await clearClip(page);
-    await page.click("button:has-text('Copy table')");
-    await settle(page);
-    const t = await clip(page);
-    ok(t.split("\n").length > 2, `${tag}: Copy table copies rows`);
-    await check("Copy table", t);
-    await page.click("button:has-text('Start over')");
   }
 
   // The assistant: every suggested question and a few about money and other customers.

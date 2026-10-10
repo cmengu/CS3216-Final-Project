@@ -7,10 +7,9 @@ import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
 import { canEdit, canPrice, seesCustomer, visibleOrders } from "@/platform/access";
-import { mailbox } from "@/platform/nav";
 import { TODAY } from "@/sample";
 import type { DemoState, Order, Person } from "@/sample";
-import { meOf, update, useDemo, useShownEvents } from "@/state/demo-store";
+import { meOf, useDemo, useShownEvents } from "@/state/demo-store";
 import { markGreeted, pickCount, shouldGreet } from "@/state/session";
 import { addDays, dayLabel, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, relDay, slotText, custOf } from "@/lib/format";
 
@@ -87,7 +86,6 @@ export function HomeView() {
     })
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 5);
-  const mail = mailbox(s);
 
   const row = (o: Order, title: ReactNode, sub: ReactNode, key: string) => (
     <Link className="it" href={`/orders/${o.id}`} key={key}>
@@ -114,12 +112,6 @@ export function HomeView() {
               <Icon name="copy" />
               Handover
             </button>
-            {edit ? (
-              <Link className="btn p s" href="/add">
-                <Icon name="plus" />
-                Add orders
-              </Link>
-            ) : null}
           </>
         }
       >
@@ -140,15 +132,6 @@ export function HomeView() {
               </Link>
             ))}
           </div>
-          {edit && mail.length ? (
-            <Link className="mailrow" href="/add" onClick={() => update((d) => void (d.src = "mail"))}>
-              <Icon name="mail" />
-              <b>
-                {mail.length} new PDF{mail.length > 1 ? "s" : ""} in the orders mailbox
-              </b>
-              <span className="btn s">Read</span>
-            </Link>
-          ) : null}
           {need ? (
             <section>
               <h3>Awaiting review</h3>

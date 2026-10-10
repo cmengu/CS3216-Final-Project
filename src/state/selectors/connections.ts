@@ -1,6 +1,6 @@
 /*
  * Read-only views of the connection state (prototype: conn(), connOn(), mailbox()).
- * Settings › Connections writes it; Home, the rail badge and Add orders read it through these.
+ * Settings › Connections writes it and reads it through these.
  */
 import type { Connections, DemoState, MailItem } from "@/sample";
 import { mailbox } from "@/platform/nav";

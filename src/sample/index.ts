@@ -30,7 +30,6 @@ export function seed(): DemoState {
     drafts: [],
     comments: [],
     keys: [],
-    cols: null,
     settings: {
       retainsRows: true,
       retentionDays: 365,
@@ -40,12 +39,8 @@ export function seed(): DemoState {
     },
     cx: { mail: null, mailFlow: null, paste: false, wa: null },
     mailbox: null,
-    queue: [],
-    notice: "",
     user: "u2",
     chat: [],
     seq: 100,
-    src: "pdf",
-    layout: "egc",
   } satisfies DemoState);
 }

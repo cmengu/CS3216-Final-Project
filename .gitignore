@@ -46,5 +46,5 @@ next-env.d.ts
 !fixtures/**/*.pdf
 !fixtures/**/*.xlsx
 
-# sample POs copied from the importer package at dev/build time
-/public/samples/
+# anything real (client files, real lists) stays on this machine
+*.private.*

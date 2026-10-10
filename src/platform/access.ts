@@ -14,7 +14,7 @@ const PIN_ROLES: readonly Role[] = ["owner", "finance"];
 
 /** Sees unit prices, totals and amounts. */
 export const canPrice = (p: Person): boolean => PRICE_ROLES.includes(p.role);
-/** Add orders, Confirm, Unconfirm, review changes. */
+/** Confirm, Unconfirm, review changes. */
 export const canEdit = (p: Person): boolean => EDIT_ROLES.includes(p.role);
 /** Mark delivered. */
 export const canDeliver = (p: Person): boolean => DELIVER_ROLES.includes(p.role);
@@ -56,11 +56,10 @@ export function lines(order: Pick<Order, "lines">, p: Person, products: Record<s
   });
 }
 
-export type NavKey = "home" | "orders" | "add" | "customers" | "invoices" | "people" | "history" | "settings";
+export type NavKey = "home" | "orders" | "customers" | "invoices" | "people" | "history" | "settings";
 
 /** Which rail items and routes this person may open. */
 export function navAllowed(key: NavKey, p: Person): boolean {
-  if (key === "add") return canEdit(p);
   if (key === "invoices") return canInvoice(p);
   if (key === "people" || key === "settings") return isOwner(p);
   return true;

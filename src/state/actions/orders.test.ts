@@ -60,11 +60,11 @@ describe("confirm and unconfirm", () => {
   it("unconfirms back to a draft and drops the order's review items", () => {
     const s = seed();
     expect(unconfirm(s, C, "o2")).toBe("Unconfirmed");
-    expect(order(s, "o2")).toMatchObject({ state: "draft", fromAdd: true });
+    expect(order(s, "o2")).toMatchObject({ state: "draft" });
     expect(s.toCheck.some((t) => t.order === "o2")).toBe(false);
     expect(last(s).text).toBe("Unconfirmed · already exported, re-send the sheet");
     unconfirm(s, C, "o4");
-    expect(last(s).text).toBe("Unconfirmed · rows back in the grid");
+    expect(last(s).text).toBe("Unconfirmed · back to draft");
   });
 
   it("refuses to confirm with a missing SKU or with retention off", () => {

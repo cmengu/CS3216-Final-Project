@@ -2,12 +2,12 @@
  * ⌘K results, ported from the prototype's palRender(): orders by PO number, customer or state,
  * customers by name, pages and a few actions, all within what this person may see.
  */
-import { canEdit, navAllowed, seesCustomer, visibleOrders } from "@/platform/access";
+import { navAllowed, seesCustomer, visibleOrders } from "@/platform/access";
 import { NAV, type NavItem } from "@/platform/nav";
 import type { DemoState, Person } from "@/sample";
 import { ref, relDay, STATE, custOf } from "@/lib/format";
 
-export type PaletteAction = "add" | "ask" | "theme";
+export type PaletteAction = "ask" | "theme";
 
 export type PaletteHit =
   | { g: "Orders"; kind: "order"; id: string; ref: string; name: string; m: string }
@@ -32,7 +32,6 @@ export function paletteHits(s: DemoState, me: Person, query: string): PaletteHit
     ["ask", "Ask the assistant", "⌘I"],
     ["theme", "Toggle theme", ""],
   ];
-  if (canEdit(me)) acts.unshift(["add", "Add orders", ""]);
   acts.filter(([, l]) => !q || l.toLowerCase().includes(q)).forEach(([action, label, m]) => out.push({ g: "Actions", kind: "action", action, label, m }));
   if (q && !out.length) out.push({ g: "Ask", kind: "ask", text: query, m: "" });
   return out;

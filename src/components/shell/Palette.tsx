@@ -64,7 +64,6 @@ export function Palette({ open }: { open: boolean }) {
     else if (it.kind === "customer") router.push(`/customers/${it.id}`);
     else if (it.kind === "page") router.push(it.nav.href);
     else if (it.kind === "ask") shell.openAssistant({ prompt: it.text, send: true });
-    else if (it.action === "add") router.push("/add");
     else if (it.action === "ask") shell.openAgent(true);
     else toggleTheme();
   };

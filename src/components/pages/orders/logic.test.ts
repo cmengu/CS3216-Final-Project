@@ -145,7 +145,7 @@ describe("source card", () => {
     expect(sourceRows(order(S, "o3"), S.customers.C10388)[0]).toEqual(["Channel", "WhatsApp paste"]);
   });
 
-  it("names the layout reader that read a PDF from Add orders", () => {
+  it("names the layout a PDF was read as", () => {
     const o = { ...order(S, "o2"), file: { ...order(S, "o2").file!, layout: "Hotel platform" } };
     expect(sourceRows(o, S.customers.C10310)[1]).toEqual(["Layout", "Hotel platform"]);
   });

@@ -41,15 +41,6 @@ const SCREENS = [
   ["invoices-coordinator", "#invoices", "/invoices", {}],
   ["settings-unknown", "#settings/nonsense", "/settings/nonsense", { user: "u1" }],
   ["order-o3-finance", "#order/o3", "/orders/o3", { user: "u5", twice: true }],
-  ["add", "#add", "/add", {}],
-  ["add-processed", "#add", "/add", { act: processSamples }],
-  ["add-processed-top", "#add", "/add", { act: processSamples, top: true }],
-  // The drafts the sample POs became: Orders' Draft tab and their order pages (the app's after a reload).
-  ["orders-drafts", "#add", "/add", { act: processSamples, then: ["#orders/draft", "/orders?state=draft"] }],
-  ["orders-all-drafts", "#add", "/add", { act: processSamples, then: ["#orders", "/orders"] }],
-  ["order-draft-hh", "#add", "/add", { act: processSamples, then: ["#order/o101", "/orders/o101"] }],
-  ["order-draft-pk", "#add", "/add", { act: processSamples, then: ["#order/o102", "/orders/o102"] }],
-  ["home-drafts", "#add", "/add", { act: processSamples, then: ["#home", "/home"], wait2: 6500 }],
   ["customers", "#customers", "/customers", {}],
   ["customer-C10310", "#customer/C10310", "/customers/C10310", {}],
   ["customer-C10243-finance", "#customer/C10243", "/customers/C10243", { user: "u5" }],
@@ -65,18 +56,6 @@ const SCREENS = [
   ["settings-replies", "#settings/replies", "/settings/replies", { user: "u1" }],
   ["settings-assistant", "#settings/assistant", "/settings/assistant", { user: "u1" }],
 ];
-
-/** Add orders with the sample POs queued and processed (the prototype's are invented, the app's are the importer's). */
-async function processSamples(page, proto) {
-  // The prototype's Customise layout popover is always open (a CSS slip); closed here to compare the table.
-  if (proto) await page.addStyleTag({ content: "#colpop{display:none!important}" });
-  await page.click("text=use the four sample POs");
-  await page.waitForTimeout(1200);
-  await page.click("button:has-text('Process')");
-  await page.waitForFunction(() => [...document.querySelectorAll(".q .st")].every((e) => !/Queued|Reading|Checking/.test(e.textContent || "")), null, { timeout: 30000 });
-  await page.waitForTimeout(600);
-  await page.evaluate(() => document.querySelector(".grid14")?.scrollIntoView({ block: "start" }));
-}
 
 const NAMES = { u1: "May", u2: "Eunice", u3: "Dennis", u4: "Mei", u5: "Farah" };
 // Software raster: GPU text rasterisation varies a little from run to run, which a pixel diff would report.

@@ -10,19 +10,14 @@ import { invoiceCsv } from "@/components/pages/invoices/invoices";
 import { visibleCustomers } from "@/components/pages/customers/figures";
 import { mineOf, orderText } from "@/components/pages/orders/logic";
 import { ackTextFor } from "@/lib/ack-text";
-import { copyTable, exportColumns } from "@/lib/add-orders";
-import { COLS } from "@/lib/columns";
-import { toRows } from "@/lib/importer";
 import { ask, paletteHits, suggestions, summarisePrompt } from "@/platform/assistant";
 import { seed } from "@/sample";
 import type { DemoState, Person } from "@/sample";
-import { buildLists } from "@/sample/lists";
-import { harbourPo } from "@/test/po";
 import { canInvoice, canPrice, lines, navAllowed, needsPin, pinOk, visibleOrders, type NavKey } from "./access";
 
 /** A money amount in text: a $ anywhere, or a figure with cents. */
 const MONEYISH = /\$|\b\d+\.\d{2}\b/;
-const ROUTES: NavKey[] = ["home", "orders", "add", "customers", "invoices", "people", "history", "settings"];
+const ROUTES: NavKey[] = ["home", "orders", "customers", "invoices", "people", "history", "settings"];
 const QUESTIONS = [
   ...suggestions(null),
   "What is the total for Marina Grand?",
@@ -47,7 +42,7 @@ describe.each(people)("%s (%s)", (_name, role, p) => {
     const allowed = ROUTES.filter((k) => navAllowed(k, p));
     const expected: Record<string, NavKey[]> = {
       owner: ROUTES,
-      coordinator: ["home", "orders", "add", "customers", "history"],
+      coordinator: ["home", "orders", "customers", "history"],
       account_manager: ["home", "orders", "customers", "history"],
       packing: ["home", "orders", "customers", "history"],
       finance: ["home", "orders", "customers", "invoices", "history"],
@@ -78,15 +73,6 @@ describe.each(people)("%s (%s)", (_name, role, p) => {
   it("copies order lines, acknowledgements and the Home digest without money when the role has no prices", () => {
     const texts = [...mine.map((o) => orderText(o, s.customers[o.cust])), ...mine.map((o) => ackTextFor(s, o)), ...digestLines(s, p, mine)];
     for (const t of texts) if (!priced) expect(t).not.toMatch(MONEYISH);
-  });
-
-  it("copies the Add orders table without the price columns when the role has no prices", () => {
-    const rows = toRows([harbourPo()], buildLists());
-    const names = COLS.map((c) => c[0]);
-    const cols = exportColumns(names, priced);
-    expect(cols.includes("price") || cols.includes("total")).toBe(priced);
-    const head = copyTable(rows, names, priced).split("\n")[0].split("\t");
-    expect(head.includes("Price") || head.includes("Total")).toBe(priced);
   });
 
   it("copies the invoice CSV with totals only for price roles", () => {
