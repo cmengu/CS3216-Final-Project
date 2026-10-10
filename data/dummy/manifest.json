@@ -1,0 +1,1440 @@
+{
+  "version": "dummy-v1",
+  "invented": true,
+  "price_sheet_sha256": "83f0560805227ca1e5c253659194423b4f69ff9e7015256110fca148a75cfd51",
+  "catalog": [
+    {
+      "part_number": "RES-0603-10K",
+      "description": "Resistor 10k ohm 0603",
+      "currency": "SGD",
+      "unit_price": "0.012"
+    },
+    {
+      "part_number": "CAP-0402-100N",
+      "description": "Ceramic capacitor 100nF 0402",
+      "currency": "SGD",
+      "unit_price": "0.0047"
+    },
+    {
+      "part_number": "IC-LDO-33",
+      "description": "Voltage regulator 3.3V SOT-23",
+      "currency": "SGD",
+      "unit_price": "0.185"
+    },
+    {
+      "part_number": "DIO-SCH-40V",
+      "description": "Schottky diode 40V",
+      "currency": "SGD",
+      "unit_price": "0.032"
+    },
+    {
+      "part_number": "CON-2X5",
+      "description": "Connector 2x5 pin header",
+      "currency": "SGD",
+      "unit_price": "0.420"
+    },
+    {
+      "part_number": "XTAL-16MHZ",
+      "description": "Crystal oscillator 16MHz",
+      "currency": "SGD",
+      "unit_price": "0.275"
+    }
+  ],
+  "cases": [
+    {
+      "id": "invoice-01",
+      "layout": 0,
+      "invoice": {
+        "supplier_name": "Demo Circuit Supplies",
+        "invoice_number": "DEMO-001",
+        "invoice_date": "2026-10-01",
+        "currency": "SGD",
+        "subtotal": "477.00",
+        "tax": "42.93",
+        "invoice_total": "519.93",
+        "lines": [
+          {
+            "part_number": "RES-0603-10K",
+            "description": "Resistor 10k ohm 0603",
+            "quantity": "5000",
+            "unit_price": "0.012",
+            "line_total": "60.00"
+          },
+          {
+            "part_number": "CAP-0402-100N",
+            "description": "Ceramic capacitor 100nF 0402",
+            "quantity": "10000",
+            "unit_price": "0.0047",
+            "line_total": "47.00"
+          },
+          {
+            "part_number": "IC-LDO-33",
+            "description": "Voltage regulator 3.3V SOT-23",
+            "quantity": "2000",
+            "unit_price": "0.185",
+            "line_total": "370.00"
+          }
+        ]
+      },
+      "mistakes": [],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.012",
+            "agreed_price": "0.012",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 1,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.0047",
+            "agreed_price": "0.0047",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 2,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.185",
+            "agreed_price": "0.185",
+            "difference": "0",
+            "overcharge": "0.00"
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": "0.00"
+      },
+      "files": [
+        {
+          "name": "invoice-01.pdf",
+          "sha256": "aafd4d24d4bee0e543ee04ba29d14f9feb2b68a42145b152b971c8b4f16fe607",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-01-scan.pdf",
+          "sha256": "a43bf4fe56b84461bacab9bc99916ccbde7be144f7da5f9bfb6c5548bdb5dddc",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-02",
+      "layout": 1,
+      "invoice": {
+        "supplier_name": "Invented Silicon Trading",
+        "invoice_number": "DEMO-002",
+        "invoice_date": "2026-10-02",
+        "currency": "SGD",
+        "subtotal": "492.00",
+        "tax": "44.28",
+        "invoice_total": "536.28",
+        "lines": [
+          {
+            "part_number": "RES-0603-10K",
+            "description": "Resistor 10k ohm 0603",
+            "quantity": "5000",
+            "unit_price": "0.015",
+            "line_total": "75.00"
+          },
+          {
+            "part_number": "CAP-0402-100N",
+            "description": "Ceramic capacitor 100nF 0402",
+            "quantity": "10000",
+            "unit_price": "0.0047",
+            "line_total": "47.00"
+          },
+          {
+            "part_number": "IC-LDO-33",
+            "description": "Voltage regulator 3.3V SOT-23",
+            "quantity": "2000",
+            "unit_price": "0.185",
+            "line_total": "370.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "unit_price_difference",
+          "line_index": 0
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "price_mismatch",
+            "reason": "Billed unit price differs from agreed price",
+            "invoice_price": "0.015",
+            "agreed_price": "0.012",
+            "difference": "0.003",
+            "overcharge": "15.00"
+          },
+          {
+            "line_index": 1,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.0047",
+            "agreed_price": "0.0047",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 2,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.185",
+            "agreed_price": "0.185",
+            "difference": "0",
+            "overcharge": "0.00"
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": "15.00"
+      },
+      "files": [
+        {
+          "name": "invoice-02.pdf",
+          "sha256": "843b5d3697dde6ef1eb63e54b4e9d27cb23ca521738b409bd826a75f3bf1e190",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-02-scan.pdf",
+          "sha256": "b681d4bf21cb0d7c605fb262c5a663b59f2ac3ca75141aaaa46c017f496de16e",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-03",
+      "layout": 2,
+      "invoice": {
+        "supplier_name": "Sample Components Lab",
+        "invoice_number": "DEMO-003",
+        "invoice_date": "2026-10-03",
+        "currency": "SGD",
+        "subtotal": "478.00",
+        "tax": "43.02",
+        "invoice_total": "521.02",
+        "lines": [
+          {
+            "part_number": "RES-0603-10K",
+            "description": "Resistor 10k ohm 0603",
+            "quantity": "5000",
+            "unit_price": "0.012",
+            "line_total": "60.00"
+          },
+          {
+            "part_number": "UNKNOWN-DEMO-PART",
+            "description": "Ceramic capacitor 100nF 0402",
+            "quantity": "10000",
+            "unit_price": "0.0047",
+            "line_total": "47.00"
+          },
+          {
+            "part_number": "IC-LDO-33",
+            "description": "Voltage regulator 3.3V SOT-23",
+            "quantity": "2000",
+            "unit_price": "0.185",
+            "line_total": "371.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "unknown_part",
+          "line_index": 1
+        },
+        {
+          "type": "line_arithmetic",
+          "line_index": 2
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.012",
+            "agreed_price": "0.012",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 1,
+            "status": "unknown_part",
+            "reason": "Part is absent from dummy price sheet",
+            "invoice_price": "0.0047",
+            "agreed_price": null,
+            "difference": null,
+            "overcharge": null
+          },
+          {
+            "line_index": 2,
+            "status": "needs_person",
+            "reason": "Quantity times price does not equal line total",
+            "invoice_price": "0.185",
+            "agreed_price": "0.185",
+            "difference": "0",
+            "overcharge": null
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": null
+      },
+      "files": [
+        {
+          "name": "invoice-03.pdf",
+          "sha256": "6a87569d79aba8ecd2330b709aafd27edf24d103180fe88ad8e1c2e787604bea",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-03-scan.pdf",
+          "sha256": "2ab01515ac07a0a3b04a36cb121d4933cbe0b1985c65b1e2c7385c8f4c19c7dd",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-04",
+      "layout": 0,
+      "invoice": {
+        "supplier_name": "Demo Circuit Supplies",
+        "invoice_number": "DEMO-004",
+        "invoice_date": "2026-10-04",
+        "currency": "SGD",
+        "subtotal": "478.00",
+        "tax": "43.02",
+        "invoice_total": "521.02",
+        "lines": [
+          {
+            "part_number": "RES-0603-10K",
+            "description": "Resistor 10k ohm 0603",
+            "quantity": "5000",
+            "unit_price": "0.012",
+            "line_total": "60.00"
+          },
+          {
+            "part_number": "CAP-0402-100N",
+            "description": "Ceramic capacitor 100nF 0402",
+            "quantity": "10000",
+            "unit_price": "0.0047",
+            "line_total": "47.00"
+          },
+          {
+            "part_number": "IC-LDO-33",
+            "description": "Voltage regulator 3.3V SOT-23",
+            "quantity": "2000",
+            "unit_price": "0.185",
+            "line_total": "371.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "line_arithmetic",
+          "line_index": 2
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.012",
+            "agreed_price": "0.012",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 1,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.0047",
+            "agreed_price": "0.0047",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 2,
+            "status": "needs_person",
+            "reason": "Quantity times price does not equal line total",
+            "invoice_price": "0.185",
+            "agreed_price": "0.185",
+            "difference": "0",
+            "overcharge": null
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": null
+      },
+      "files": [
+        {
+          "name": "invoice-04.pdf",
+          "sha256": "4149d9c0717da448fb8ebdd64890f4dcd4d8c622a066d5d9f64e561def2b0c6e",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-04-scan.pdf",
+          "sha256": "d836014a194285db2c1708d5d92810f34140fcba67aa9cfe3d10d334a074eef8",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-05",
+      "layout": 1,
+      "invoice": {
+        "supplier_name": "Invented Silicon Trading",
+        "invoice_number": "DEMO-005",
+        "invoice_date": "2026-10-05",
+        "currency": "SGD",
+        "subtotal": "477.00",
+        "tax": "42.93",
+        "invoice_total": "520.93",
+        "lines": [
+          {
+            "part_number": "RES-0603-10K",
+            "description": "Resistor 10k ohm 0603",
+            "quantity": "5000",
+            "unit_price": "0.012",
+            "line_total": "60.00"
+          },
+          {
+            "part_number": "CAP-0402-100N",
+            "description": "Ceramic capacitor 100nF 0402",
+            "quantity": "10000",
+            "unit_price": "0.0047",
+            "line_total": "47.00"
+          },
+          {
+            "part_number": "IC-LDO-33",
+            "description": "Voltage regulator 3.3V SOT-23",
+            "quantity": "2000",
+            "unit_price": "0.185",
+            "line_total": "370.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "invoice_total_arithmetic",
+          "line_index": null
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "needs_person",
+            "reason": "Invoice arithmetic does not reconcile",
+            "invoice_price": "0.012",
+            "agreed_price": "0.012",
+            "difference": "0",
+            "overcharge": null
+          },
+          {
+            "line_index": 1,
+            "status": "needs_person",
+            "reason": "Invoice arithmetic does not reconcile",
+            "invoice_price": "0.0047",
+            "agreed_price": "0.0047",
+            "difference": "0",
+            "overcharge": null
+          },
+          {
+            "line_index": 2,
+            "status": "needs_person",
+            "reason": "Invoice arithmetic does not reconcile",
+            "invoice_price": "0.185",
+            "agreed_price": "0.185",
+            "difference": "0",
+            "overcharge": null
+          }
+        ],
+        "warnings": [
+          "Invoice arithmetic does not reconcile"
+        ],
+        "overcharge_total": null
+      },
+      "files": [
+        {
+          "name": "invoice-05.pdf",
+          "sha256": "a7782693e831b309826b345c45107c89453ef965b1b4a77a2d62a5e6428e4175",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-05-scan.pdf",
+          "sha256": "842c71b60c514659f9cb7802191467019f2dc581e359ae778da3740983e32edf",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-06",
+      "layout": 2,
+      "invoice": {
+        "supplier_name": "Sample Components Lab",
+        "invoice_number": "DEMO-006",
+        "invoice_date": "2026-10-06",
+        "currency": "SGD",
+        "subtotal": "492.00",
+        "tax": "44.28",
+        "invoice_total": "536.28",
+        "lines": [
+          {
+            "part_number": "RES-0603-10K",
+            "description": "Resistor 10k ohm 0603",
+            "quantity": "5000",
+            "unit_price": "0.015",
+            "line_total": "75.00"
+          },
+          {
+            "part_number": "UNKNOWN-DEMO-PART",
+            "description": "Ceramic capacitor 100nF 0402",
+            "quantity": "10000",
+            "unit_price": "0.0047",
+            "line_total": "47.00"
+          },
+          {
+            "part_number": "IC-LDO-33",
+            "description": "Voltage regulator 3.3V SOT-23",
+            "quantity": "2000",
+            "unit_price": "0.185",
+            "line_total": "370.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "unit_price_difference",
+          "line_index": 0
+        },
+        {
+          "type": "unknown_part",
+          "line_index": 1
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "price_mismatch",
+            "reason": "Billed unit price differs from agreed price",
+            "invoice_price": "0.015",
+            "agreed_price": "0.012",
+            "difference": "0.003",
+            "overcharge": "15.00"
+          },
+          {
+            "line_index": 1,
+            "status": "unknown_part",
+            "reason": "Part is absent from dummy price sheet",
+            "invoice_price": "0.0047",
+            "agreed_price": null,
+            "difference": null,
+            "overcharge": null
+          },
+          {
+            "line_index": 2,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.185",
+            "agreed_price": "0.185",
+            "difference": "0",
+            "overcharge": "0.00"
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": null
+      },
+      "files": [
+        {
+          "name": "invoice-06.pdf",
+          "sha256": "82e579d06813299e73f041ba44fd83fee402261b642da61c8f17cffce60c50f5",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-06-scan.pdf",
+          "sha256": "a7260b45563b0de54a999ed2785a02384bb725eb0323a4a98e13eab79a3e6d12",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-07",
+      "layout": 0,
+      "invoice": {
+        "supplier_name": "Demo Circuit Supplies",
+        "invoice_number": "DEMO-007",
+        "invoice_date": "2026-10-07",
+        "currency": "SGD",
+        "subtotal": "4910.00",
+        "tax": "441.90",
+        "invoice_total": "5351.90",
+        "lines": [
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          }
+        ]
+      },
+      "mistakes": [],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 1,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 2,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": "0.00"
+      },
+      "files": [
+        {
+          "name": "invoice-07.pdf",
+          "sha256": "74f4858dd2621b7d23e883a43c168c77b2777ea762460dc35e02ea19db5c7c14",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-07-scan.pdf",
+          "sha256": "2db8406199fa9c931f462095ad91e2a7d315b8a04fff6dc51cd521ac70f053ef",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-08",
+      "layout": 1,
+      "invoice": {
+        "supplier_name": "Invented Silicon Trading",
+        "invoice_number": "DEMO-008",
+        "invoice_date": "2026-10-08",
+        "currency": "SGD",
+        "subtotal": "4905.00",
+        "tax": "441.45",
+        "invoice_total": "5346.45",
+        "lines": [
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.031",
+            "line_total": "155.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "unit_price_difference",
+          "line_index": 0
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "price_mismatch",
+            "reason": "Billed unit price differs from agreed price",
+            "invoice_price": "0.031",
+            "agreed_price": "0.032",
+            "difference": "-0.001",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 1,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 2,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": "0.00"
+      },
+      "files": [
+        {
+          "name": "invoice-08.pdf",
+          "sha256": "c763eff1cab5ba51f9086c77783f80024f826531155f4dee9cec18b863fa6015",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-08-scan.pdf",
+          "sha256": "1613327a4673f0fd89ca11d3342a0dac2a7fc396ac6a290b52f573a69085a1f4",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-09",
+      "layout": 2,
+      "invoice": {
+        "supplier_name": "Sample Components Lab",
+        "invoice_number": "DEMO-009",
+        "invoice_date": "2026-10-09",
+        "currency": "SGD",
+        "subtotal": "4911.00",
+        "tax": "441.99",
+        "invoice_total": "5352.99",
+        "lines": [
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          }
+        ]
+      },
+      "mistakes": [
+        {
+          "type": "subtotal_arithmetic",
+          "line_index": null
+        }
+      ],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "needs_person",
+            "reason": "Invoice arithmetic does not reconcile",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": null
+          },
+          {
+            "line_index": 1,
+            "status": "needs_person",
+            "reason": "Invoice arithmetic does not reconcile",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": null
+          },
+          {
+            "line_index": 2,
+            "status": "needs_person",
+            "reason": "Invoice arithmetic does not reconcile",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": null
+          }
+        ],
+        "warnings": [
+          "Invoice arithmetic does not reconcile"
+        ],
+        "overcharge_total": null
+      },
+      "files": [
+        {
+          "name": "invoice-09.pdf",
+          "sha256": "41652558d1935f5b47bd1fa59c56782be79e835310e91e0b5c983d14fbcd630e",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-09-scan.pdf",
+          "sha256": "22936b467d06167335951866a95dbb4c7c4a4a09ff943dade0b098e76044d9c6",
+          "kind": "scan"
+        }
+      ]
+    },
+    {
+      "id": "invoice-10",
+      "layout": 0,
+      "invoice": {
+        "supplier_name": "Demo Circuit Supplies",
+        "invoice_number": "DEMO-010",
+        "invoice_date": "2026-10-10",
+        "currency": "SGD",
+        "subtotal": "58920.00",
+        "tax": "5302.80",
+        "invoice_total": "64222.80",
+        "lines": [
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          },
+          {
+            "part_number": "DIO-SCH-40V",
+            "description": "Schottky diode 40V",
+            "quantity": "5000",
+            "unit_price": "0.032",
+            "line_total": "160.00"
+          },
+          {
+            "part_number": "CON-2X5",
+            "description": "Connector 2x5 pin header",
+            "quantity": "10000",
+            "unit_price": "0.420",
+            "line_total": "4200.00"
+          },
+          {
+            "part_number": "XTAL-16MHZ",
+            "description": "Crystal oscillator 16MHz",
+            "quantity": "2000",
+            "unit_price": "0.275",
+            "line_total": "550.00"
+          }
+        ]
+      },
+      "mistakes": [],
+      "expected_check": {
+        "lines": [
+          {
+            "line_index": 0,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 1,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 2,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 3,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 4,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 5,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 6,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 7,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 8,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 9,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 10,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 11,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 12,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 13,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 14,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 15,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 16,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 17,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 18,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 19,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 20,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 21,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 22,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 23,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 24,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 25,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 26,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 27,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 28,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 29,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 30,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 31,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 32,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 33,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.032",
+            "agreed_price": "0.032",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 34,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.420",
+            "agreed_price": "0.420",
+            "difference": "0",
+            "overcharge": "0.00"
+          },
+          {
+            "line_index": 35,
+            "status": "match",
+            "reason": "Agreed unit price",
+            "invoice_price": "0.275",
+            "agreed_price": "0.275",
+            "difference": "0",
+            "overcharge": "0.00"
+          }
+        ],
+        "warnings": [],
+        "overcharge_total": "0.00"
+      },
+      "files": [
+        {
+          "name": "invoice-10.pdf",
+          "sha256": "ce94170acb014d60ec8089f76f7d97e0a999d2e29b492f4516f6a206e8117da2",
+          "kind": "digital"
+        },
+        {
+          "name": "invoice-10-scan.pdf",
+          "sha256": "8fc827bf72c6fe0e730eafbb6bda476f4f762a959868523fca59cce21ddf6189",
+          "kind": "scan"
+        }
+      ]
+    }
+  ]
+}

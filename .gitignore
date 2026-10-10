@@ -40,11 +40,24 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# purchase orders and spreadsheets never enter the repo, except invented ones under fixtures/
+# Documents stay local, except invented fixtures and the dummy invoice set.
 *.pdf
 *.xlsx
 !fixtures/**/*.pdf
 !fixtures/**/*.xlsx
+!/data/dummy/**/*.pdf
+!/data/dummy/**/*.xlsx
+/data/private/
+/backend/runtime/
 
 # anything real (client files, real lists) stays on this machine
 *.private.*
+
+# Python invoice processing and local document artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+/backend/artifacts/

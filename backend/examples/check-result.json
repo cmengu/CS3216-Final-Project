@@ -1,0 +1,34 @@
+{
+  "price_sheet_version": "83f0560805227ca1e5c253659194423b4f69ff9e7015256110fca148a75cfd51",
+  "lines": [
+    {
+      "line_index": 0,
+      "status": "price_mismatch",
+      "reason": "Billed unit price differs from agreed price",
+      "invoice_price": "0.015",
+      "agreed_price": "0.012",
+      "difference": "0.003",
+      "overcharge": "15.00"
+    },
+    {
+      "line_index": 1,
+      "status": "match",
+      "reason": "Agreed unit price",
+      "invoice_price": "0.0047",
+      "agreed_price": "0.0047",
+      "difference": "0",
+      "overcharge": "0.00"
+    },
+    {
+      "line_index": 2,
+      "status": "match",
+      "reason": "Agreed unit price",
+      "invoice_price": "0.185",
+      "agreed_price": "0.185",
+      "difference": "0",
+      "overcharge": "0.00"
+    }
+  ],
+  "overcharge_total": "15.00",
+  "warnings": []
+}

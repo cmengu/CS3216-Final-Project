@@ -1,0 +1,223 @@
+{
+  "document_hash": "f6b47321d2ec9972b5f752bed34bd8a9bc5ec0835d5417058d76a39473ee5ef7",
+  "model": "fixture/no-api-call",
+  "prompt_version": "invoice-extraction-v1",
+  "invoice": {
+    "document_type": "invoice",
+    "warnings": [],
+    "lines": [
+      {
+        "sku": {
+          "value": "EGC-PTND",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "EGC-PTND"
+            }
+          ]
+        },
+        "description": {
+          "value": "Pea tendrils",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "Pea tendrils"
+            }
+          ]
+        },
+        "quantity": {
+          "value": "2",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "2"
+            }
+          ]
+        },
+        "unit": {
+          "value": "box",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "box"
+            }
+          ]
+        },
+        "unit_price": {
+          "value": "10.00",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "10.00"
+            }
+          ]
+        },
+        "discount": {
+          "value": "0.00",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "0.00"
+            }
+          ]
+        },
+        "line_total": {
+          "value": "20.00",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "20.00"
+            }
+          ]
+        }
+      },
+      {
+        "sku": {
+          "value": "EGC-MBAS",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "EGC-MBAS"
+            }
+          ]
+        },
+        "description": {
+          "value": "Micro basil",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "Micro basil"
+            }
+          ]
+        },
+        "quantity": {
+          "value": "1",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "1"
+            }
+          ]
+        },
+        "unit": {
+          "value": "box",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "box"
+            }
+          ]
+        },
+        "unit_price": {
+          "value": "5.00",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "5.00"
+            }
+          ]
+        },
+        "discount": {
+          "value": "0.00",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "0.00"
+            }
+          ]
+        },
+        "line_total": {
+          "value": "5.00",
+          "evidence": [
+            {
+              "block_id": "#/tables/0",
+              "quote": "5.00"
+            }
+          ]
+        }
+      }
+    ],
+    "invoice_number": {
+      "value": "DEMO-001",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "DEMO-001"
+        }
+      ]
+    },
+    "supplier_name": {
+      "value": "Invented Farm Pte Ltd",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "Invented Farm Pte Ltd"
+        }
+      ]
+    },
+    "supplier_id": {
+      "value": "DEMO-SUPPLIER",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "DEMO-SUPPLIER"
+        }
+      ]
+    },
+    "buyer_name": {
+      "value": "Invented Hotel",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "Invented Hotel"
+        }
+      ]
+    },
+    "invoice_date": {
+      "value": "2026-10-10",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "2026-10-10"
+        }
+      ]
+    },
+    "currency": {
+      "value": "SGD",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "SGD"
+        }
+      ]
+    },
+    "subtotal": {
+      "value": "25.00",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "25.00"
+        }
+      ]
+    },
+    "tax_total": {
+      "value": "2.25",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "2.25"
+        }
+      ]
+    },
+    "grand_total": {
+      "value": "27.25",
+      "evidence": [
+        {
+          "block_id": "#/texts/0",
+          "quote": "27.25"
+        }
+      ]
+    }
+  },
+  "grounding_issues": []
+}

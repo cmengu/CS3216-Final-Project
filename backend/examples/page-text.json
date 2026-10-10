@@ -1,0 +1,1617 @@
+{
+  "schema_version": "1",
+  "document_hash": "843b5d3697dde6ef1eb63e54b4e9d27cb23ca521738b409bd826a75f3bf1e190",
+  "filename": "invoice-02.pdf",
+  "page_count": 1,
+  "reader_version": "docling/2.137.0",
+  "markdown": "<!-- Page 1 -->\n## DUMMY DATA INVOICE\n\n## Invented Silicon Trading\n\nInvoice number: DEMO-002\n\nInvoice date: 2026-10-02\n\nBill to: Example Semiconductor Company\n\nCurrency: SGD\n\n| Description                   | Part number   |   Unit price |   Quantity |   Line total |\n|-------------------------------|---------------|--------------|------------|--------------|\n| Resistor 10k ohm 0603         | RES-0603-10K  |        0.015 |       5000 |        75.00 |\n| Ceramic capacitor 100nF 0402  | CAP-0402-100N |       0.0047 |      10000 |        47.00 |\n| Voltage regulator 3.3V SOT-23 | IC-LDO-33     |        0.185 |       2000 |       370.00 |\n\n| Subtotal   |   492.00 |\n|------------|----------|\n| Tax (9%)   |    44.28 |\n\nTotal SGD\n\n536.28",
+  "blocks": [
+    {
+      "id": "page-1:#/texts/0",
+      "text": "DUMMY DATA INVOICE",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 425.61789525000006,
+            "t": 784.86292681,
+            "r": 549.6166850100001,
+            "b": 744.76023649,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/1",
+      "text": "Invented Silicon Trading",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 356.2626705,
+            "t": 733.13547556,
+            "r": 549.581931708,
+            "b": 716.12606848,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/2",
+      "text": "Invoice number: DEMO-002",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 45.6850395,
+            "t": 668.64872503,
+            "r": 191.583017544,
+            "b": 656.49902149,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/3",
+      "text": "Invoice date: 2026-10-02",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 45.6850395,
+            "t": 651.6487247800001,
+            "r": 175.61736676667113,
+            "b": 639.49902124,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/4",
+      "text": "Bill to: Example Semiconductor Company",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 45.6850395,
+            "t": 634.64872528,
+            "r": 254.40044551130396,
+            "b": 622.49902174,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/5",
+      "text": "Currency: SGD",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 45.6850395,
+            "t": 617.64872503,
+            "r": 121.303194372,
+            "b": 605.49902149,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/tables/0",
+      "text": "| Description                   | Part number   |   Unit price |   Quantity |   Line total |\n|-------------------------------|---------------|--------------|------------|--------------|\n| Resistor 10k ohm 0603         | RES-0603-10K  |        0.015 |       5000 |        75.00 |\n| Ceramic capacitor 100nF 0402  | CAP-0402-100N |       0.0047 |      10000 |        47.00 |\n| Voltage regulator 3.3V SOT-23 | IC-LDO-33     |        0.185 |       2000 |       370.00 |",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 45.02811254856233,
+            "t": 586.8746171585692,
+            "r": 549.9765297957628,
+            "b": 472.00484666227294,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/tables/1",
+      "text": "| Subtotal   |   492.00 |\n|------------|----------|\n| Tax (9%)   |    44.28 |",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 364.16340584108224,
+            "t": 451.8959989769213,
+            "r": 549.8770414911113,
+            "b": 419.7470102833816,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/6",
+      "text": "Total SGD",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 365.33858250000003,
+            "t": 406.5396722800001,
+            "r": 420.61723366799987,
+            "b": 394.3899687400001,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    },
+    {
+      "id": "page-1:#/texts/7",
+      "text": "536.28",
+      "locations": [
+        {
+          "page": 1,
+          "bbox": {
+            "l": 510.43308075000004,
+            "t": 406.5396722800001,
+            "r": 549.5921252460001,
+            "b": 394.3899687400001,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "page_width": 595.275591,
+          "page_height": 841.889764
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "page_number": 1,
+      "extraction_method": "embedded_text",
+      "ocr_ran": false,
+      "embedded_characters": 461,
+      "ocr_cells": 0,
+      "markdown": "## DUMMY DATA INVOICE\n\n## Invented Silicon Trading\n\nInvoice number: DEMO-002\n\nInvoice date: 2026-10-02\n\nBill to: Example Semiconductor Company\n\nCurrency: SGD\n\n| Description                   | Part number   |   Unit price |   Quantity |   Line total |\n|-------------------------------|---------------|--------------|------------|--------------|\n| Resistor 10k ohm 0603         | RES-0603-10K  |        0.015 |       5000 |        75.00 |\n| Ceramic capacitor 100nF 0402  | CAP-0402-100N |       0.0047 |      10000 |        47.00 |\n| Voltage regulator 3.3V SOT-23 | IC-LDO-33     |        0.185 |       2000 |       370.00 |\n\n| Subtotal   |   492.00 |\n|------------|----------|\n| Tax (9%)   |    44.28 |\n\nTotal SGD\n\n536.28",
+      "block_ids": [
+        "page-1:#/texts/0",
+        "page-1:#/texts/1",
+        "page-1:#/texts/2",
+        "page-1:#/texts/3",
+        "page-1:#/texts/4",
+        "page-1:#/texts/5",
+        "page-1:#/tables/0",
+        "page-1:#/tables/1",
+        "page-1:#/texts/6",
+        "page-1:#/texts/7"
+      ],
+      "warnings": []
+    }
+  ],
+  "docling_document": {
+    "page_documents": [
+      {
+        "page_number": 1,
+        "document": {
+          "schema_name": "DoclingDocument",
+          "version": "1.10.0",
+          "name": "a227c058-6ce9-4646-9ec3-1d4dbf7375e8",
+          "origin": {
+            "mimetype": "application/pdf",
+            "binary_hash": 15575320388776878480,
+            "filename": "a227c058-6ce9-4646-9ec3-1d4dbf7375e8.pdf"
+          },
+          "furniture": {
+            "self_ref": "#/furniture",
+            "children": [],
+            "content_layer": "furniture",
+            "name": "_root_",
+            "label": "unspecified"
+          },
+          "body": {
+            "self_ref": "#/body",
+            "children": [
+              {
+                "$ref": "#/texts/0"
+              },
+              {
+                "$ref": "#/texts/1"
+              },
+              {
+                "$ref": "#/groups/0"
+              },
+              {
+                "$ref": "#/tables/0"
+              },
+              {
+                "$ref": "#/groups/1"
+              },
+              {
+                "$ref": "#/texts/8"
+              }
+            ],
+            "content_layer": "body",
+            "name": "_root_",
+            "label": "unspecified"
+          },
+          "groups": [
+            {
+              "self_ref": "#/groups/0",
+              "parent": {
+                "$ref": "#/body"
+              },
+              "children": [
+                {
+                  "$ref": "#/texts/2"
+                },
+                {
+                  "$ref": "#/texts/3"
+                },
+                {
+                  "$ref": "#/texts/4"
+                },
+                {
+                  "$ref": "#/texts/5"
+                }
+              ],
+              "content_layer": "body",
+              "name": "group",
+              "label": "key_value_area"
+            },
+            {
+              "self_ref": "#/groups/1",
+              "parent": {
+                "$ref": "#/body"
+              },
+              "children": [
+                {
+                  "$ref": "#/tables/1"
+                },
+                {
+                  "$ref": "#/texts/6"
+                },
+                {
+                  "$ref": "#/texts/7"
+                }
+              ],
+              "content_layer": "body",
+              "name": "group",
+              "label": "key_value_area"
+            }
+          ],
+          "texts": [
+            {
+              "self_ref": "#/texts/0",
+              "parent": {
+                "$ref": "#/body"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "section_header",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 425.61789525000006,
+                    "t": 784.86292681,
+                    "r": 549.6166850100001,
+                    "b": 744.76023649,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    18
+                  ]
+                }
+              ],
+              "orig": "DUMMY DATA INVOICE",
+              "text": "DUMMY DATA INVOICE",
+              "level": 1
+            },
+            {
+              "self_ref": "#/texts/1",
+              "parent": {
+                "$ref": "#/body"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "section_header",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 356.2626705,
+                    "t": 733.13547556,
+                    "r": 549.581931708,
+                    "b": 716.12606848,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    24
+                  ]
+                }
+              ],
+              "orig": "Invented Silicon Trading",
+              "text": "Invented Silicon Trading",
+              "level": 1
+            },
+            {
+              "self_ref": "#/texts/2",
+              "parent": {
+                "$ref": "#/groups/0"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "text",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 45.6850395,
+                    "t": 668.64872503,
+                    "r": 191.583017544,
+                    "b": 656.49902149,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    24
+                  ]
+                }
+              ],
+              "orig": "Invoice number: DEMO-002",
+              "text": "Invoice number: DEMO-002"
+            },
+            {
+              "self_ref": "#/texts/3",
+              "parent": {
+                "$ref": "#/groups/0"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "text",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 45.6850395,
+                    "t": 651.6487247800001,
+                    "r": 175.61736676667113,
+                    "b": 639.49902124,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    24
+                  ]
+                }
+              ],
+              "orig": "Invoice date: 2026-10-02",
+              "text": "Invoice date: 2026-10-02"
+            },
+            {
+              "self_ref": "#/texts/4",
+              "parent": {
+                "$ref": "#/groups/0"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "text",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 45.6850395,
+                    "t": 634.64872528,
+                    "r": 254.40044551130396,
+                    "b": 622.49902174,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    38
+                  ]
+                }
+              ],
+              "orig": "Bill to: Example Semiconductor Company",
+              "text": "Bill to: Example Semiconductor Company"
+            },
+            {
+              "self_ref": "#/texts/5",
+              "parent": {
+                "$ref": "#/groups/0"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "text",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 45.6850395,
+                    "t": 617.64872503,
+                    "r": 121.303194372,
+                    "b": 605.49902149,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    13
+                  ]
+                }
+              ],
+              "orig": "Currency: SGD",
+              "text": "Currency: SGD"
+            },
+            {
+              "self_ref": "#/texts/6",
+              "parent": {
+                "$ref": "#/groups/1"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "text",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 365.33858250000003,
+                    "t": 406.5396722800001,
+                    "r": 420.61723366799987,
+                    "b": 394.3899687400001,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    9
+                  ]
+                }
+              ],
+              "orig": "Total SGD",
+              "text": "Total SGD"
+            },
+            {
+              "self_ref": "#/texts/7",
+              "parent": {
+                "$ref": "#/groups/1"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "text",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 510.43308075000004,
+                    "t": 406.5396722800001,
+                    "r": 549.5921252460001,
+                    "b": 394.3899687400001,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    6
+                  ]
+                }
+              ],
+              "orig": "536.28",
+              "text": "536.28"
+            },
+            {
+              "self_ref": "#/texts/8",
+              "parent": {
+                "$ref": "#/body"
+              },
+              "children": [],
+              "content_layer": "furniture",
+              "label": "page_footer",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 233.41281974999998,
+                    "t": 29.940401692000023,
+                    "r": 361.87698295800016,
+                    "b": 21.08494190800002,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    39
+                  ]
+                }
+              ],
+              "orig": "Invented demonstration invoice | Page 1",
+              "text": "Invented demonstration invoice | Page 1"
+            }
+          ],
+          "pictures": [],
+          "tables": [
+            {
+              "self_ref": "#/tables/0",
+              "parent": {
+                "$ref": "#/body"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "table",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 45.02811254856233,
+                    "t": 586.8746171585692,
+                    "r": 549.9765297957628,
+                    "b": 472.00484666227294,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "captions": [],
+              "references": [],
+              "footnotes": [],
+              "data": {
+                "table_cells": [
+                  {
+                    "bbox": {
+                      "l": 49.93700775000001,
+                      "t": 264.32925975,
+                      "r": 107.62700775,
+                      "b": 275.26425974999995,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 0,
+                    "end_col_offset_idx": 1,
+                    "text": "Description",
+                    "column_header": true,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 206.1477165,
+                      "t": 264.32925975,
+                      "r": 269.4897165,
+                      "b": 275.26425974999995,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 1,
+                    "end_col_offset_idx": 2,
+                    "text": "Part number",
+                    "column_header": true,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 317.0069295,
+                      "t": 264.32925975,
+                      "r": 366.0929294999999,
+                      "b": 275.26425974999995,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 2,
+                    "end_col_offset_idx": 3,
+                    "text": "Unit price",
+                    "column_header": true,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 397.63181099999997,
+                      "t": 264.32925975,
+                      "r": 441.254811,
+                      "b": 275.26425974999995,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 3,
+                    "end_col_offset_idx": 4,
+                    "text": "Quantity",
+                    "column_header": true,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 468.1785825,
+                      "t": 264.32925975,
+                      "r": 515.9325825000001,
+                      "b": 275.26425974999995,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 4,
+                    "end_col_offset_idx": 5,
+                    "text": "Line total",
+                    "column_header": true,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 49.93700775000001,
+                      "t": 292.27512225,
+                      "r": 155.13350774999998,
+                      "b": 303.21012225000004,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 0,
+                    "end_col_offset_idx": 1,
+                    "text": "Resistor 10k ohm 0603",
+                    "column_header": false,
+                    "row_header": true,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 206.1477165,
+                      "t": 292.27512225,
+                      "r": 272.9997165,
+                      "b": 303.21012225000004,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 1,
+                    "end_col_offset_idx": 2,
+                    "text": "RES-0603-10K",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 362.9672295,
+                      "t": 292.27512225,
+                      "r": 389.1392295,
+                      "b": 303.21012225000004,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 2,
+                    "end_col_offset_idx": 3,
+                    "text": "0.015",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 436.78792725000005,
+                      "t": 292.27512225,
+                      "r": 459.6839272499999,
+                      "b": 303.21012225000004,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 3,
+                    "end_col_offset_idx": 4,
+                    "text": "5000",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 519.17793825,
+                      "t": 292.27512225,
+                      "r": 545.3499382499999,
+                      "b": 303.21012225000004,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 4,
+                    "end_col_offset_idx": 5,
+                    "text": "75.00",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 49.93700775000001,
+                      "t": 320.97098475000007,
+                      "r": 188.15000775000001,
+                      "b": 331.90598475,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 2,
+                    "end_row_offset_idx": 3,
+                    "start_col_offset_idx": 0,
+                    "end_col_offset_idx": 1,
+                    "text": "Ceramic capacitor 100nF 0402",
+                    "column_header": false,
+                    "row_header": true,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 206.1477165,
+                      "t": 320.97098475000007,
+                      "r": 278.9847165,
+                      "b": 331.90598475,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 2,
+                    "end_row_offset_idx": 3,
+                    "start_col_offset_idx": 1,
+                    "end_col_offset_idx": 2,
+                    "text": "CAP-0402-100N",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 357.24555,
+                      "t": 320.97098475000007,
+                      "r": 389.14155000000005,
+                      "b": 331.90598475,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 2,
+                    "end_row_offset_idx": 3,
+                    "start_col_offset_idx": 2,
+                    "end_col_offset_idx": 3,
+                    "text": "0.0047",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 431.066247,
+                      "t": 320.97098475000007,
+                      "r": 459.6862469999998,
+                      "b": 331.90598475,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 2,
+                    "end_row_offset_idx": 3,
+                    "start_col_offset_idx": 3,
+                    "end_col_offset_idx": 4,
+                    "text": "10000",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 519.17793825,
+                      "t": 320.97098475000007,
+                      "r": 545.3499382499999,
+                      "b": 331.90598475,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 2,
+                    "end_row_offset_idx": 3,
+                    "start_col_offset_idx": 4,
+                    "end_col_offset_idx": 5,
+                    "text": "47.00",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 49.93700775000001,
+                      "t": 349.66684725,
+                      "r": 188.56400775,
+                      "b": 360.60184725,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 3,
+                    "end_row_offset_idx": 4,
+                    "start_col_offset_idx": 0,
+                    "end_col_offset_idx": 1,
+                    "text": "Voltage regulator 3.3V SOT-23",
+                    "column_header": false,
+                    "row_header": true,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 206.1477165,
+                      "t": 349.66684725,
+                      "r": 254.65321650000004,
+                      "b": 360.60184725,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 3,
+                    "end_row_offset_idx": 4,
+                    "start_col_offset_idx": 1,
+                    "end_col_offset_idx": 2,
+                    "text": "IC-LDO-33",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 362.9672295,
+                      "t": 349.66684725,
+                      "r": 389.1392295,
+                      "b": 360.60184725,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 3,
+                    "end_row_offset_idx": 4,
+                    "start_col_offset_idx": 2,
+                    "end_col_offset_idx": 3,
+                    "text": "0.185",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 436.78792725000005,
+                      "t": 349.66684725,
+                      "r": 459.6839272499999,
+                      "b": 360.60184725,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 3,
+                    "end_row_offset_idx": 4,
+                    "start_col_offset_idx": 3,
+                    "end_col_offset_idx": 4,
+                    "text": "2000",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 513.45625875,
+                      "t": 349.66684725,
+                      "r": 545.3522587499998,
+                      "b": 360.60184725,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 3,
+                    "end_row_offset_idx": 4,
+                    "start_col_offset_idx": 4,
+                    "end_col_offset_idx": 5,
+                    "text": "370.00",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  }
+                ],
+                "num_rows": 4,
+                "num_cols": 5,
+                "orientation": "rot_0",
+                "grid": [
+                  [
+                    {
+                      "bbox": {
+                        "l": 49.93700775000001,
+                        "t": 264.32925975,
+                        "r": 107.62700775,
+                        "b": 275.26425974999995,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 0,
+                      "end_col_offset_idx": 1,
+                      "text": "Description",
+                      "column_header": true,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 206.1477165,
+                        "t": 264.32925975,
+                        "r": 269.4897165,
+                        "b": 275.26425974999995,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 1,
+                      "end_col_offset_idx": 2,
+                      "text": "Part number",
+                      "column_header": true,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 317.0069295,
+                        "t": 264.32925975,
+                        "r": 366.0929294999999,
+                        "b": 275.26425974999995,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 2,
+                      "end_col_offset_idx": 3,
+                      "text": "Unit price",
+                      "column_header": true,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 397.63181099999997,
+                        "t": 264.32925975,
+                        "r": 441.254811,
+                        "b": 275.26425974999995,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 3,
+                      "end_col_offset_idx": 4,
+                      "text": "Quantity",
+                      "column_header": true,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 468.1785825,
+                        "t": 264.32925975,
+                        "r": 515.9325825000001,
+                        "b": 275.26425974999995,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 4,
+                      "end_col_offset_idx": 5,
+                      "text": "Line total",
+                      "column_header": true,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    }
+                  ],
+                  [
+                    {
+                      "bbox": {
+                        "l": 49.93700775000001,
+                        "t": 292.27512225,
+                        "r": 155.13350774999998,
+                        "b": 303.21012225000004,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 0,
+                      "end_col_offset_idx": 1,
+                      "text": "Resistor 10k ohm 0603",
+                      "column_header": false,
+                      "row_header": true,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 206.1477165,
+                        "t": 292.27512225,
+                        "r": 272.9997165,
+                        "b": 303.21012225000004,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 1,
+                      "end_col_offset_idx": 2,
+                      "text": "RES-0603-10K",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 362.9672295,
+                        "t": 292.27512225,
+                        "r": 389.1392295,
+                        "b": 303.21012225000004,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 2,
+                      "end_col_offset_idx": 3,
+                      "text": "0.015",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 436.78792725000005,
+                        "t": 292.27512225,
+                        "r": 459.6839272499999,
+                        "b": 303.21012225000004,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 3,
+                      "end_col_offset_idx": 4,
+                      "text": "5000",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 519.17793825,
+                        "t": 292.27512225,
+                        "r": 545.3499382499999,
+                        "b": 303.21012225000004,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 4,
+                      "end_col_offset_idx": 5,
+                      "text": "75.00",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    }
+                  ],
+                  [
+                    {
+                      "bbox": {
+                        "l": 49.93700775000001,
+                        "t": 320.97098475000007,
+                        "r": 188.15000775000001,
+                        "b": 331.90598475,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 2,
+                      "end_row_offset_idx": 3,
+                      "start_col_offset_idx": 0,
+                      "end_col_offset_idx": 1,
+                      "text": "Ceramic capacitor 100nF 0402",
+                      "column_header": false,
+                      "row_header": true,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 206.1477165,
+                        "t": 320.97098475000007,
+                        "r": 278.9847165,
+                        "b": 331.90598475,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 2,
+                      "end_row_offset_idx": 3,
+                      "start_col_offset_idx": 1,
+                      "end_col_offset_idx": 2,
+                      "text": "CAP-0402-100N",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 357.24555,
+                        "t": 320.97098475000007,
+                        "r": 389.14155000000005,
+                        "b": 331.90598475,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 2,
+                      "end_row_offset_idx": 3,
+                      "start_col_offset_idx": 2,
+                      "end_col_offset_idx": 3,
+                      "text": "0.0047",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 431.066247,
+                        "t": 320.97098475000007,
+                        "r": 459.6862469999998,
+                        "b": 331.90598475,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 2,
+                      "end_row_offset_idx": 3,
+                      "start_col_offset_idx": 3,
+                      "end_col_offset_idx": 4,
+                      "text": "10000",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 519.17793825,
+                        "t": 320.97098475000007,
+                        "r": 545.3499382499999,
+                        "b": 331.90598475,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 2,
+                      "end_row_offset_idx": 3,
+                      "start_col_offset_idx": 4,
+                      "end_col_offset_idx": 5,
+                      "text": "47.00",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    }
+                  ],
+                  [
+                    {
+                      "bbox": {
+                        "l": 49.93700775000001,
+                        "t": 349.66684725,
+                        "r": 188.56400775,
+                        "b": 360.60184725,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 3,
+                      "end_row_offset_idx": 4,
+                      "start_col_offset_idx": 0,
+                      "end_col_offset_idx": 1,
+                      "text": "Voltage regulator 3.3V SOT-23",
+                      "column_header": false,
+                      "row_header": true,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 206.1477165,
+                        "t": 349.66684725,
+                        "r": 254.65321650000004,
+                        "b": 360.60184725,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 3,
+                      "end_row_offset_idx": 4,
+                      "start_col_offset_idx": 1,
+                      "end_col_offset_idx": 2,
+                      "text": "IC-LDO-33",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 362.9672295,
+                        "t": 349.66684725,
+                        "r": 389.1392295,
+                        "b": 360.60184725,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 3,
+                      "end_row_offset_idx": 4,
+                      "start_col_offset_idx": 2,
+                      "end_col_offset_idx": 3,
+                      "text": "0.185",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 436.78792725000005,
+                        "t": 349.66684725,
+                        "r": 459.6839272499999,
+                        "b": 360.60184725,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 3,
+                      "end_row_offset_idx": 4,
+                      "start_col_offset_idx": 3,
+                      "end_col_offset_idx": 4,
+                      "text": "2000",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 513.45625875,
+                        "t": 349.66684725,
+                        "r": 545.3522587499998,
+                        "b": 360.60184725,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 3,
+                      "end_row_offset_idx": 4,
+                      "start_col_offset_idx": 4,
+                      "end_col_offset_idx": 5,
+                      "text": "370.00",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    }
+                  ]
+                ]
+              },
+              "annotations": []
+            },
+            {
+              "self_ref": "#/tables/1",
+              "parent": {
+                "$ref": "#/groups/1"
+              },
+              "children": [],
+              "content_layer": "body",
+              "label": "table",
+              "prov": [
+                {
+                  "page_no": 1,
+                  "bbox": {
+                    "l": 364.16340584108224,
+                    "t": 451.8959989769213,
+                    "r": 549.8770414911113,
+                    "b": 419.7470102833816,
+                    "coord_origin": "BOTTOMLEFT"
+                  },
+                  "charspan": [
+                    0,
+                    0
+                  ]
+                }
+              ],
+              "captions": [],
+              "references": [],
+              "footnotes": [],
+              "data": {
+                "table_cells": [
+                  {
+                    "bbox": {
+                      "l": 365.33858250000003,
+                      "t": 389.70141972,
+                      "r": 407.43755525999995,
+                      "b": 401.85112326,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 0,
+                    "end_col_offset_idx": 1,
+                    "text": "Subtotal",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 514.1655022499999,
+                      "t": 389.70141972,
+                      "r": 549.6046375139998,
+                      "b": 401.85112326,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 0,
+                    "end_row_offset_idx": 1,
+                    "start_col_offset_idx": 1,
+                    "end_col_offset_idx": 2,
+                    "text": "492.00",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 365.33858250000003,
+                      "t": 407.52378747,
+                      "r": 411.97742983556236,
+                      "b": 419.67349101,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 0,
+                    "end_col_offset_idx": 1,
+                    "text": "Tax (9%)",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  },
+                  {
+                    "bbox": {
+                      "l": 520.5229245,
+                      "t": 407.52378747,
+                      "r": 549.6022149479999,
+                      "b": 419.67349101,
+                      "coord_origin": "TOPLEFT"
+                    },
+                    "row_span": 1,
+                    "col_span": 1,
+                    "start_row_offset_idx": 1,
+                    "end_row_offset_idx": 2,
+                    "start_col_offset_idx": 1,
+                    "end_col_offset_idx": 2,
+                    "text": "44.28",
+                    "column_header": false,
+                    "row_header": false,
+                    "row_section": false,
+                    "fillable": false
+                  }
+                ],
+                "num_rows": 2,
+                "num_cols": 2,
+                "orientation": "rot_0",
+                "grid": [
+                  [
+                    {
+                      "bbox": {
+                        "l": 365.33858250000003,
+                        "t": 389.70141972,
+                        "r": 407.43755525999995,
+                        "b": 401.85112326,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 0,
+                      "end_col_offset_idx": 1,
+                      "text": "Subtotal",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 514.1655022499999,
+                        "t": 389.70141972,
+                        "r": 549.6046375139998,
+                        "b": 401.85112326,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 0,
+                      "end_row_offset_idx": 1,
+                      "start_col_offset_idx": 1,
+                      "end_col_offset_idx": 2,
+                      "text": "492.00",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    }
+                  ],
+                  [
+                    {
+                      "bbox": {
+                        "l": 365.33858250000003,
+                        "t": 407.52378747,
+                        "r": 411.97742983556236,
+                        "b": 419.67349101,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 0,
+                      "end_col_offset_idx": 1,
+                      "text": "Tax (9%)",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    },
+                    {
+                      "bbox": {
+                        "l": 520.5229245,
+                        "t": 407.52378747,
+                        "r": 549.6022149479999,
+                        "b": 419.67349101,
+                        "coord_origin": "TOPLEFT"
+                      },
+                      "row_span": 1,
+                      "col_span": 1,
+                      "start_row_offset_idx": 1,
+                      "end_row_offset_idx": 2,
+                      "start_col_offset_idx": 1,
+                      "end_col_offset_idx": 2,
+                      "text": "44.28",
+                      "column_header": false,
+                      "row_header": false,
+                      "row_section": false,
+                      "fillable": false
+                    }
+                  ]
+                ]
+              },
+              "annotations": []
+            }
+          ],
+          "key_value_items": [],
+          "form_items": [],
+          "pages": {
+            "1": {
+              "size": {
+                "width": 595.275591,
+                "height": 841.889764
+              },
+              "page_no": 1
+            }
+          }
+        }
+      }
+    ]
+  }
+}
