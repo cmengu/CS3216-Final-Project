@@ -6,7 +6,7 @@
 // → Invoices (the checker) and one invoice → as the owner (PIN) turn on WhatsApp paste and chat export → Unconfirm and the retention
 // switch → a suggested question to the assistant → ⌘K to a customer. Fails on any console error,
 // page error or hydration warning.
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
 
 const APP = process.env.APP || "http://localhost:3000";
@@ -146,6 +146,26 @@ async function switchTo(page, name, pin) {
     }
   }
   await shot(page, "05b-invoice");
+
+  // Upload one dummy PDF. The file lives with the service; INVOICE_PDF can point at it.
+  const invoicePdf = process.env.INVOICE_PDF || "data/dummy/invoice-02.pdf";
+  if (existsSync(invoicePdf)) {
+    await page.goto(`${APP}/invoices`);
+    await page.waitForSelector(".ck-drop");
+    await page.setInputFiles("input.ck-file", invoicePdf);
+    await page.waitForSelector("button:has-text('Checking')");
+    if (serviceDown) {
+      await toast(page, /could not be reached|not ready|could not be checked/);
+      ok(true, "upload says what went wrong, in one sentence");
+    } else {
+      await page.waitForURL(/\/invoices\/[0-9a-f-]{36}$/i, { timeout: 120000 });
+      await page.waitForSelector(".ck-card");
+      const uploaded = await text(page);
+      ok(uploaded.includes("DEMO-002") && uploaded.includes("15.00"), "uploading invoice-02.pdf opens that invoice");
+      ok(uploaded.includes("Fixture answers"), "the uploaded invoice is marked as fixture answers");
+    }
+    await shot(page, "05c-upload");
+  }
 
   // As the owner: WhatsApp paste and chat export turns on in Settings.
   await switchTo(page, "May", "1234");

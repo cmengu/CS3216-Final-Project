@@ -6,11 +6,12 @@
  * Opening an invoice shows its page beside the lines that need a look. Owner and Finance only.
  */
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
-import { useInvoices } from "@/checker/api";
+import { reloadInvoices, uploadInvoice, useInvoices } from "@/checker/api";
 import { amount, invoiceLabel, invoiceMeta, summarize, type Pile } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
 import { relDay } from "@/lib/format";
@@ -32,27 +33,66 @@ function uploaded(inv: SupplierInvoice): string {
 
 export function InvoicesView() {
   const shell = useShell();
+  const router = useRouter();
   const { invoices, error } = useInvoices();
   const [pile, setPile] = useState<Pile>("look");
+  const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const s = summarize(invoices ?? []);
   const list = s.piles[pile];
   const current = PILES.find((p) => p.key === pile)!;
+
+  async function send(file: File | undefined) {
+    if (!file || busy) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      shell.toast("Choose a PDF.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const saved = await uploadInvoice(file);
+      reloadInvoices();
+      router.push(`/invoices/${saved.id}`);
+    } catch (reason) {
+      shell.toast(reason instanceof Error ? reason.message : "The checking service could not be reached.");
+    } finally {
+      setBusy(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
 
   return (
     <>
       <Header
         icon="inv"
         acts={
-          <button className="btn p" onClick={() => shell.toast("Uploading needs the checking service, which is not connected yet")}>
-            <Icon name="arrowUp" />
-            Upload PDF
-          </button>
+          <>
+            <input
+              ref={fileInput}
+              className="ck-file"
+              type="file"
+              accept="application/pdf,.pdf"
+              hidden
+              onChange={(event) => void send(event.target.files?.[0])}
+            />
+            <button className="btn p" disabled={busy} onClick={() => fileInput.current?.click()}>
+              <Icon name="arrowUp" />
+              {busy ? "Checking…" : "Upload PDF"}
+            </button>
+          </>
         }
       >
         Invoices
       </Header>
-      <div className="body ck-list">
+      <div
+        className="body ck-list"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          void send(event.dataTransfer.files?.[0]);
+        }}
+      >
         <div className="ck-boxes">
           <div className="ck-box over">
             <span>Overcharged so far</span>
@@ -71,6 +111,7 @@ export function InvoicesView() {
           })}
         </div>
 
+        <div className={`ck-drop${busy ? " busy" : ""}`}>{busy ? "Checking this invoice…" : "Drop a PDF here"}</div>
         <section aria-label={current.label}>
           <div className="gh ck-gh">{`${current.label} · newest first`}</div>
           {error ? (

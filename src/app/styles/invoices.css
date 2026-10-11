@@ -11,6 +11,8 @@ button.ck-box:hover{background:var(--hover)}
 button.ck-box.on{border-color:var(--ink)}
 .ck-box.over{background:var(--bad-soft);border-color:transparent}
 .ck-box.over span,.ck-box.over b,.ck-box.over small{color:var(--bad)}
+.ck-drop{border:1px dashed var(--line);border-radius:10px;padding:14px 16px;text-align:center;color:var(--ink2);font-size:13px}
+.ck-drop.busy{color:var(--ink)}
 .ck-gh{padding:4px 0 6px}
 .ck-row{grid-template-columns:minmax(150px,240px) auto minmax(0,1fr) auto;padding-left:0;padding-right:0}
 .ck-row+.ck-row{border-top:1px solid var(--line)}

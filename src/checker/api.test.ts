@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listInvoices } from "./api";
+import { listInvoices, uploadFailure, uploadInvoice } from "./api";
 import type { ServiceInvoice } from "./convert";
 
 const id = "11111111-1111-1111-1111-111111111111";
@@ -48,5 +48,28 @@ describe("listInvoices", () => {
   it("says the service could not be reached and does not invent invoices", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network"); }));
     await expect(listInvoices()).rejects.toThrow("The checking service could not be reached.");
+  });
+});
+
+describe("uploadInvoice", () => {
+  it("names the three refusals in one sentence each", () => {
+    expect(uploadFailure(429)).toBe("Another invoice is being checked. Try again in a moment.");
+    expect(uploadFailure(503)).toBe("The checking service is not ready.");
+    expect(uploadFailure(422)).toBe("This invoice could not be checked.");
+    expect(uploadFailure(201)).toBeNull();
+  });
+
+  it("returns the saved invoice after a 201", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(saved("Invented Silicon Trading", "15.00")), { status: 201 })));
+    const invoice = await uploadInvoice(new File(["%PDF"], "invoice-02.pdf", { type: "application/pdf" }));
+    expect(invoice.number).toBe("DEMO-002");
+    expect(invoice.overchargeTotal).toBe(15);
+  });
+
+  it("does not return an invoice the service could not check", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 422 })));
+    await expect(uploadInvoice(new File(["%PDF"], "invoice-02.pdf", { type: "application/pdf" }))).rejects.toThrow(
+      "This invoice could not be checked.",
+    );
   });
 });
