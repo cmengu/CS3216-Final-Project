@@ -6,6 +6,7 @@ from pathlib import Path
 from api.contracts import CheckResult
 from schema import InvoiceLine, InvoiceRecord
 
+from .allowance import ALLOWANCE
 from .sheet import PriceSheet, load_price_sheet
 
 DEFAULT_SHEET = Path(__file__).resolve().parents[2] / "data" / "dummy" / "price-sheet.xlsx"
@@ -92,7 +93,7 @@ def _line(index: int, line: InvoiceLine, currency: str | None, sheet: PriceSheet
             None,
         )
     gap = Decimal(invoice_price) - found.unit_price
-    if gap != 0:
+    if abs(gap * Decimal(line.quantity)) >= ALLOWANCE:
         return _result(
             index,
             "price_mismatch",
@@ -107,8 +108,8 @@ def _line(index: int, line: InvoiceLine, currency: str | None, sheet: PriceSheet
         "match",
         "Agreed unit price",
         invoice_price,
-        invoice_price,
-        "0",
+        agreed,
+        plain(gap),
         "0.00",
     )
 
@@ -136,7 +137,7 @@ def _missing(line: InvoiceLine) -> str | None:
 
 def _line_arithmetic_fails(line: InvoiceLine) -> bool:
     product = Decimal(line.quantity) * Decimal(line.unit_price)
-    return product != Decimal(line.line_total)
+    return abs(product - Decimal(line.line_total)) >= ALLOWANCE
 
 
 def _currency_differs(invoice_currency: str | None, sheet_currency: str) -> bool:
@@ -151,9 +152,10 @@ def _invoice_sums_fail(invoice: InvoiceRecord) -> bool:
     if any(line.line_total is None for line in invoice.lines):
         return False
     subtotal = sum((Decimal(line.line_total) for line in invoice.lines), Decimal(0))
-    if subtotal != Decimal(invoice.subtotal):
+    if abs(subtotal - Decimal(invoice.subtotal)) >= ALLOWANCE:
         return True
-    return Decimal(invoice.subtotal) + Decimal(invoice.tax) != Decimal(invoice.invoice_total)
+    summed = Decimal(invoice.subtotal) + Decimal(invoice.tax)
+    return abs(summed - Decimal(invoice.invoice_total)) >= ALLOWANCE
 
 
 def _result(index, status, reason, invoice_price, agreed, difference, overcharge) -> dict:
