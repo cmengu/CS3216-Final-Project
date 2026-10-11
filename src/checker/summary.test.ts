@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SAMPLE_INVOICES } from "./sample";
-import { amount, invoiceLabel, invoiceMeta, lineOver, overcharge, pileOf, problemsFirst, summarize, unitPrice } from "./summary";
+import { amount, failure, invoiceLabel, invoiceMeta, lineOver, overcharge, pileOf, problemsFirst, summarize, unitPrice, uploadedLabel } from "./summary";
 import type { InvoiceLine, SupplierInvoice } from "./types";
 
 const byId = (id: string) => SAMPLE_INVOICES.find((i) => i.id === id)!;
@@ -86,5 +86,24 @@ describe("formatting", () => {
     expect(amount(1284.5)).toBe("1,284.50");
     expect(unitPrice(0.0085)).toBe("0.0085");
     expect(unitPrice(0.35)).toBe("0.35");
+  });
+});
+
+describe("uploadedLabel", () => {
+  const now = new Date(2026, 9, 11, 15, 0);
+
+  it("reads the upload time against the reader's own clock, not the sample day", () => {
+    expect(uploadedLabel(new Date(2026, 9, 11, 9, 5).toISOString(), now)).toBe("Today 09:05");
+    expect(uploadedLabel(new Date(2026, 9, 10, 23, 50).toISOString(), now)).toBe("Yesterday");
+    expect(uploadedLabel(new Date(2026, 8, 25, 12, 0).toISOString(), now)).toMatch(/^25 Sep/);
+    expect(uploadedLabel("not a time", now)).toBe("");
+  });
+});
+
+describe("failure", () => {
+  it("gives the service's step and reason when there is one", () => {
+    const failed = { ...SAMPLE_INVOICES[0], state: "failed" as const };
+    expect(failure({ ...failed, error: "reading: No readable text or tables" })).toBe("Could not be checked. reading: No readable text or tables");
+    expect(failure(failed)).toBe("The PDF could not be read. Open it to check by hand.");
   });
 });

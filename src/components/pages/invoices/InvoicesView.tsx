@@ -6,14 +6,14 @@
  * Opening an invoice shows its page beside the lines that need a look. Owner and Finance only.
  */
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
-import { useInvoices } from "@/checker/api";
-import { amount, invoiceLabel, invoiceMeta, summarize, type Pile } from "@/checker/summary";
+import { reloadInvoices, uploadInvoice, uploadProblem, useInvoices } from "@/checker/api";
+import { amount, invoiceLabel, invoiceMeta, summarize, uploadedLabel, type Pile } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
-import { relDay } from "@/lib/format";
 import { SupplierMark } from "./SupplierMark";
 
 const PILES: { key: Pile; label: string; empty: string }[] = [
@@ -24,40 +24,79 @@ const PILES: { key: Pile; label: string; empty: string }[] = [
 
 const shortName = (inv: SupplierInvoice) => (inv.supplier ?? inv.fileName).replace(/\s+(Pte|Ltd|Supply|Electronics|Components|Passives)\b.*$/, "");
 
-/** "Today 10:42", "Yesterday", "25 Sept". */
-function uploaded(inv: SupplierInvoice): string {
-  const day = relDay(inv.uploadedAt.slice(0, 10));
-  return day === "Today" ? `Today ${inv.uploadedAt.slice(11, 16)}` : day;
-}
-
 export function InvoicesView() {
   const shell = useShell();
+  const router = useRouter();
   const { invoices, error } = useInvoices();
   const [pile, setPile] = useState<Pile>("look");
+  const [busy, setBusy] = useState(false);
+  // The state updates a moment late; the ref stops a second file dropped in the same instant.
+  const sending = useRef(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const s = summarize(invoices ?? []);
   const list = s.piles[pile];
   const current = PILES.find((p) => p.key === pile)!;
+
+  async function send(file: File | undefined) {
+    if (!file || sending.current) return;
+    const problem = uploadProblem(file);
+    if (problem) {
+      shell.toast(problem);
+      return;
+    }
+    sending.current = true;
+    setBusy(true);
+    try {
+      // An invoice the service kept but could not check comes back too; its page says why.
+      const saved = await uploadInvoice(file);
+      reloadInvoices();
+      router.push(`/invoices/${saved.id}`);
+    } catch (reason) {
+      shell.toast(reason instanceof Error ? reason.message : "The checking service could not be reached.");
+    } finally {
+      sending.current = false;
+      setBusy(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
 
   return (
     <>
       <Header
         icon="inv"
         acts={
-          <button className="btn p" onClick={() => shell.toast("Uploading needs the checking service, which is not connected yet")}>
-            <Icon name="arrowUp" />
-            Upload PDF
-          </button>
+          <>
+            <input
+              ref={fileInput}
+              className="ck-file"
+              type="file"
+              accept="application/pdf,.pdf"
+              hidden
+              onChange={(event) => void send(event.target.files?.[0])}
+            />
+            <button className="btn p" disabled={busy} onClick={() => fileInput.current?.click()}>
+              <Icon name="arrowUp" />
+              {busy ? "Checking…" : "Upload PDF"}
+            </button>
+          </>
         }
       >
         Invoices
       </Header>
-      <div className="body ck-list">
+      <div
+        className="body ck-list"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          void send(event.dataTransfer.files?.[0]);
+        }}
+      >
         <div className="ck-boxes">
           <div className="ck-box over">
             <span>Overcharged so far</span>
-            <b className="num">{s.over.length ? s.over.map(([cur, n]) => `${cur} ${amount(n)}`).join(" · ") : "None found"}</b>
-            <small>{s.overInvoices ? `across ${s.overInvoices} invoice${s.overInvoices > 1 ? "s" : ""}` : "every price matched so far"}</small>
+            <b className="num">{!invoices ? "–" : s.over.length ? s.over.map(([cur, n]) => `${cur} ${amount(n)}`).join(" · ") : "None found"}</b>
+            <small>{!invoices ? "…" : s.overInvoices ? `across ${s.overInvoices} invoice${s.overInvoices > 1 ? "s" : ""}` : "every price matched so far"}</small>
           </div>
           {PILES.map((p) => {
             const n = s.piles[p.key];
@@ -71,8 +110,12 @@ export function InvoicesView() {
           })}
         </div>
 
+        <div className={`ck-drop${busy ? " busy" : ""}`}>{busy ? "Checking this invoice…" : "Drop a PDF here"}</div>
         <section aria-label={current.label}>
-          <div className="gh ck-gh">{`${current.label} · newest first`}</div>
+          <div className="gh ck-gh">
+            {`${current.label} · newest first`}
+            {invoices?.some((inv) => inv.fixture) ? " · Fixture answers, not a live check" : ""}
+          </div>
           {error ? (
             <div className="empty">{error}</div>
           ) : !invoices ? (
@@ -91,7 +134,7 @@ export function InvoicesView() {
                     {inv.number ? <b className="mono">{inv.number}</b> : null}
                     {invoiceMeta(inv)}
                   </span>
-                  <span className="when">{uploaded(inv)}</span>
+                  <span className="when">{uploadedLabel(inv.uploadedAt)}</span>
                 </Link>
               );
             })

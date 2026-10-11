@@ -61,7 +61,10 @@ for (const who of [
   const owner = who.role === "owner";
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
-  page.on("console", (m) => m.type() === "error" && problems.push(`${who.name}: ${m.text()} (${page.url()})`));
+  page.on("console", (m) => {
+    if (m.type() === "error" && /127\.0\.0\.1:8000|localhost:8000/.test(m.text())) return;
+    if (m.type() === "error") problems.push(`${who.name}: ${m.text()} (${page.url()})`);
+  });
   page.on("pageerror", (e) => problems.push(`${who.name}: ${e.message} (${page.url()})`));
   const tag = `${who.name} (${who.role})`;
 

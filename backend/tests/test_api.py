@@ -8,6 +8,7 @@ from pypdf import PdfReader
 
 from api.app import create_app
 from api.contracts import CheckResult
+from api.live import LiveStages
 from api.stages import FixtureStages
 from api.storage import Store
 from dummy.cases import CATALOG, build_cases
@@ -105,6 +106,73 @@ def test_reader_failure_is_saved_and_slot_released(tmp_path):
             assert "Sensitive" not in response.text
             assert response.json()["status"] == "failed"
         assert len(client.get("/invoices").json()) == 2
+
+
+def test_a_step_that_gives_its_reason_has_it_saved_with_the_step_name(tmp_path):
+    def unreadable(*args, **kwargs):
+        raise ValueError("No readable text or tables; retry with --force-ocr or review manually")
+
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=unreadable)
+    with TestClient(app) as client:
+        data = (DATA / "invoice-01.pdf").read_bytes()
+        saved = client.post("/invoices", files={"file": ("x.pdf", data)}).json()
+        assert saved["status"] == "failed"
+        assert saved["error"].startswith("reading: No readable text or tables")
+
+
+def test_a_rejected_shape_is_saved_without_the_value_it_quotes(tmp_path):
+    class BadExtract(FixtureStages):
+        def extract(self, document):
+            return InvoiceRecord.model_validate({"supplier_name": "Sensitive Supplier Pte Ltd"})
+
+    app = create_app(storage_dir=tmp_path, stages=BadExtract(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        data = (DATA / "invoice-01.pdf").read_bytes()
+        response = client.post("/invoices", files={"file": ("x.pdf", data)})
+        assert response.status_code == 422
+        assert "Sensitive" not in response.text
+        assert response.json()["error"].startswith("extracting: ValidationError")
+
+
+def test_live_mode_runs_the_real_check_on_a_file_it_has_never_seen(tmp_path):
+    answers = json.loads((DATA / "manifest.json").read_text())["cases"][1]["invoice"]
+    stages = LiveStages(
+        DATA / "price-sheet.xlsx", extract=lambda document: InvoiceRecord.model_validate(answers)
+    )
+    app = create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    with TestClient(app) as client:
+        assert client.get("/health").json()["mode"] == "live"
+        changed_copy = (DATA / "invoice-02.pdf").read_bytes() + b"\n% saved again\n"
+        response = client.post("/invoices", files={"file": ("new.pdf", changed_copy)})
+        assert response.status_code == 201, response.text
+        saved = response.json()
+        assert saved["mode"] == "live"
+        assert saved["check"]["lines"][0]["status"] == "price_mismatch"
+        assert saved["check"]["overcharge_total"] == "15.00"
+        assert saved["price_sheet_version"] == stages.price_sheet_version
+
+
+def test_live_mode_needs_a_named_price_sheet(tmp_path, monkeypatch):
+    monkeypatch.setenv("INVOICE_MODE", "live")
+    monkeypatch.delenv("INVOICE_PRICE_SHEET", raising=False)
+    with pytest.raises(ValueError, match="INVOICE_PRICE_SHEET"):
+        with TestClient(create_app(storage_dir=tmp_path)):
+            pass
+    monkeypatch.setenv("INVOICE_PRICE_SHEET", str(DATA / "price-sheet.xlsx"))
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+        assert client.get("/health").json() == {
+            "status": "ok",
+            "mode": "live",
+            "processing_configured": True,
+            "contract": "proposed-v1",
+        }
+
+
+def test_an_unknown_mode_stops_the_service_from_starting(tmp_path, monkeypatch):
+    monkeypatch.setenv("INVOICE_MODE", "demo")
+    with pytest.raises(ValueError, match="fixture or live"):
+        with TestClient(create_app(storage_dir=tmp_path)):
+            pass
 
 
 def test_interrupted_rows_become_failed_on_startup(tmp_path):
