@@ -94,7 +94,7 @@ def build_cases():
             lines[1]["part_number"] = "UNKNOWN-DEMO-PART"
             results[1].update(
                 status="unknown_part",
-                reason="Part is absent from dummy price sheet",
+                reason="Part is not on the price sheet",
                 agreed_price=None,
                 difference=None,
                 overcharge=None,
@@ -122,6 +122,14 @@ def build_cases():
             warnings.append("Invoice arithmetic does not reconcile")
             for result in results:
                 result.update(status="needs_person", reason=warnings[0], overcharge=None)
+            overcharge_total = None
+        else:
+            # The total is the overcharges that are known; unpriced lines are counted beside it.
+            known = [Decimal(r["overcharge"]) for r in results if r["overcharge"] is not None]
+            unpriced = len(results) - len(known)
+            if unpriced:
+                warnings.append(f"{unpriced} line{'' if unpriced == 1 else 's'} not priced")
+            overcharge_total = money(sum(known, Decimal(0)))
         invoice = {
             "supplier_name": [
                 "Demo Circuit Supplies",
@@ -145,9 +153,7 @@ def build_cases():
                 "expected_check": {
                     "lines": results,
                     "warnings": warnings,
-                    "overcharge_total": None
-                    if any(r["overcharge"] is None for r in results)
-                    else money(sum(Decimal(r["overcharge"]) for r in results)),
+                    "overcharge_total": overcharge_total,
                 },
             }
         )

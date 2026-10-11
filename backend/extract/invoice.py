@@ -40,9 +40,7 @@ class ExtractedInvoice(BaseModel):
     usage: TokenUsage
 
 
-def extract(
-    document: ParsedDocument, *, client=None, model: str | None = None
-) -> InvoiceRecord:
+def extract(document: ParsedDocument, *, client=None, model: str | None = None) -> InvoiceRecord:
     return extract_with_usage(document, client=client, model=model).record
 
 
