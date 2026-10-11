@@ -17,41 +17,70 @@ export function isServiceId(id: string): boolean {
 }
 
 const unreachable = "The checking service could not be reached.";
+const broken = "The checking service had a problem. Try again in a moment.";
 
-export async function listInvoices(): Promise<SupplierInvoice[]> {
-  let response: Response;
+/** The service's own limit. It is 20 MiB; the page says 20 MB. */
+const MAX_BYTES = 20 * 1024 * 1024;
+/** The most rows the service gives in one answer. */
+const PAGE = 100;
+/** A read that takes longer than this is treated as unreachable. An upload has no limit: a check can take a minute. */
+const READ_TIMEOUT_MS = 15_000;
+/** How often a page looks again while an invoice is still being checked. */
+const RECHECK_MS = 3_000;
+
+async function read(path: string): Promise<Response> {
   try {
-    response = await fetch(`${SERVICE_URL}/invoices`);
+    return await fetch(`${SERVICE_URL}${path}`, { signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
   } catch {
     throw new Error(unreachable);
   }
-  if (!response.ok) throw new Error(unreachable);
-  const rows = (await response.json()) as { id: string }[];
-  return Promise.all(rows.map((row) => getInvoice(row.id)));
+}
+
+export async function listInvoices(): Promise<SupplierInvoice[]> {
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const response = await read(`/invoices?limit=${PAGE}&offset=${offset}`);
+    if (!response.ok) throw new Error(broken);
+    const rows = (await response.json()) as { id: string }[];
+    ids.push(...rows.map((row) => row.id));
+    if (rows.length < PAGE) break;
+  }
+  return Promise.all(ids.map((id) => getInvoice(id)));
 }
 
 export async function getInvoice(id: string): Promise<SupplierInvoice> {
-  let response: Response;
-  try {
-    response = await fetch(`${SERVICE_URL}/invoices/${id}`);
-  } catch {
-    throw new Error(unreachable);
-  }
+  const response = await read(`/invoices/${id}`);
   if (response.status === 404) throw new Error("No invoice with this link. It may have been removed.");
-  if (!response.ok) throw new Error(unreachable);
+  if (!response.ok) throw new Error(broken);
   return toSupplierInvoice((await response.json()) as ServiceInvoice);
 }
 
-/** One plain sentence for an upload the service refused. Null means the upload was saved. */
-export function uploadFailure(status: number): string | null {
+/** One sentence for a file that must not be sent at all. Null means it may be sent. */
+export function uploadProblem(file: { name: string; size: number }): string | null {
+  if (!file.name.toLowerCase().endsWith(".pdf")) return "Only PDF files can be checked.";
+  if (file.size > MAX_BYTES) return "That PDF is over the 20 MB limit.";
+  return null;
+}
+
+/**
+ * One plain sentence for an upload the service refused. Null means the upload was saved.
+ * When the service gives its own reason for refusing the file, that sentence is shown.
+ */
+export function uploadFailure(status: number, detail?: unknown): string | null {
   if (status === 201) return null;
   if (status === 429) return "Another invoice is being checked. Try again in a moment.";
   if (status === 503) return "The checking service is not ready.";
-  if (status === 422 || status === 415) return "This invoice could not be checked.";
-  if (status === 413) return "That PDF is larger than 20 MB.";
-  return unreachable;
+  if (status === 413) return "That PDF is over the 20 MB limit.";
+  if (status === 422 || status === 415 || status === 400) {
+    return typeof detail === "string" && detail ? `This file could not be checked. ${detail}` : "This invoice could not be checked.";
+  }
+  return broken;
 }
 
+/**
+ * Send one PDF. A 201 is the checked invoice. A 422 that carries a saved record is an invoice
+ * the service kept but could not check; it is returned too, so its page can say why.
+ */
 export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   const body = new FormData();
   body.append("file", file);
@@ -61,9 +90,11 @@ export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   } catch {
     throw new Error(unreachable);
   }
-  const failure = uploadFailure(response.status);
-  if (failure) throw new Error(failure);
-  return toSupplierInvoice((await response.json()) as ServiceInvoice);
+  const answer = (await response.json().catch(() => null)) as (Partial<ServiceInvoice> & { detail?: unknown }) | null;
+  if (response.status === 201 || (response.status === 422 && typeof answer?.id === "string")) {
+    return toSupplierInvoice(answer as ServiceInvoice);
+  }
+  throw new Error(uploadFailure(response.status, answer?.detail) ?? broken);
 }
 
 let cache: SupplierInvoice[] | null = null;
@@ -114,7 +145,10 @@ export function useInvoices(): { invoices: SupplierInvoice[] | null; error: stri
   return { invoices, error };
 }
 
-/** The service's copy of one invoice. Null while loading. An error never substitutes a sample. */
+/**
+ * The service's copy of one invoice. Null while loading. An error never substitutes a sample.
+ * While the invoice is still being checked, it is read again every few seconds.
+ */
 export function useRemoteInvoice(id: string): {
   invoice: SupplierInvoice | null;
   error: string | null;
@@ -126,21 +160,27 @@ export function useRemoteInvoice(id: string): {
   useEffect(() => {
     if (!isServiceId(id)) return;
     let live = true;
-    getInvoice(id).then(
-      (found) => {
-        if (!live) return;
-        setInvoice(found);
-        setLoading(false);
-      },
-      (reason: unknown) => {
-        if (!live) return;
-        setInvoice(null);
-        setError(reason instanceof Error ? reason.message : "The checking service could not be reached.");
-        setLoading(false);
-      },
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      getInvoice(id).then(
+        (found) => {
+          if (!live) return;
+          setInvoice(found);
+          setError(null);
+          setLoading(false);
+          if (found.state === "checking") timer = setTimeout(load, RECHECK_MS);
+        },
+        (reason: unknown) => {
+          if (!live) return;
+          setInvoice(null);
+          setError(reason instanceof Error ? reason.message : unreachable);
+          setLoading(false);
+        },
+      );
+    void load();
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [id]);
   return { invoice, error, loading };

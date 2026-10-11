@@ -20,6 +20,11 @@ export interface InvoiceLine {
   difference: number | null;
   /** Why the line is not a match, in plain words; empty for a match. */
   reason: string;
+  /**
+   * The service's overcharge on this line. Null means it could not price the line.
+   * Absent only on sample invoices, which work it out from the difference.
+   */
+  overcharge?: number | null;
 }
 
 /** Where the invoice is in the pipeline. */
@@ -44,9 +49,13 @@ export interface SupplierInvoice {
   priceSheet: string | null;
   /**
    * The service's overcharge total. Absent on sample invoices, which add the lines up.
-   * Null means the service could not price every line.
+   * Null means the service claims nothing, because the invoice's own sums do not agree.
    */
   overchargeTotal?: number | null;
   /** True when the service replayed a known answer. */
   fixture?: boolean;
+  /** What the service says about the whole invoice, such as "1 line not priced". */
+  warnings?: string[];
+  /** The step that failed and why, in the service's words. Null unless the check failed. */
+  error?: string | null;
 }

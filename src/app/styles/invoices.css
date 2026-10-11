@@ -43,6 +43,7 @@ button.ck-box.on{border-color:var(--ink)}
 .ck-side{flex:1 1 320px;max-width:420px;min-width:0;box-sizing:border-box;padding:16px 20px 24px;display:grid;gap:10px}
 .ck-sidehd{display:flex;align-items:baseline;gap:8px;font-size:15px}
 .ck-sidehd .hint{margin-left:auto}
+.ck-warning{color:var(--ink)}
 .ck-card{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);text-align:left;width:100%}
 .ck-card:hover{background:var(--hover)}
 .ck-card.cur{border-color:var(--ink);box-shadow:inset 2px 0 0 var(--ink)}

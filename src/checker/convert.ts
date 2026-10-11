@@ -13,11 +13,13 @@ export interface ServiceLine {
 }
 
 export interface ServiceCheckLine {
+  line_index: number;
   status: LineResult;
   reason: string;
   invoice_price: string | null;
   agreed_price: string | null;
   difference: string | null;
+  overcharge: string | null;
 }
 
 export interface ServiceInvoice {
@@ -41,36 +43,47 @@ export interface ServiceInvoice {
   check: {
     overcharge_total: string | null;
     lines: ServiceCheckLine[];
+    warnings: string[];
   } | null;
 }
 
+/** For showing only. The service does every sum, so no arithmetic is done on these. */
 const numberOf = (value: string | null | undefined): number | null => {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const IN_PROGRESS = ["reading", "extracting", "checking"];
+
 const stateOf = (status: string): CheckState => {
   if (status === "completed") return "checked";
-  if (status === "failed") return "failed";
-  return "checking";
+  return IN_PROGRESS.includes(status) ? "checking" : "failed";
+};
+
+const errorOf = (saved: ServiceInvoice): string | null => {
+  if (saved.status === "failed") return saved.error;
+  if (stateOf(saved.status) === "failed") return `The service sent a status this screen does not know: ${saved.status}`;
+  return null;
 };
 
 export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
   const invoice = saved.invoice;
-  const checks = saved.check?.lines ?? [];
+  const checks = new Map((saved.check?.lines ?? []).map((line) => [line.line_index, line]));
   const lines: InvoiceLine[] = (invoice?.lines ?? []).map((line, index) => {
-    const check = checks[index];
+    const check = checks.get(index);
     return {
       part: line.part_number,
       description: line.description ?? "",
       quantity: numberOf(line.quantity),
       unitPrice: numberOf(line.unit_price),
       lineTotal: numberOf(line.line_total),
+      // The service gives one result per line. A line without one is never shown as passed.
       result: check?.status ?? "needs_person",
       sheetPrice: numberOf(check?.agreed_price),
       difference: numberOf(check?.difference),
-      reason: check?.reason ?? "",
+      reason: check?.reason ?? "The check gave no result for this line.",
+      overcharge: numberOf(check?.overcharge),
     };
   });
   return {
@@ -89,5 +102,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     priceSheet: saved.price_sheet_version,
     overchargeTotal: saved.check ? numberOf(saved.check.overcharge_total) : null,
     fixture: saved.mode === "fixture",
+    warnings: saved.check?.warnings ?? [],
+    error: errorOf(saved),
   };
 }

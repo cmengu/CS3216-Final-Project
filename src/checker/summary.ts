@@ -15,15 +15,22 @@ export const amount = (n: number) => n.toLocaleString("en-SG", { minimumFraction
 /** A unit price as printed, keeping up to four decimals: 0.0085, 0.385, 0.42 → 0.42. */
 export const unitPrice = (n: number) => n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
-/** How much one line charges over the price sheet; 0 unless it is a price mismatch charged above the sheet. */
+/**
+ * How much one line charges over the price sheet. The service's own figure whenever it sent
+ * the line; a line it could not price counts as nothing. Only a sample line is worked out here.
+ */
 export function lineOver(l: InvoiceLine): number {
+  if (l.overcharge !== undefined) return l.overcharge ?? 0;
   if (l.result !== "price_mismatch" || l.difference === null || l.quantity === null || l.difference <= 0) return 0;
   return round2(l.difference * l.quantity);
 }
 
-/** The service's total when it sent one. Sample invoices still add up their lines. */
+/**
+ * The invoice's overcharge. The service's own total whenever it checked the invoice; when it
+ * claims nothing, this is nothing. Only a sample invoice adds up its lines.
+ */
 export const overcharge = (inv: SupplierInvoice) =>
-  inv.overchargeTotal != null ? round2(inv.overchargeTotal) : round2(inv.lines.reduce((a, l) => a + lineOver(l), 0));
+  inv.overchargeTotal !== undefined ? (inv.overchargeTotal ?? 0) : round2(inv.lines.reduce((a, l) => a + lineOver(l), 0));
 
 export const problemLines = (inv: SupplierInvoice) => inv.lines.filter((l) => l.result !== "match");
 
@@ -47,10 +54,25 @@ export function invoiceLabel(inv: SupplierInvoice): [string, string] {
 /** The short line under an invoice's name in the list. */
 export function invoiceMeta(inv: SupplierInvoice): string {
   if (inv.state === "checking") return "Reading the PDF";
-  if (inv.state === "failed") return "The PDF could not be read. Open it to check by hand.";
+  if (inv.state === "failed") return failure(inv);
   const n = problemLines(inv).length;
   const all = inv.lines.length;
   return n ? `${n} of ${all} lines ${n === 1 ? "needs" : "need"} a look` : `${all} line${all === 1 ? "" : "s"}`;
+}
+
+/** Why a failed invoice failed, as one line. The service names the step and the reason. */
+export const failure = (inv: SupplierInvoice) =>
+  inv.error ? `Could not be checked. ${inv.error}` : "The PDF could not be read. Open it to check by hand.";
+
+/** "Today 10:42", "Yesterday", "25 Sept", from the upload time and the reader's own clock. */
+export function uploadedLabel(uploadedAt: string, now: Date = new Date()): string {
+  const at = new Date(uploadedAt);
+  if (Number.isNaN(at.getTime())) return "";
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(now) - midnight(at)) / 86_400_000);
+  if (days === 0) return `Today ${at.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+  if (days === 1) return "Yesterday";
+  return at.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
 }
 
 /** Newest upload first. */
