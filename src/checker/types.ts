@@ -42,4 +42,11 @@ export interface SupplierInvoice {
   lines: InvoiceLine[];
   /** The price sheet the check used. */
   priceSheet: string | null;
+  /**
+   * The service's overcharge total. Absent on sample invoices, which add the lines up.
+   * Null means the service could not price every line.
+   */
+  overchargeTotal?: number | null;
+  /** True when the service replayed a known answer. */
+  fixture?: boolean;
 }

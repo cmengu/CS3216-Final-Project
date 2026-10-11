@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Header } from "@/components/shell/Header";
 import { NotFound } from "@/components/shell/Guard";
-import { useInvoices } from "@/checker/api";
+import { useInvoices, useRemoteInvoice } from "@/checker/api";
 import { amount, invoiceLabel, lineOver, problemsFirst, RESULT, unitPrice } from "@/checker/summary";
 import type { InvoiceLine, SupplierInvoice } from "@/checker/types";
 import { fmtShort } from "@/lib/format";
@@ -17,12 +17,13 @@ import { fmtShort } from "@/lib/format";
 const num = (n: number | null, f: (n: number) => string = amount) => (n === null ? "—" : f(n));
 
 export function InvoiceView({ id }: { id: string }) {
-  const { invoices, error } = useInvoices();
-  const inv = invoices?.find((i) => i.id === id);
+  const listed = useInvoices();
+  const remote = useRemoteInvoice(id);
+  const fromList = listed.invoices?.find((invoice) => invoice.id === id) ?? null;
+  const inv = remote.invoice ?? fromList;
 
-  if (error) return <NotFound hint={error} />;
-  if (!invoices) return <Header>Invoices</Header>;
-  if (!inv) return <NotFound hint="No invoice with this link. It may have been removed." />;
+  if (!inv && (remote.loading || listed.invoices === null)) return <Header>Invoices</Header>;
+  if (!inv) return <NotFound hint={remote.error ?? listed.error ?? "No invoice with this link. It may have been removed."} />;
   return <Checked inv={inv} />;
 }
 
@@ -54,7 +55,10 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
       ) : (
         <div className="ck-split">
           <section className="ck-pagewrap" aria-label="The invoice as read">
-            <div className="hint">{`Read from ${inv.fileName} · checked against ${inv.priceSheet ?? "the price sheet"}`}</div>
+            <div className="hint">
+              {`Read from ${inv.fileName} · checked against ${inv.priceSheet ?? "the price sheet"}`}
+              {inv.fixture ? " · Fixture answers, not a live check" : ""}
+            </div>
             <div className="ck-page">
               <div className="ck-pagehd">
                 <b>{inv.supplier}</b>

@@ -21,7 +21,9 @@ export function lineOver(l: InvoiceLine): number {
   return round2(l.difference * l.quantity);
 }
 
-export const overcharge = (inv: SupplierInvoice) => round2(inv.lines.reduce((a, l) => a + lineOver(l), 0));
+/** The service's total when it sent one. Sample invoices still add up their lines. */
+export const overcharge = (inv: SupplierInvoice) =>
+  inv.overchargeTotal != null ? round2(inv.overchargeTotal) : round2(inv.lines.reduce((a, l) => a + lineOver(l), 0));
 
 export const problemLines = (inv: SupplierInvoice) => inv.lines.filter((l) => l.result !== "match");
 
