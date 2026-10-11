@@ -9,23 +9,23 @@ import Link from "next/link";
 import { useState } from "react";
 import { Header } from "@/components/shell/Header";
 import { NotFound } from "@/components/shell/Guard";
-import { useInvoices, useRemoteInvoice } from "@/checker/api";
-import { amount, invoiceLabel, lineOver, problemsFirst, RESULT, unitPrice } from "@/checker/summary";
+import { useRemoteInvoice } from "@/checker/api";
+import { amount, failure, invoiceLabel, lineOver, problemsFirst, RESULT, unitPrice } from "@/checker/summary";
 import type { InvoiceLine, SupplierInvoice } from "@/checker/types";
 import { fmtShort } from "@/lib/format";
 
 const num = (n: number | null, f: (n: number) => string = amount) => (n === null ? "—" : f(n));
 
 export function InvoiceView({ id }: { id: string }) {
-  const listed = useInvoices();
-  const remote = useRemoteInvoice(id);
-  const fromList = listed.invoices?.find((invoice) => invoice.id === id) ?? null;
-  const inv = remote.invoice ?? fromList;
+  const { invoice, error, loading } = useRemoteInvoice(id);
 
-  if (!inv && (remote.loading || listed.invoices === null)) return <Header>Invoices</Header>;
-  if (!inv) return <NotFound hint={remote.error ?? listed.error ?? "No invoice with this link. It may have been removed."} />;
-  return <Checked inv={inv} />;
+  if (loading) return <Header>Invoices</Header>;
+  if (!invoice) return <NotFound hint={error ?? "No invoice with this link. It may have been removed."} />;
+  return <Checked inv={invoice} />;
 }
+
+/** Shown in every state, so a replayed answer is never taken for a real check. */
+const FIXTURE_MARK = "Fixture answers, not a live check";
 
 function Checked({ inv }: { inv: SupplierInvoice }) {
   const [cls, text] = invoiceLabel(inv);
@@ -35,7 +35,14 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
 
   return (
     <>
-      <Header acts={inv.state === "checked" ? <span className={`lbl ${cls}`}>{text}</span> : null}>
+      <Header
+        acts={
+          <>
+            {inv.fixture ? <span className="lbl l-warn">{FIXTURE_MARK}</span> : null}
+            {inv.state === "checked" ? <span className={`lbl ${cls}`}>{text}</span> : null}
+          </>
+        }
+      >
         <Link className="crumb" href="/invoices">
           Invoices
         </Link>
@@ -49,7 +56,7 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
           <div className="hint">
             {inv.state === "checking"
               ? `Still reading ${inv.fileName}. Its lines show here once the check is done.`
-              : `${inv.fileName} could not be read. Open the PDF and check it by hand.`}
+              : `${inv.fileName}: ${failure(inv)}`}
           </div>
         </div>
       ) : (
@@ -57,7 +64,6 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
           <section className="ck-pagewrap" aria-label="The invoice as read">
             <div className="hint">
               {`Read from ${inv.fileName} · checked against ${inv.priceSheet ?? "the price sheet"}`}
-              {inv.fixture ? " · Fixture answers, not a live check" : ""}
             </div>
             <div className="ck-page">
               <div className="ck-pagehd">
@@ -117,6 +123,11 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
               <b>{problems.length ? `${problems.length} ${problems.length > 1 ? "lines need" : "line needs"} a look` : "Every line matches"}</b>
               <span className="hint">{`${inv.lines.length - problems.length} match`}</span>
             </div>
+            {(inv.warnings ?? []).map((warning) => (
+              <div className="hint ck-warning" key={warning}>
+                {warning}
+              </div>
+            ))}
             {problems.map((l) => {
               const [lc, lt] = RESULT[l.result];
               const over = lineOver(l);

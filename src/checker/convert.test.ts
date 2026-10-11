@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
-import { overcharge } from "./summary";
+import { invoiceLabel, lineOver, overcharge } from "./summary";
 
 const invoice02: ServiceInvoice = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -27,10 +27,11 @@ const invoice02: ServiceInvoice = {
   check: {
     overcharge_total: "15.00",
     lines: [
-      { status: "price_mismatch", reason: "Billed unit price differs from agreed price", invoice_price: "0.015", agreed_price: "0.012", difference: "0.003" },
-      { status: "match", reason: "Agreed unit price", invoice_price: "0.0047", agreed_price: "0.0047", difference: "0" },
-      { status: "match", reason: "Agreed unit price", invoice_price: "0.185", agreed_price: "0.185", difference: "0" },
+      { line_index: 0, status: "price_mismatch", reason: "Billed unit price differs from agreed price", invoice_price: "0.015", agreed_price: "0.012", difference: "0.003", overcharge: "15.00" },
+      { line_index: 1, status: "match", reason: "Agreed unit price", invoice_price: "0.0047", agreed_price: "0.0047", difference: "0", overcharge: "0.00" },
+      { line_index: 2, status: "match", reason: "Agreed unit price", invoice_price: "0.185", agreed_price: "0.185", difference: "0", overcharge: "0.00" },
     ],
+    warnings: [],
   },
 };
 
@@ -46,14 +47,55 @@ describe("toSupplierInvoice", () => {
     expect(invoice.supplier).toBe("Invented Silicon Trading");
   });
 
-  it("records a null service total as null", () => {
+  it("claims nothing when the service claims nothing, and never adds the lines up itself", () => {
     const invoice = toSupplierInvoice({
       ...invoice02,
       mode: "live",
-      check: { ...invoice02.check!, overcharge_total: null },
+      check: { ...invoice02.check!, overcharge_total: null, warnings: ["Invoice arithmetic does not reconcile"] },
     });
     expect(invoice.fixture).toBe(false);
     expect(invoice.overchargeTotal).toBeNull();
+    expect(overcharge(invoice)).toBe(0);
+    expect(invoice.warnings).toEqual(["Invoice arithmetic does not reconcile"]);
+  });
+
+  it("shows the service's overcharge on a line, not its own multiplication", () => {
+    // 0.015 x 67 is 1.005: the service rounds half up to 1.01, a browser float gives 1.00.
+    const lines = invoice02.check!.lines.map((line, index) => (index === 0 ? { ...line, difference: "0.015", overcharge: "1.01" } : line));
+    const invoice = toSupplierInvoice({ ...invoice02, check: { ...invoice02.check!, lines, overcharge_total: "1.01" } });
+    expect(lineOver(invoice.lines[0])).toBe(1.01);
+    expect(overcharge(invoice)).toBe(1.01);
+  });
+
+  it("counts a line the service could not price as nothing", () => {
+    const lines = invoice02.check!.lines.map((line, index) =>
+      index === 0 ? { ...line, status: "needs_person" as const, overcharge: null } : line,
+    );
+    const invoice = toSupplierInvoice({ ...invoice02, check: { overcharge_total: "0.00", lines, warnings: ["1 line not priced"] } });
+    expect(lineOver(invoice.lines[0])).toBe(0);
+    expect(invoice.warnings).toEqual(["1 line not priced"]);
+    expect(invoiceLabel(invoice)[1]).toBe("Needs a person");
+  });
+
+  it("pairs each result with its line by the service's line number, not by position", () => {
+    const lines = [...invoice02.check!.lines].reverse();
+    const invoice = toSupplierInvoice({ ...invoice02, check: { ...invoice02.check!, lines } });
+    expect(invoice.lines.map((line) => line.result)).toEqual(["price_mismatch", "match", "match"]);
+  });
+
+  it("never shows a line with no result as passed", () => {
+    const invoice = toSupplierInvoice({ ...invoice02, check: { ...invoice02.check!, lines: invoice02.check!.lines.slice(0, 2) } });
+    expect(invoice.lines[2].result).toBe("needs_person");
+    expect(invoice.lines[2].reason).toBe("The check gave no result for this line.");
+  });
+
+  it("keeps the step and reason of a failed check, and names a status it does not know", () => {
+    const failed = toSupplierInvoice({ ...invoice02, status: "failed", error: "reading: No readable text or tables", check: null });
+    expect(failed.state).toBe("failed");
+    expect(failed.error).toBe("reading: No readable text or tables");
+    const odd = toSupplierInvoice({ ...invoice02, status: "queued", check: null });
+    expect(odd.state).toBe("failed");
+    expect(odd.error).toContain("queued");
   });
 
   it("maps an in-progress status to checking and a failure to failed", () => {
