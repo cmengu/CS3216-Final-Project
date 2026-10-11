@@ -5,19 +5,16 @@ stop, so the next reader starts from the truth.
 
 ## State
 
-As of 11 October 2026, 15:30 Singapore time: `main` holds the PDF reader and service (#2) and
-the first Invoices screens (#3). Everything else is in one pull request, **#14**, from the
-branch `cm/review-integration` into `main`. It is #4 to #13 together: the model step, the
-price check, the scorer, the screens wired to the service, and the review fixes.
+`main` holds the whole invoice checker: the PDF reader, the service, the model step, the price
+check, the scorer and the Invoices screens. Pull requests #1 to #14 are merged or closed, and
+no pull request is open. Start new work from `main`.
 
-#14 merges into `main` with no conflicts, and the result is exactly the tree that was tested:
-backend `pytest -q` gives 96 passed and 4 skipped; screens `npm test` gives 184 passed; lint
-and typecheck are clean on both.
+Checks on `main`, run after the last merge on 11 October 2026: backend `pytest -q` gives 96
+passed and 4 skipped; screens `npm test` gives 184 passed; lint and typecheck are clean on
+both.
 
-**A person must merge #14; an automated merge was refused as unreviewed.** After it is merged,
-close whichever of #5 and #9 to #13 are still open. Their changes are all inside #14, so
-merging them as well adds nothing. Until #14 is merged, start new work from
-`cm/review-integration`, not from `main`.
+The branches `duc/invoice-service`, `feature/invoice-list` and `sample-po-lists` are still on
+GitHub. Everything in them is on `main`; their owners can delete them.
 
 ## What works
 
