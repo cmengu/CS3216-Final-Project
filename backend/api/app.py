@@ -1,6 +1,7 @@
 """Local demo API: bounded upload → read → extract → check → persist.
 
-No auth/connectors in release 1. Bind to loopback, one worker. Fixture mode is explicit.
+No auth/connectors in release 1. Bind to loopback, one worker. The mode is always explicit:
+INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real steps.
 """
 
 import logging
@@ -13,6 +14,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import ValidationError
 
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
@@ -34,22 +36,7 @@ def create_app(
     async def lifespan(app):
         app.state.store = Store(store_dir)
         app.state.store.recover()
-        app.state.stages = stages
-        if stages is None and os.environ.get("INVOICE_MODE") == "fixture":
-            app.state.stages = FixtureStages(
-                Path(os.environ.get("INVOICE_DUMMY_DIR", ROOT / "data/dummy"))
-            )
-        elif stages is None and os.environ.get("INVOICE_MODE") == "live":
-            from .live import LiveStages
-
-            if not os.environ.get("OPENAI_API_KEY", "").strip():
-                raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
-            if not os.environ.get("INVOICE_PRICE_SHEET", "").strip():
-                raise ValueError("Set INVOICE_PRICE_SHEET to the agreed-price CSV")
-            app.state.stages = LiveStages(
-                Path(os.environ["INVOICE_PRICE_SHEET"]),
-                model=os.environ.get("OPENAI_MODEL", ""),
-            )
+        app.state.stages = stages if stages is not None else _stages_from_environment()
         app.state.slot = BoundedSemaphore(1)
         yield
 
@@ -89,7 +76,8 @@ def create_app(
             file.file.close()
             raise HTTPException(
                 503,
-                "Set INVOICE_MODE=live with OpenAI credentials and a price CSV, or fixture for dummy PDFs.",
+                "Extraction/check adapters are unconfigured. Set INVOICE_MODE=fixture for known "
+                "dummy PDFs, or INVOICE_MODE=live with INVOICE_PRICE_SHEET for the real steps.",
             )
         if not app.state.slot.acquire(blocking=False):
             file.file.close()
@@ -121,14 +109,17 @@ def create_app(
                 invoice_id, filename, document_hash, selected.mode, selected.price_sheet_version
             )
             inserted = True
+            stage = "reading"
             try:
                 document = reader(path, force_ocr=force_ocr)
                 if document.document_hash != document_hash:
                     raise ValueError("Reader returned a different document hash")
                 document.filename = filename
-                store.update(invoice_id, "extracting", document=document)
+                stage = "extracting"
+                store.update(invoice_id, stage, document=document)
                 invoice = selected.extract(document)
-                store.update(invoice_id, "checking", invoice=invoice)
+                stage = "checking"
+                store.update(invoice_id, stage, invoice=invoice)
                 check = selected.check(invoice)
                 if len(check.lines) != len(invoice.lines) or {
                     x.line_index for x in check.lines
@@ -142,11 +133,7 @@ def create_app(
             except Exception as exc:
                 # Persist failures without logging document text, provider response bodies or keys.
                 log.warning("Invoice %s failed (%s)", invoice_id, type(exc).__name__)
-                store.update(
-                    invoice_id,
-                    "failed",
-                    error=f"{type(exc).__name__}: processing failed; inspect the stage and retry",
-                )
+                store.update(invoice_id, "failed", error=f"{stage}: {_failure_reason(exc)}")
                 return JSONResponse(store.get(invoice_id).model_dump(mode="json"), status_code=422)
             return store.get(invoice_id)
         finally:
@@ -180,6 +167,41 @@ def create_app(
         )
 
     return app
+
+
+def _stages_from_environment() -> Stages | None:
+    mode = os.environ.get("INVOICE_MODE")
+    if not mode:
+        return None
+    if mode == "fixture":
+        return FixtureStages(Path(os.environ.get("INVOICE_DUMMY_DIR", ROOT / "data/dummy")))
+    if mode == "live":
+        sheet = os.environ.get("INVOICE_PRICE_SHEET")
+        if not sheet:
+            raise ValueError("Set INVOICE_PRICE_SHEET to the price sheet .xlsx for live mode")
+        checker = os.environ.get("INVOICE_CHECKER", "standard")
+        if checker == "csv_context":
+            from .csv_live import LiveStages as CsvLiveStages
+
+            if not os.environ.get("OPENAI_API_KEY", "").strip():
+                raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
+            return CsvLiveStages(Path(sheet), model=os.environ.get("OPENAI_MODEL", ""))
+        if checker != "standard":
+            raise ValueError("INVOICE_CHECKER must be standard or csv_context")
+        from .live import LiveStages
+
+        return LiveStages(Path(sheet))
+    raise ValueError("INVOICE_MODE must be fixture or live")
+
+
+def _failure_reason(exc: Exception) -> str:
+    """The step's own sentence. Those are written to hold no document text, key or provider body.
+
+    A validation error is a ValueError too, and it quotes the value it rejected, so it is not shown.
+    """
+    if isinstance(exc, ValueError) and not isinstance(exc, ValidationError):
+        return str(exc)
+    return f"{type(exc).__name__}: processing failed; inspect the stage and retry"
 
 
 app = create_app()

@@ -4,8 +4,9 @@ Built for the 10 October build plan: upload → Docling → extraction adapter �
 → SQLite. Completed records and original PDFs survive a restart. The existing Next.js PO demo
 is unchanged; Nam can build the new screens against this API.
 
-**Modes:** `live` reads PDFs with Docling, extracts printed fields using OpenAI, and checks
-prices against a configured CSV snapshot. `fixture` replays answers for the exact original
+**Modes:** `live` reads PDFs with Docling and extracts printed fields using OpenAI.
+The default `INVOICE_CHECKER=standard` keeps the existing `check/` price-sheet workflow.
+Set `INVOICE_CHECKER=csv_context` for the extended PO/unit/discount-aware CSV adapter. `fixture` replays answers for the exact original
 dummy PDFs and refuses other hashes. Never use fixture mode to measure AI accuracy.
 
 ## Live setup and local environment template
@@ -18,6 +19,7 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-6-luna
 OPENAI_REASONING_EFFORT=none
 INVOICE_MODE=live
+INVOICE_CHECKER=csv_context
 INVOICE_PRICE_SHEET=../data/mock_invoice_dataset/master_prices.csv
 INVOICE_DATA_DIR=runtime/live
 INVOICE_OCR_TIMEOUT=180
@@ -76,6 +78,16 @@ uv sync --locked --extra dev --extra docling --extra dummy
 INVOICE_MODE=fixture .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
+For the real steps, with the key and model in the environment:
+
+```sh
+INVOICE_MODE=live INVOICE_PRICE_SHEET=../data/dummy/price-sheet.xlsx \
+  .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+The price sheet is read once at start; a missing column stops the service and names it. A
+changed sheet needs a restart.
+
 Open <http://127.0.0.1:8000/docs> to upload a PDF through Swagger, or from the repository root:
 
 ```sh
@@ -85,7 +97,7 @@ curl http://127.0.0.1:8000/invoices
 
 The first Docling run downloads model weights. Subsequent runs reuse locally cached weights
 and converter instances. The reader is configured for CPU execution. No API key is needed for
-fixture mode. Without `INVOICE_MODE=fixture` or injected real adapters, uploads return 503.
+fixture mode. With no `INVOICE_MODE`, uploads return 503. Any other value stops the start.
 
 This is a local demo service without sign-in. Keep the loopback binding and a single worker.
 Only one invoice processes at a time; concurrent uploads receive 429 and Retry-After. The
@@ -128,7 +140,10 @@ storage through a public static directory.
 | --- | --- |
 | `schema.py` | Proposed build-plan invoice fields; Chen Meng/team must agree the contract |
 | `read/` | Duc: PDF validation, native text, OCR, tables, per-page metadata |
-| `api/` | Duc: service orchestration, persistence, adapter interfaces |
+| `api/` | Duc: service orchestration, persistence, adapter interfaces; `api/live.py` joins the real steps |
+| `extract/` | Chen Meng: one model call turns page text into `InvoiceRecord` |
+| `check/` | Kalent: price sheet loader, line rules, allowance, overcharge total |
+| `eval/` | Chen Meng: the scorer, `invoice-score` |
 | `dummy/` and `../data/dummy/` | Duc: generator, invented price sheet and documents |
 | `examples/` | Concrete handoffs for Chen Meng, Kalent and Nam |
 | `invoice_processing/` | Earlier experiment, retained for reference; not used by the service |
@@ -142,7 +157,8 @@ The master is a **part price sheet**, not an invoice register. The service never
 earlier `MasterSnapshot`/`compare_invoice` experiment. Kalent supplies the real sheet loader,
 currency/matching policy, arithmetic rules, rounding allowance and overcharge computation.
 
-Replace fixture behavior by supplying an object implementing `api.stages.Stages`:
+`api.live.LiveStages` is that object for the real steps, and `INVOICE_MODE=live` selects it.
+Any other object implementing `api.stages.Stages` can be passed the same way:
 
 ```python
 class TeamStages:
@@ -210,13 +226,41 @@ the new manifest. Expected values come from the source records before rendering,
 OCR output. Chen Meng owns the final answer-file format/scorer; the manifest is a handoff,
 not the three-run evaluation or its five metrics.
 
+## The price check's rules
+
+Each line takes the first rule it fails: a missing quantity, unit price or line total; a
+quantity of zero or less; quantity times price not equal to the line total; no part number or
+a part not on the sheet (`unknown_part`); a part the sheet prices twice; a missing or
+different currency; then the price. A gap worth less than `check/allowance.py` on the line is
+a match. An invoice whose own sums disagree stops every line and claims no overcharge. Only
+what the invoice prints is compared, so an invoice with no tax line is checked on its total.
+
+`overcharge_total` is the sum of the known overcharges. Lines with no known price are left
+out of it and counted in `warnings`, for example `"1 line not priced"`.
+
+The sheet loader reads the first worksheet, finds the header row within the first 20 rows,
+and accepts the header wordings listed in `check/sheet.py`. Add a client's wording there.
+
+## Score
+
+```sh
+.venv/bin/invoice-score                 # the dummy set, three runs, needs the key and model
+.venv/bin/invoice-score --manifest PATH --price-sheet PATH --runs 1
+```
+
+It prints, for digital and scanned files apart: fields read correctly, check results equal to
+the answer file, planted mistakes caught, correct lines left unflagged, cost and seconds per
+invoice, then every miss. An invoice a step refuses is scored as wrong and listed. The run is
+saved under `artifacts/` and ends with an error when a planted mistake is missed.
+
 ## Verify
 
 ```sh
 .venv/bin/pytest -q
-.venv/bin/ruff check api read dummy schema.py invoice_processing tests
-.venv/bin/ruff format --check api read dummy schema.py invoice_processing tests
+.venv/bin/ruff check .
+.venv/bin/ruff format --check api check eval extract read dummy schema.py tests
 .venv/bin/pytest -q --run-docling
+.venv/bin/pytest -q --run-model      # one real model call on data/dummy; needs the key
 ```
 
 Unit tests cover persistence across app restarts, interrupted jobs, invalid/oversized uploads,

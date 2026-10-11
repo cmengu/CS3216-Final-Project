@@ -239,15 +239,7 @@ table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 .psec .kv span:nth-child(odd){color:var(--ink3)}
 .psec p{margin:0;font-size:12.5px;color:var(--ink2);line-height:1.5}
 
-/* importer (MK Tracker) */
-.step{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
-.stepc{background:transparent;border-radius:0;padding:0 0 22px;border:0;border-bottom:1px solid var(--line);display:grid;gap:12px}
-.stepc:last-child{border-bottom:0}
-.stepc h2{margin:2px 0 0;font-size:17px;font-weight:600;letter-spacing:-.01em}
-.stepc .lead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
-.drop{border:1px dashed var(--line2);border-radius:12px;padding:26px;text-align:center;color:var(--ink3);background:transparent}
-.drop.on{border-color:var(--ink);background:var(--sel)}
-.drop b{display:block;color:var(--ink);font-weight:500;margin-bottom:2px}
+/* file list (Connections) and form (People) */
 .q{border:0;border-radius:0;background:transparent}
 .q li{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
 .q li:first-child{border-top:0}
@@ -255,26 +247,6 @@ table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 .q .fn{font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .q .fs{color:var(--ink3);font-size:11.5px}
 .q .st{font-size:12px;white-space:nowrap}
-.st.ok{color:var(--good)} .st.fail{color:var(--bad)} .st.busy{color:var(--warn)} .st.wait{color:var(--ink3)}
-.q .rm{color:var(--bad);font-size:11.5px;text-decoration:underline;text-underline-offset:2px}
-.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 0 12px;border-bottom:1px solid var(--line)}
-.toolbar .lay{display:flex;align-items:center;gap:6px;background:var(--panel2);border-radius:8px;padding:3px 6px 3px 12px;font-size:12.5px}
-.toolbar .lay select{border:0;background:transparent;padding:2px 4px}
-.toolbar .sp{flex:1}
-.grid14 table{min-width:max-content;border-collapse:separate;border-spacing:0;font-size:12.5px}
-.grid14 th{min-width:9rem;border:1px solid var(--line2);padding:7px 10px;text-align:left;font-weight:600;white-space:nowrap;color:#000}
-.grid14 td{border:1px solid var(--line);padding:0;vertical-align:top;background:var(--panel)}
-.grid14 td .cv{padding:7px 10px;white-space:nowrap;min-height:30px}
-.grid14 td.flag{background:var(--flag)}
-.grid14 td.flag .note{padding:0 10px 6px;font-size:11px;color:var(--flag-ink);white-space:normal;max-width:16rem}
-.grid14 td select{border:0;background:transparent;padding:6px 8px;width:100%;color:var(--flag-ink)}
-.grid14 .emptyc{padding:28px 16px;text-align:center;color:var(--ink3);border:1px solid var(--line)}
-.msgs{display:grid;gap:6px}
-.msgs div{background:var(--bad-soft);color:var(--bad);border-radius:10px;padding:8px 12px;font-size:12.5px}
-.msgs div b{font-weight:600}
-.src{display:flex;gap:4px;margin:0;padding:0}
-.src button{padding:5px 12px;border-radius:999px;color:var(--ink2);font-weight:500;font-size:13px}
-.src button.on{background:var(--sel);color:var(--ink)}
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
 .form label{display:grid;gap:4px;font-size:11.5px;color:var(--ink3)}
 .form label>*{font-size:13px;color:var(--ink)}

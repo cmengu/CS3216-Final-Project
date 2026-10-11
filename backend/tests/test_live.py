@@ -9,7 +9,7 @@ from test_api import DATA, lightweight_reader
 from test_extract import FakeClient, completed
 
 from api.app import create_app
-from api.live import LiveStages, PriceSheet
+from api.csv_live import LiveStages, PriceSheet
 from extract.context import CheckingInvoice
 from read.bounded import read_pdf_bounded
 
@@ -181,6 +181,8 @@ def test_live_api_persists_extended_fields_without_fixture_lookup(sheet, tmp_pat
 
 def test_live_startup_configuration(sheet, tmp_path, monkeypatch):
     monkeypatch.setenv("INVOICE_MODE", "live")
+    monkeypatch.setenv("INVOICE_CHECKER", "csv_context")
+    monkeypatch.setenv("INVOICE_PRICE_SHEET", str(sheet))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         with TestClient(create_app(storage_dir=tmp_path)):
