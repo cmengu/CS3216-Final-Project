@@ -2,6 +2,12 @@
 
 An order-tracking app for a small food supplier that shows each staff role only what that role may see.
 
+The new [Invoice Checker backend](backend/README.md) follows Duc's build-plan responsibilities:
+FastAPI uploads, Docling reading, saved results, and invented invoices in `data/dummy/`.
+Its extraction/checking adapters are explicitly fixture-backed pending team integration.
+The earlier PO demo remains below; it has not been removed or connected to the new API.
+
+
 **Live demo: https://po-tracker-blue.vercel.app**
 No account and no password. Pick a person on the first screen. If it asks for a PIN, type any four digits (for example `1234`).
 
@@ -64,14 +70,14 @@ The demo keeps its data in your own browser. Nothing you do is sent to a server 
 - Shows each role only what it may see. Packing never sees a price. An account manager sees only their own customers.
 - Lists delivered orders for finance to invoice.
 
-**What it is not, yet.** There is no server, no database and no real login. The five people and the PIN are a demo of the role rules, not security. See [Facts at a glance](#facts-at-a-glance).
+**What it is not, yet.** The PO frontend does not connect to a server or database and has no real login. The five people and the PIN are a demo of the role rules, not security. The separate invoice service uses FastAPI and SQLite; see [its setup guide](backend/README.md).
 
 **The design it follows.** The approved design is the Version 16 prototype (`egc-platform-prd/prototype.html`), which is kept outside this repo. Where this app and the prototype differ, the prototype wins. Ask the maintainer for the file.
 
 ## Facts at a glance
 
 - **Stack:** Next.js 16.3.8 (App Router), React 19.2.8, TypeScript 5. Tests: Vitest 5. Browser walks: `playwright-core` driving your installed Google Chrome.
-- **Runs where:** in the browser only. There are no server routes and no API calls.
+- **PO frontend runs where:** in the browser only, with no API calls. The independent invoice backend runs locally on port 8000.
 - **Data:** invented sample data in `src/sample/`, copied into one `localStorage` key on first load (`KEY` in `src/state/demo-store.ts`).
 - **Roles:** five, defined in `src/sample/people.ts`. Every permission is one function in `src/platform/access.ts`.
 - **Deploy:** Vercel. See [Deploy](#deploy).
@@ -79,7 +85,7 @@ The demo keeps its data in your own browser. Nothing you do is sent to a server 
 
 ## Run it on your machine
 
-You need Node 20.9 or newer. Nothing else.
+For the PO frontend, you need Node 20.9 or newer. The [invoice backend](backend/README.md) has separate Python dependencies and startup instructions.
 
 ```
 npm install
@@ -109,6 +115,16 @@ PROTO=/path/to/prototype.html APP=http://localhost:3000 OUT=/tmp/shots npm run s
 
 `npm run lint` also scans `.vercel/output/` if you have built for Vercel on this machine, and reports errors in that generated code. Those are not source errors.
 
+For the invoice backend, after installing its dependencies, run from `backend/`:
+
+```
+.venv/bin/pytest -q --run-docling
+.venv/bin/ruff check api read dummy schema.py invoice_processing tests
+.venv/bin/ruff format --check api read dummy schema.py invoice_processing tests
+```
+
+The Docling tests run actual digital/scanned PDF conversion and may download model weights on the first run. They do not call a paid AI API.
+
 ## Where things are
 
 | Path | What is in it |
@@ -122,12 +138,14 @@ PROTO=/path/to/prototype.html APP=http://localhost:3000 OUT=/tmp/shots npm run s
 | `src/sample/` | The invented products, customers, people, orders and events. |
 | `src/state/` | The demo store (`demo-store.ts`), the picked person (`session.ts`), the theme, and one actions file per feature. |
 | `scripts/` | The two browser walks and the screenshot comparison. |
+| `backend/` | Duc's invoice API, PDF reader, SQLite persistence, dummy generator, proposed team contracts and tests. |
+| `data/dummy/` | Invented semiconductor invoices, scanned copies, Excel price sheet and known fixture results. |
 
 How a role is applied: `src/components/shell/Guard.tsx` asks `navAllowed()` for every page. A page a role may not open draws Home instead. Price fields are removed by `lines()`, not hidden by the page.
 
 ## Rules that must not be broken
 
-1. **Never commit a real client document, even a redacted one.** Real purchase orders and invoices carry a company's prices and buying habits, and git history is permanent. `*.pdf` and `*.xlsx` are git-ignored everywhere except under `fixtures/`, which may hold invented look-alikes only.
+1. **Never commit a real client document, even a redacted one.** Real purchase orders and invoices carry a company's prices and buying habits, and git history is permanent. `*.pdf` and `*.xlsx` are git-ignored except under `fixtures/` and `data/dummy/`, which may hold invented documents only. `data/private/` and the backend's runtime/artifact directories remain ignored.
 2. **Never commit real names, codes or prices.** This repo is public. Any file named `*.private.*` is git-ignored, so real data kept on your machine under such a name cannot be committed by accident. Never paste real data into a tracked file, a test, a commit message or an issue.
 3. **Everything in `src/sample/` is invented.** Names, places, contacts and prices there are made up. Keep it that way.
 4. **Every role check goes through `src/platform/access.ts`.** Do not write `role === "owner"` in a page. One file is what lets a server take the checks over later without a hunt through the pages.
@@ -138,7 +156,7 @@ How a role is applied: `src/components/shell/Guard.tsx` asks `navAllowed()` for 
 Point the assistant at this file first. The facts below are the ones it cannot work out from the code.
 
 - **This Next.js is newer than most training data.** APIs and file conventions may differ from what the assistant expects. The matching docs are in `node_modules/next/dist/docs/`; have it read the relevant guide before it writes code. `next dev` writes an `AGENTS.md` at the repo root that says the same.
-- **There is no backend.** A question about "the API" or "the database" has no answer here. State is the store in `src/state/demo-store.ts`.
+- **The two apps are separate.** PO frontend state lives in `src/state/demo-store.ts`. The invoice API and database live in `backend/api/`; start with [backend/README.md](backend/README.md). Its extraction/checking adapters are fixture-backed until the team supplies real implementations.
 - **The five rules above apply to an assistant too**, rule 2 above all: it must not read `*.private.*` files into a commit, a test or a chat that leaves the machine.
 
 Where to look, by question:

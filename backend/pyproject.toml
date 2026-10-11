@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "invoice-processing"
+version = "0.1.0"
+description = "Docling invoice ingestion and reproducible mastersheet comparison"
+requires-python = ">=3.10,<3.14"
+dependencies = ["pydantic>=2.11,<3", "pypdf>=6,<7", "openai>=2,<3", "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "python-multipart>=0.0.20,<1"]
+
+[project.optional-dependencies]
+docling = ["docling==2.137.0", "onnxruntime>=1.20,<2"]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+dummy = ["weasyprint>=68,<71", "pypdfium2>=5,<6", "pillow>=12,<13", "openpyxl>=3.1,<4"]
+
+[project.scripts]
+invoice-process = "invoice_processing.cli:main"
+invoice-dummy = "dummy.generate:main"
+invoice-read = "read.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["invoice_processing", "read", "api", "dummy"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schema.py" = "schema.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["docling: real conversion; downloads model weights on first run"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

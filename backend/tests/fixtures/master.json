@@ -1,0 +1,34 @@
+{
+  "snapshot_id": "invented-register-v1",
+  "kind": "invoice_register",
+  "invoices": [
+    {
+      "invoice_number": "DEMO-001",
+      "supplier_id": "DEMO-SUPPLIER",
+      "currency": "SGD",
+      "subtotal": "25.00",
+      "tax_total": "2.25",
+      "grand_total": "27.25",
+      "lines": [
+        {
+          "sku": "EGC-PTND",
+          "quantity": "2",
+          "unit": "box",
+          "unit_price": "10.00",
+          "discount": "0.00",
+          "line_total": "20.00",
+          "row_id": "row-1"
+        },
+        {
+          "sku": "EGC-MBAS",
+          "quantity": "1",
+          "unit": "box",
+          "unit_price": "5.00",
+          "discount": "0.00",
+          "line_total": "5.00",
+          "row_id": "row-2"
+        }
+      ]
+    }
+  ]
+}
