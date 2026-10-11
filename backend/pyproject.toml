@@ -20,14 +20,17 @@ invoice-dummy = "dummy.generate:main"
 invoice-read = "read.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["invoice_processing", "read", "api", "dummy"]
+packages = ["invoice_processing", "read", "api", "dummy", "extract"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "schema.py" = "schema.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["docling: real conversion; downloads model weights on first run"]
+markers = [
+    "docling: real conversion; downloads model weights on first run",
+    "model: real OpenAI field extraction; sends only data/dummy and needs OPENAI_API_KEY",
+]
 
 [tool.ruff]
 target-version = "py310"
