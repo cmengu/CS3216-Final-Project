@@ -1,0 +1,15 @@
+﻿id,filename,fmt,supplier,po,date,currency,subtotal,tax_rate,tax,total,pages
+MOCK-F01-001,F01_freight_tax_01.pdf,F01,ABC Logistics Pte Ltd,PO-MOCK-01,2026-10-05,SGD,642.75,0,0.0,642.75,2
+MOCK-F01-002,F01_freight_tax_02.pdf,F01,ABC Logistics Pte Ltd,PO-MOCK-01,2026-10-19,SGD,786.33,0,0.0,786.33,2
+MOCK-F02-001,F02_hose_tax_01.pdf,F02,DEF Hose Company Pte Ltd,PO-MOCK-02,2026-10-05,SGD,3725.52,0.09,335.3,4060.82,2
+MOCK-F02-002,F02_hose_tax_02.pdf,F02,DEF Hose Company Pte Ltd,PO-MOCK-02,2026-10-19,SGD,3213.09,0.09,289.18,3502.27,2
+MOCK-F03-001,F03_sideways_tax_01.pdf,F03,GHI Tools Pte Ltd,PO-MOCK-03,2026-10-05,SGD,416.9,0.09,37.52,454.42,1
+MOCK-F03-002,F03_sideways_tax_02.pdf,F03,GHI Tools Pte Ltd,PO-MOCK-03,2026-10-19,SGD,378.85,0.09,34.1,412.95,1
+MOCK-F04-001,F04_service_tax_01.pdf,F04,JKL Machine Services Pte Ltd,PO-MOCK-04,2026-10-05,SGD,629.6,0.09,56.66,686.26,1
+MOCK-F04-002,F04_service_tax_02.pdf,F04,JKL Machine Services Pte Ltd,PO-MOCK-04,2026-10-19,SGD,1008.45,0.09,90.76,1099.21,1
+MOCK-F05-001,F05_proforma_01.pdf,F05,MNO Electric Co Ltd,PO-MOCK-05,2026-10-05,USD,617.4,0,0.0,617.4,1
+MOCK-F05-002,F05_proforma_02.pdf,F05,MNO Electric Co Ltd,PO-MOCK-05,2026-10-19,USD,506.2,0,0.0,506.2,1
+MOCK-F06-001,F06_steel_commercial_01.pdf,F06,PQR Steel Company Ltd,PO-MOCK-06,2026-10-05,USD,6350.6,0,0.0,6350.6,1
+MOCK-F06-002,F06_steel_commercial_02.pdf,F06,PQR Steel Company Ltd,PO-MOCK-06,2026-10-19,USD,4588.9,0,0.0,4588.9,1
+MOCK-F07-001,F07_tools_commercial_01.pdf,F07,GHI Tools Pte Ltd,PO-MOCK-07,2026-10-05,SGD,625.35,0.09,56.28,681.63,1
+MOCK-F07-002,F07_tools_commercial_02.pdf,F07,GHI Tools Pte Ltd,PO-MOCK-07,2026-10-19,SGD,479.25,0.09,43.13,522.38,1

@@ -1,0 +1,13 @@
+{
+  "invoices": 14,
+  "pages": 18,
+  "master_records": 24,
+  "invoice_lines": 58,
+  "matching_lines": 51,
+  "price_mismatches": 7,
+  "overcharges": 5,
+  "undercharges": 2,
+  "invoice_arithmetic": "PASS",
+  "master_xlsx_reopened": "PASS",
+  "pdf_image_only_structure": "PASS"
+}

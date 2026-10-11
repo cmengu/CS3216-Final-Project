@@ -14,7 +14,8 @@ from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from read.reader import MAX_BYTES, read_pdf, validate_pdf
+from read.bounded import read_pdf_bounded
+from read.reader import MAX_BYTES, validate_pdf
 
 from .contracts import InvoiceSummary, SavedInvoice
 from .stages import FixtureStages, Stages
@@ -25,7 +26,7 @@ log = logging.getLogger(__name__)
 
 
 def create_app(
-    *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf
+    *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf_bounded
 ) -> FastAPI:
     store_dir = storage_dir or Path(os.environ.get("INVOICE_DATA_DIR", ROOT / "backend/runtime"))
 
@@ -37,6 +38,17 @@ def create_app(
         if stages is None and os.environ.get("INVOICE_MODE") == "fixture":
             app.state.stages = FixtureStages(
                 Path(os.environ.get("INVOICE_DUMMY_DIR", ROOT / "data/dummy"))
+            )
+        elif stages is None and os.environ.get("INVOICE_MODE") == "live":
+            from .live import LiveStages
+
+            if not os.environ.get("OPENAI_API_KEY", "").strip():
+                raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
+            if not os.environ.get("INVOICE_PRICE_SHEET", "").strip():
+                raise ValueError("Set INVOICE_PRICE_SHEET to the agreed-price CSV")
+            app.state.stages = LiveStages(
+                Path(os.environ["INVOICE_PRICE_SHEET"]),
+                model=os.environ.get("OPENAI_MODEL", ""),
             )
         app.state.slot = BoundedSemaphore(1)
         yield
@@ -77,7 +89,7 @@ def create_app(
             file.file.close()
             raise HTTPException(
                 503,
-                "Extraction/check adapters are unconfigured. Set INVOICE_MODE=fixture for known dummy PDFs.",
+                "Set INVOICE_MODE=live with OpenAI credentials and a price CSV, or fixture for dummy PDFs.",
             )
         if not app.state.slot.acquire(blocking=False):
             file.file.close()

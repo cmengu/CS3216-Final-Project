@@ -4,10 +4,68 @@ Built for the 10 October build plan: upload → Docling → extraction adapter �
 → SQLite. Completed records and original PDFs survive a restart. The existing Next.js PO demo
 is unchanged; Nam can build the new screens against this API.
 
-**Current mode:** PDF reading is real. Extraction and checking are explicit fixture adapters
-that replay expected answers for the exact generated PDFs. They do not call OpenAI or perform
-live price checking, and refuse unknown PDF hashes. This lets integration start without
-claiming the other owners' work is complete. Do not use fixture mode to measure AI accuracy.
+**Modes:** `live` reads PDFs with Docling, extracts printed fields using OpenAI, and checks
+prices against a configured CSV snapshot. `fixture` replays answers for the exact original
+dummy PDFs and refuses other hashes. Never use fixture mode to measure AI accuracy.
+
+## Live setup and local environment template
+
+Create `backend/.env` using this template. `.env*` is ignored by Git, including this file.
+Keep credentials in this backend file, never in `NEXT_PUBLIC_*` or frontend code.
+
+```dotenv
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-6-luna
+OPENAI_REASONING_EFFORT=none
+INVOICE_MODE=live
+INVOICE_PRICE_SHEET=../data/mock_invoice_dataset/master_prices.csv
+INVOICE_DATA_DIR=runtime/live
+INVOICE_OCR_TIMEOUT=180
+```
+
+Fill the key locally. `gpt-6-luna` with reasoning `none` prioritizes latency; availability
+depends on the API project. See the [model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna).
+Remove `OPENAI_REASONING_EFFORT` when selecting a model without reasoning support.
+Paths above are relative to `backend/`. From that directory:
+
+```sh
+uv sync --locked --extra dev --extra docling --extra dummy
+.venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Live startup fails clearly if the key, model or price-sheet path is missing. Restart after
+editing `.env`. The service validates configuration, but provider access/quota errors can
+still occur on the first extraction. Each upload makes one model request with `store=False`.
+
+The price CSV columns are `key`, `supplier`, `po`, `item`, `description`, `uom`, `currency`,
+`unit_price`, `discount`, `tax`, `valid_from`, `valid_to`. Rates are fractions, e.g. `0.05`.
+Matching requires supplier, PO, invoice date, currency, item and unit. Code-free charges
+require an exact description match (ignoring case/whitespace). Codes ignore whitespace from
+OCR wrapping; differing characters are never guessed from descriptions. Printed discount
+amounts or rates and explicitly printed exchange rates are handled with Decimal
+arithmetic. Price differences greater than `0.005` are flagged, including undercharges.
+Uncertain/missing context and arithmetic discrepancies require review; an incomplete or
+uncertain check has `overcharge_total=null`. This conservative checker does not fuzzy-match
+OCR-damaged descriptions or supply master item codes absent from the document.
+
+Live records retain the original invoice fields and add printed PO, tax rate, line units,
+line currencies, exchange rates, discounts and extraction warnings. Old fixture records
+remain readable. OCR runs in a subprocess with a configurable timeout, including native
+imports, so a stalled OpenCV import cannot occupy the processing slot indefinitely.
+
+Run the mock dataset through real OCR and live extraction/checking:
+
+```sh
+.venv/bin/python -m api.evaluate ../data/mock_invoice_dataset
+# Optional: reuse previously produced reader JSON, with PDF SHA-256 verification.
+.venv/bin/python -m api.evaluate ../data/mock_invoice_dataset --ocr-cache runtime/mock-dataset-test
+```
+
+Outputs go to ignored `runtime/mock-dataset-eval/`. The evaluator sends only PDF-derived
+text to extraction and uses only `master_prices.csv` for checking. It reads `answer_key`
+after inference, to score the saved predictions. Reports distinguish completion from
+accuracy. Comparisons are positional and give no credit when line counts differ. Provider
+access/quota failures stop the batch without repeatedly making doomed requests.
 
 ## Run the local service
 
@@ -102,7 +160,8 @@ app = create_app(stages=TeamStages())
 
 Initialize adapters with a specific immutable sheet snapshot. The API validates one result
 per line and a matching sheet version. Keep provider keys in backend environment variables.
-The earlier OpenAI adapter is not automatically connected: its schema differs from the plan.
+The older `invoice_processing` OpenAI experiment is not used. The live adapter uses `extract/`
+with a separate extended checking schema, preserving the original field-only handoff.
 Reading warnings must be carried into Chen Meng's uncertainty handling and Kalent's review
 results when those adapters are integrated.
 
@@ -167,7 +226,7 @@ The handwritten/known fixture outputs do not demonstrate extraction accuracy.
 
 For release 1, a process restart marks unfinished jobs failed rather than silently retrying
 billable work. Durable retries, multiworker deployments, user decisions, Excel result exports,
-real provider integrations and the frontend remain outside this implementation.
+and the frontend remain outside this implementation.
 
 References: [FastAPI uploads](https://fastapi.tiangolo.com/tutorial/request-files/),
 [Docling pipeline options](https://docling-project.github.io/docling/reference/pipeline_options/),

@@ -30,7 +30,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# Local credentials and templates, including backend/.env, must stay off Git.
 .env*
 
 # vercel
@@ -47,6 +47,8 @@ next-env.d.ts
 !fixtures/**/*.xlsx
 !/data/dummy/**/*.pdf
 !/data/dummy/**/*.xlsx
+!/data/mock_invoice_dataset/**/*.pdf
+!/data/mock_invoice_dataset/**/*.xlsx
 /data/private/
 /backend/runtime/
 
