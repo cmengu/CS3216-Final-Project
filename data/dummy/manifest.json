@@ -269,7 +269,7 @@
           {
             "line_index": 1,
             "status": "unknown_part",
-            "reason": "Part is absent from dummy price sheet",
+            "reason": "Part is not on the price sheet",
             "invoice_price": "0.0047",
             "agreed_price": null,
             "difference": null,
@@ -285,8 +285,10 @@
             "overcharge": null
           }
         ],
-        "warnings": [],
-        "overcharge_total": null
+        "warnings": [
+          "2 lines not priced"
+        ],
+        "overcharge_total": "0.00"
       },
       "files": [
         {
@@ -372,8 +374,10 @@
             "overcharge": null
           }
         ],
-        "warnings": [],
-        "overcharge_total": null
+        "warnings": [
+          "1 line not priced"
+        ],
+        "overcharge_total": "0.00"
       },
       "files": [
         {
@@ -536,7 +540,7 @@
           {
             "line_index": 1,
             "status": "unknown_part",
-            "reason": "Part is absent from dummy price sheet",
+            "reason": "Part is not on the price sheet",
             "invoice_price": "0.0047",
             "agreed_price": null,
             "difference": null,
@@ -552,8 +556,10 @@
             "overcharge": "0.00"
           }
         ],
-        "warnings": [],
-        "overcharge_total": null
+        "warnings": [
+          "1 line not priced"
+        ],
+        "overcharge_total": "15.00"
       },
       "files": [
         {

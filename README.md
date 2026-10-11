@@ -2,10 +2,15 @@
 
 An order-tracking app for a small food supplier that shows each staff role only what that role may see.
 
-The new [Invoice Checker backend](backend/README.md) follows Duc's build-plan responsibilities:
-FastAPI uploads, Docling reading, saved results, and invented invoices in `data/dummy/`.
-Its extraction/checking adapters are explicitly fixture-backed pending team integration.
-The earlier PO demo remains below; it has not been removed or connected to the new API.
+The team's current product is the **Invoice Checker**: it reads a supplier's invoice PDF, fills
+the agreed fields, and checks each line against a price sheet. The [backend](backend/README.md)
+holds the reader, the service, the price check and the scorer, with invented invoices in
+`data/dummy/`. It runs on replayed answers (`INVOICE_MODE=fixture`) or on the real steps
+(`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
+defaults to `http://127.0.0.1:8000`. The earlier PO demo remains below.
+
+Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).
+Read the newest file before changing `backend/` or `src/checker/`.
 
 
 **Live demo: https://po-tracker-blue.vercel.app**

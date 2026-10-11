@@ -2,7 +2,7 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-from check import PriceSheet, SheetPrice, check
+from check import PriceSheet, SheetPrice, check, load_price_sheet
 from schema import InvoiceRecord
 
 DATA = Path(__file__).resolve().parents[2] / "data/dummy"
@@ -31,7 +31,8 @@ def test_a_line_total_within_one_cent_is_not_sent_to_a_person():
 def test_dummy_invoice_02_is_still_fifteen_dollars_over():
     manifest = json.loads((DATA / "manifest.json").read_text())
     case = next(item for item in manifest["cases"] if item["id"] == "invoice-02")
-    result = check(InvoiceRecord.model_validate(case["invoice"]))
+    sheet = load_price_sheet(DATA / "price-sheet.xlsx")
+    result = check(InvoiceRecord.model_validate(case["invoice"]), sheet)
     assert result.lines[0].status == "price_mismatch"
     assert result.overcharge_total == "15.00"
 
