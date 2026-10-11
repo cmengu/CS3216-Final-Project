@@ -3,10 +3,10 @@
 //
 // Gate → Home → open a confirmed order (lines, Source card, timeline) → Suggest reply →
 // comment → Mark delivered → its customer page and History → as Finance (PIN) mark it invoiced
-// → as the owner (PIN) turn on WhatsApp paste and chat export → Unconfirm and the retention
+// → Invoices (the checker) and one invoice → as the owner (PIN) turn on WhatsApp paste and chat export → Unconfirm and the retention
 // switch → a suggested question to the assistant → ⌘K to a customer. Fails on any console error,
 // page error or hydration warning.
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
 
 const APP = process.env.APP || "http://localhost:3000";
@@ -26,6 +26,7 @@ async function fresh() {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
   page.on("console", (m) => {
+    if (m.type() === "error" && /127\.0\.0\.1:8000|localhost:8000/.test(m.text())) return;
     if (m.type() === "error" || (m.type() === "warning" && /hydrat/i.test(m.text()))) problems.push(`${m.type()}: ${m.text()} (${page.url()})`);
   });
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message} (${page.url()})`));
@@ -94,7 +95,6 @@ async function switchTo(page, name, pin) {
   await page.click(".cmt button:has-text('Post')");
   await toast(page, /Posted/);
   ok((await text(page, ".card .log")).includes("Packed with the Friday run"), "comment in the timeline");
-  const inv0 = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")).orders.filter((o) => o.state === "delivered" && !o.invoiced).length);
   await page.click(".hd button:has-text('Mark delivered')");
   await toast(page, /Marked delivered/);
   ok(await page.locator(".labels").innerText().then((t) => t.includes("Delivered")), "order shows Delivered");
@@ -109,17 +109,63 @@ async function switchTo(page, name, pin) {
   const hist = await text(page);
   ok(hist.includes("Commented") && hist.includes("Marked delivered"), "History has the comment and the delivery");
 
-  // As Finance: mark it invoiced.
+  // As Finance: mark it invoiced on its order page.
   await switchTo(page, "Farah", "1234");
-  ok((await navCount(page, "/invoices")) === inv0 + 1, `rail Invoices count is ${inv0 + 1}`);
-  await page.goto(`${APP}/invoices`);
-  await page.waitForSelector(".hd h1");
-  ok((await text(page)).includes(pdfOrder.po), "the delivered order is on Invoices · To invoice");
   await page.goto(`${APP}/orders/${pdfOrder.id}`);
   await page.click(".hd button:has-text('Mark invoiced')");
   await toast(page, /Invoiced INV-2610-/);
-  ok((await navCount(page, "/invoices")) === inv0, "rail Invoices count drops back");
   await shot(page, "05-order-invoiced");
+
+  // Invoices comes from the checking service. With the service down the page says so.
+  // With it up, the open pile lists its rows and one of them opens.
+  await page.goto(`${APP}/invoices`);
+  await page.waitForSelector(".ck-boxes");
+  await page.waitForFunction(() => {
+    const t = document.querySelector("#main")?.textContent || "";
+    return /could not be reached|could not be loaded|Nothing needs a look/.test(t) || document.querySelector(".ck-row");
+  });
+  const invText = await text(page);
+  const serviceDown = /could not be reached|could not be loaded/.test(invText);
+  if (serviceDown) {
+    ok(true, "Invoices says the checking service could not be reached");
+  } else {
+    ok(invText.includes("Overcharged so far"), "Invoices totals the overcharge found");
+    for (const label of ["Needs a look", "Checking", "All match"]) {
+      await page.click(`button.ck-box:has-text("${label}")`);
+      const n = Number((await page.locator("button.ck-box.on .num").textContent()) || 0);
+      const rows = await page.locator(".ck-row").count();
+      ok(rows === n, `${label} lists its ${n} invoice${n === 1 ? "" : "s"}`);
+    }
+    await page.click('button.ck-box:has-text("Needs a look")');
+    const look = Number((await page.locator("button.ck-box.on .num").textContent()) || 0);
+    ok((await navCount(page, "/invoices")) === look, "rail Invoices count is the invoices that need a look");
+    if (look) {
+      await page.click(".ck-row");
+      await page.waitForSelector(".ck-card, .hint");
+      ok((await page.locator(".ck-split, .hint").count()) > 0, "an invoice opens from the list");
+    }
+  }
+  await shot(page, "05b-invoice");
+
+  // Upload one dummy PDF. The file lives with the service; INVOICE_PDF can point at it.
+  const invoicePdf = process.env.INVOICE_PDF || "data/dummy/invoice-02.pdf";
+  if (existsSync(invoicePdf)) {
+    await page.goto(`${APP}/invoices`);
+    await page.waitForSelector(".ck-drop");
+    await page.setInputFiles("input.ck-file", invoicePdf);
+    await page.waitForSelector("button:has-text('Checking')");
+    if (serviceDown) {
+      await toast(page, /could not be reached|not ready|could not be checked/);
+      ok(true, "upload says what went wrong, in one sentence");
+    } else {
+      await page.waitForURL(/\/invoices\/[0-9a-f-]{36}$/i, { timeout: 120000 });
+      await page.waitForSelector(".ck-card");
+      const uploaded = await text(page);
+      ok(uploaded.includes("DEMO-002") && uploaded.includes("15.00"), "uploading invoice-02.pdf opens that invoice");
+      ok(uploaded.includes("Fixture answers"), "the uploaded invoice is marked as fixture answers");
+    }
+    await shot(page, "05c-upload");
+  }
 
   // As the owner: WhatsApp paste and chat export turns on in Settings.
   await switchTo(page, "May", "1234");
