@@ -9,6 +9,7 @@ holds the reader, the service, the price check and the scorer, with invented inv
 (`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
 defaults to `http://127.0.0.1:8000`. The earlier PO demo remains below.
 
+**Continuing the work? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md):** where it stands and what is next.
 Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).
 Read the newest file before changing `backend/` or `src/checker/`.
 
