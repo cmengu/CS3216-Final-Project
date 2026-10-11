@@ -5,26 +5,19 @@ stop, so the next reader starts from the truth.
 
 ## State
 
-Nothing is merged into `main` yet. Pull requests #2 to #13 are open, and every one is
-mergeable. Together they hold the whole invoice checker: the PDF reader, the service, the model
-step, the price check, the scorer and the Invoices screens.
+As of 11 October 2026, 15:30 Singapore time: `main` holds the PDF reader and service (#2) and
+the first Invoices screens (#3). Everything else is in one pull request, **#14**, from the
+branch `cm/review-integration` into `main`. It is #4 to #13 together: the model step, the
+price check, the scorer, the screens wired to the service, and the review fixes.
 
-The branch `cm/review-integration` is all twelve merged together, with no conflicts. Start
-from it until `main` catches up. Checks on that branch: backend `pytest -q` gives 96 passed and
-4 skipped; screens `npm test` gives 184 passed; lint and typecheck are clean on both.
+#14 merges into `main` with no conflicts, and the result is exactly the tree that was tested:
+backend `pytest -q` gives 96 passed and 4 skipped; screens `npm test` gives 184 passed; lint
+and typecheck are clean on both.
 
-**To merge, a person must do it; an automated merge was refused as unreviewed.** The pull
-requests are stacked, so merge each stack from the top down, then the two at the bottom:
-
-```sh
-for n in 13 11 10 9 3 12 8 7 6 5 4 2; do gh pr merge $n --merge || break; sleep 5; done
-gh pr create --base main --head cm/f11-base --title "Scorer and review fixes" \
-  --body "Brings #8 and #12 to main." && gh pr merge cm/f11-base --merge
-```
-
-The last two lines are needed because #8 sits on `cm/f11-base`, a branch with no pull request
-of its own. Afterwards `main` should equal `cm/review-integration`:
-`git diff origin/main origin/cm/review-integration` prints nothing.
+**A person must merge #14; an automated merge was refused as unreviewed.** After it is merged,
+close whichever of #5 and #9 to #13 are still open. Their changes are all inside #14, so
+merging them as well adds nothing. Until #14 is merged, start new work from
+`cm/review-integration`, not from `main`.
 
 ## What works
 
