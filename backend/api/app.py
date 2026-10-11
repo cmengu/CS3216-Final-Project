@@ -16,7 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
-from read.reader import MAX_BYTES, read_pdf, validate_pdf
+from read.bounded import read_pdf_bounded
+from read.reader import MAX_BYTES, validate_pdf
 
 from .contracts import InvoiceSummary, SavedInvoice
 from .stages import FixtureStages, Stages
@@ -27,7 +28,7 @@ log = logging.getLogger(__name__)
 
 
 def create_app(
-    *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf
+    *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf_bounded
 ) -> FastAPI:
     store_dir = storage_dir or Path(os.environ.get("INVOICE_DATA_DIR", ROOT / "backend/runtime"))
 
@@ -178,6 +179,15 @@ def _stages_from_environment() -> Stages | None:
         sheet = os.environ.get("INVOICE_PRICE_SHEET")
         if not sheet:
             raise ValueError("Set INVOICE_PRICE_SHEET to the price sheet .xlsx for live mode")
+        checker = os.environ.get("INVOICE_CHECKER", "standard")
+        if checker == "csv_context":
+            from .csv_live import LiveStages as CsvLiveStages
+
+            if not os.environ.get("OPENAI_API_KEY", "").strip():
+                raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
+            return CsvLiveStages(Path(sheet), model=os.environ.get("OPENAI_MODEL", ""))
+        if checker != "standard":
+            raise ValueError("INVOICE_CHECKER must be standard or csv_context")
         from .live import LiveStages
 
         return LiveStages(Path(sheet))

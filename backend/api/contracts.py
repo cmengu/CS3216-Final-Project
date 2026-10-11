@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from extract.context import CheckingInvoice
 from read.models import ParsedDocument
 from schema import Contract, DecimalText, InvoiceRecord
 
@@ -39,6 +40,6 @@ class InvoiceSummary(Contract):
 
 class SavedInvoice(InvoiceSummary):
     document: ParsedDocument | None
-    invoice: InvoiceRecord | None
+    invoice: CheckingInvoice | InvoiceRecord | None
     check: CheckResult | None
     file_url: str

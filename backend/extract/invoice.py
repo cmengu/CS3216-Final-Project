@@ -45,30 +45,45 @@ def extract(document: ParsedDocument, *, client=None, model: str | None = None) 
 
 
 def extract_with_usage(
-    document: ParsedDocument, *, client=None, model: str | None = None
+    document: ParsedDocument,
+    *,
+    client=None,
+    model: str | None = None,
+    record_type: type[InvoiceRecord] = InvoiceRecord,
+    extra_instructions: str = "",
 ) -> ExtractedInvoice:
     text = _page_text(document)
     selected = _model_name(model)
+    options = {}
+    effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip()
+    if effort:
+        if effort not in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+            raise ValueError("Invalid OPENAI_REASONING_EFFORT")
+        options["reasoning"] = {"effort": effort}
     try:
         response = _client(client).responses.parse(
             model=selected,
             store=False,
-            temperature=0,
             input=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT + extra_instructions},
                 {"role": "user", "content": text},
             ],
-            text_format=InvoiceRecord,
+            text_format=record_type,
+            **options,
         )
     except OpenAIError as exc:
         raise ValueError(
             f"OpenAI request failed ({type(exc).__name__}); no invoice was accepted"
         ) from exc
+    except ValidationError as exc:
+        raise ValueError(
+            "The model's output failed schema validation; no invoice was accepted"
+        ) from exc
     parsed = getattr(response, "output_parsed", None)
     if getattr(response, "status", None) != "completed" or parsed is None:
         raise ValueError("Extraction was incomplete or refused; no invoice was accepted")
     try:
-        record = InvoiceRecord.model_validate(parsed)
+        record = record_type.model_validate(parsed)
     except ValidationError as exc:
         raise ValueError(
             "The model's answer did not match the invoice field list; no invoice was accepted"

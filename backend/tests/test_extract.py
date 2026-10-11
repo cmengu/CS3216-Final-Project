@@ -76,7 +76,7 @@ def test_extract_returns_the_printed_fields(monkeypatch):
     assert len(client.calls) == 1
     call = client.calls[0]
     assert call["text_format"] is InvoiceRecord
-    assert call["temperature"] == 0
+    assert "temperature" not in call  # Reasoning models may reject temperature overrides.
     assert call["store"] is False
     assert call["input"][1]["content"] == page().markdown
     instructions = call["input"][0]["content"].lower()
