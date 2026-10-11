@@ -1,12 +1,11 @@
 /*
- * The one place the screens get invoices from. The list is still the invented sample.
- * One invoice is read from the checking service when that service answers.
+ * The one place the screens get invoices from. The list is the checking service.
+ * A summary row has no supplier, number, or overcharge, so each id is read in full.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
-import { SAMPLE_INVOICES } from "./sample";
 import type { SupplierInvoice } from "./types";
 
 export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8000";
@@ -17,8 +16,18 @@ export function isServiceId(id: string): boolean {
   return SERVICE_ID.test(id);
 }
 
+const unreachable = "The checking service could not be reached.";
+
 export async function listInvoices(): Promise<SupplierInvoice[]> {
-  return SAMPLE_INVOICES;
+  let response: Response;
+  try {
+    response = await fetch(`${SERVICE_URL}/invoices`);
+  } catch {
+    throw new Error(unreachable);
+  }
+  if (!response.ok) throw new Error(unreachable);
+  const rows = (await response.json()) as { id: string }[];
+  return Promise.all(rows.map((row) => getInvoice(row.id)));
 }
 
 export async function getInvoice(id: string): Promise<SupplierInvoice> {
@@ -26,10 +35,10 @@ export async function getInvoice(id: string): Promise<SupplierInvoice> {
   try {
     response = await fetch(`${SERVICE_URL}/invoices/${id}`);
   } catch {
-    throw new Error("The checking service could not be reached.");
+    throw new Error(unreachable);
   }
   if (response.status === 404) throw new Error("No invoice with this link. It may have been removed.");
-  if (!response.ok) throw new Error("The checking service could not be reached.");
+  if (!response.ok) throw new Error(unreachable);
   return toSupplierInvoice((await response.json()) as ServiceInvoice);
 }
 
@@ -44,10 +53,15 @@ export function useInvoices(): { invoices: SupplierInvoice[] | null; error: stri
     listInvoices().then(
       (list) => {
         cache = list;
-        if (live) setInvoices(list);
+        if (!live) return;
+        setInvoices(list);
+        setError(null);
       },
-      () => {
-        if (live) setError("Invoices could not be loaded. Try again in a moment.");
+      (reason: unknown) => {
+        if (!live) return;
+        cache = null;
+        setInvoices(null);
+        setError(reason instanceof Error ? reason.message : unreachable);
       },
     );
     return () => {

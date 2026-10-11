@@ -56,8 +56,8 @@ export function InvoicesView() {
         <div className="ck-boxes">
           <div className="ck-box over">
             <span>Overcharged so far</span>
-            <b className="num">{s.over.length ? s.over.map(([cur, n]) => `${cur} ${amount(n)}`).join(" · ") : "None found"}</b>
-            <small>{s.overInvoices ? `across ${s.overInvoices} invoice${s.overInvoices > 1 ? "s" : ""}` : "every price matched so far"}</small>
+            <b className="num">{!invoices ? "–" : s.over.length ? s.over.map(([cur, n]) => `${cur} ${amount(n)}`).join(" · ") : "None found"}</b>
+            <small>{!invoices ? "…" : s.overInvoices ? `across ${s.overInvoices} invoice${s.overInvoices > 1 ? "s" : ""}` : "every price matched so far"}</small>
           </div>
           {PILES.map((p) => {
             const n = s.piles[p.key];
