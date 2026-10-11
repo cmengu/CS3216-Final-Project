@@ -3,7 +3,7 @@
 //
 // Gate → Home → open a confirmed order (lines, Source card, timeline) → Suggest reply →
 // comment → Mark delivered → its customer page and History → as Finance (PIN) mark it invoiced
-// → as the owner (PIN) turn on WhatsApp paste and chat export → Unconfirm and the retention
+// → Invoices (the checker) and one invoice → as the owner (PIN) turn on WhatsApp paste and chat export → Unconfirm and the retention
 // switch → a suggested question to the assistant → ⌘K to a customer. Fails on any console error,
 // page error or hydration warning.
 import { mkdirSync } from "node:fs";
@@ -94,7 +94,6 @@ async function switchTo(page, name, pin) {
   await page.click(".cmt button:has-text('Post')");
   await toast(page, /Posted/);
   ok((await text(page, ".card .log")).includes("Packed with the Friday run"), "comment in the timeline");
-  const inv0 = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")).orders.filter((o) => o.state === "delivered" && !o.invoiced).length);
   await page.click(".hd button:has-text('Mark delivered')");
   await toast(page, /Marked delivered/);
   ok(await page.locator(".labels").innerText().then((t) => t.includes("Delivered")), "order shows Delivered");
@@ -109,17 +108,28 @@ async function switchTo(page, name, pin) {
   const hist = await text(page);
   ok(hist.includes("Commented") && hist.includes("Marked delivered"), "History has the comment and the delivery");
 
-  // As Finance: mark it invoiced.
+  // As Finance: mark it invoiced on its order page.
   await switchTo(page, "Farah", "1234");
-  ok((await navCount(page, "/invoices")) === inv0 + 1, `rail Invoices count is ${inv0 + 1}`);
-  await page.goto(`${APP}/invoices`);
-  await page.waitForSelector(".hd h1");
-  ok((await text(page)).includes(pdfOrder.po), "the delivered order is on Invoices · To invoice");
   await page.goto(`${APP}/orders/${pdfOrder.id}`);
   await page.click(".hd button:has-text('Mark invoiced')");
   await toast(page, /Invoiced INV-2610-/);
-  ok((await navCount(page, "/invoices")) === inv0, "rail Invoices count drops back");
   await shot(page, "05-order-invoiced");
+
+  // Invoices is the invoice checker: totals on top, the invoices that need a look, and one
+  // invoice's page beside its problem lines.
+  await page.goto(`${APP}/invoices`);
+  await page.waitForSelector(".ck-boxes");
+  const invText = await text(page);
+  ok(invText.includes("Overcharged so far") && invText.includes("SGD 170.20"), "Invoices totals the overcharge found");
+  ok((await page.locator(".ck-row").count()) === 3, "Invoices lists the 3 invoices that need a look");
+  ok((await navCount(page, "/invoices")) === 3, "rail Invoices count is the invoices that need a look");
+  await page.click("button.ck-box:has-text('All match')");
+  ok((await page.locator(".ck-row").count()) === 2, "the All match box filters the list");
+  await page.click("button.ck-box:has-text('Needs a look')");
+  await page.click(".ck-row:has-text('INV-2026-0412')");
+  await page.waitForSelector(".ck-card");
+  ok((await page.locator(".ck-card").count()) === 4, "the invoice opens beside its 4 problem lines");
+  await shot(page, "05b-invoice");
 
   // As the owner: WhatsApp paste and chat export turns on in Settings.
   await switchTo(page, "May", "1234");

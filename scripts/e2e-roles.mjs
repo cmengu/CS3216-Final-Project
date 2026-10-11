@@ -146,16 +146,11 @@ for (const who of [
     await check(`Copy lines on ${ref(o)}`, await clip(page));
   }
 
-  // Copy CSV on Invoices (both tabs).
+  // Invoices (the invoice checker) opens with its totals for the roles that may see it.
   if (["owner", "finance"].includes(who.role)) {
     await page.goto(`${APP}/invoices`);
-    await page.waitForSelector("text=Copy CSV");
-    await clearClip(page);
-    await page.click("button:has-text('Copy CSV')");
-    await settle(page);
-    const csv = await clip(page);
-    ok(csv.startsWith("Customer,Customer ID,PO,Delivered,Lines,Total,Invoice"), `${tag}: Copy CSV copies the invoice CSV`);
-    await check("Copy CSV", csv);
+    await page.waitForSelector(".ck-boxes");
+    ok((await page.locator("main").innerText()).includes("Overcharged so far"), `${tag}: Invoices shows the overcharge found`);
   }
 
   // The assistant: every suggested question and a few about money and other customers.
