@@ -7,6 +7,7 @@ INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real step
 import logging
 import os
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
 from threading import BoundedSemaphore
 from uuid import UUID, uuid4
@@ -19,7 +20,7 @@ from pydantic import ValidationError
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
-from .contracts import InvoiceSummary, SavedInvoice
+from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .stages import FixtureStages, Stages
 from .storage import Store
 
@@ -44,7 +45,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type"],
     )
 
@@ -166,7 +167,55 @@ def create_app(
             content_disposition_type="inline",
         )
 
+    @app.put("/invoices/{invoice_id}/outcome", response_model=SavedInvoice)
+    def decide(invoice_id: UUID, request: OutcomeRequest):
+        """Save the AP clerk's decision, or clear it with a null outcome. The clerk alone decides."""
+        saved = invoice(invoice_id)
+        reason = (request.reason or "").strip() or None
+        refusal = _outcome_refusal(saved, request.outcome, reason)
+        if refusal:
+            raise HTTPException(*refusal)
+        app.state.store.decide(saved.id, request.outcome, reason)
+        return app.state.store.get(saved.id)
+
     return app
+
+
+def _over_sheet_price(saved: SavedInvoice) -> bool:
+    return any(
+        line.status == "price_mismatch"
+        and line.difference is not None
+        and Decimal(line.difference) > 0
+        for line in saved.check.lines
+    )
+
+
+def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | None:
+    """Why this outcome cannot be saved on this invoice, as (status, sentence); None when it can.
+
+    "Ready to pay" is the service's promise that the invoice is clear, so it is held to the same
+    rule as the screens' All match: checked in full, a total the service stands behind, and every
+    line a match. Anything else that is finished can still be paid, but only with a reason.
+    """
+    if outcome is None:
+        return (422, "Clearing an outcome takes no reason") if reason else None
+    if saved.status not in ("completed", "failed"):
+        return 409, "The invoice is still being checked; decide once the check has finished"
+    if outcome == "ready_to_pay_anyway":
+        return None if reason else (422, "Ready to pay anyway needs a short reason")
+    checked = saved.status == "completed" and saved.check is not None
+    if outcome == "ready_to_pay":
+        if (
+            not checked
+            or saved.check.overcharge_total is None
+            or not saved.check.lines
+            or any(line.status != "match" for line in saved.check.lines)
+        ):
+            return 409, "Only an invoice checked in full with every line matching is ready to pay"
+        return None
+    if not checked or not _over_sheet_price(saved):
+        return 409, "Raise with supplier needs a line priced over the sheet"
+    return None
 
 
 def _stages_from_environment() -> Stages | None:

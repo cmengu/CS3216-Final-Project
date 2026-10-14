@@ -8,6 +8,9 @@ from pathlib import Path
 
 from .contracts import InvoiceSummary, SavedInvoice
 
+# The AP clerk's decision. Added after the first release, so older databases gain the columns.
+OUTCOME_COLUMNS = ("outcome", "outcome_reason", "decided_at")
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -30,6 +33,10 @@ class Store:
             db.execute(
                 "CREATE INDEX IF NOT EXISTS invoice_time ON invoices(created_at DESC, id DESC)"
             )
+            present = {row["name"] for row in db.execute("PRAGMA table_info(invoices)")}
+            for column in OUTCOME_COLUMNS:
+                if column not in present:
+                    db.execute(f"ALTER TABLE invoices ADD COLUMN {column} TEXT")
 
     @contextmanager
     def connect(self):
@@ -80,6 +87,14 @@ class Store:
                 ),
             )
 
+    def decide(self, invoice_id: str, outcome: str | None, reason: str | None):
+        """Save or clear the outcome. The decision time is the service's clock, never the caller's."""
+        with self.connect() as db:
+            db.execute(
+                "UPDATE invoices SET outcome=?, outcome_reason=?, decided_at=? WHERE id=?",
+                (outcome, reason, now() if outcome else None, invoice_id),
+            )
+
     def get(self, invoice_id: str) -> SavedInvoice | None:
         with self.connect() as db:
             row = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
@@ -95,7 +110,8 @@ class Store:
         with self.connect() as db:
             rows = db.execute(
                 """SELECT id,filename,document_hash,status,mode,created_at,
-                updated_at,error,price_sheet_version FROM invoices
+                updated_at,error,price_sheet_version,outcome,outcome_reason,decided_at
+                FROM invoices
                 ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
                 (limit, offset),
             ).fetchall()
