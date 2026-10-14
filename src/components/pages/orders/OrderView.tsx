@@ -85,7 +85,7 @@ function ReviewCard({ t, toast }: { t: ToCheck; toast: (m: string) => void }) {
               <option key={r}>{r}</option>
             ))}
           </select>
-          <button className="btn s g" onClick={() => toast(run(dismiss, t.id, pick))}>
+          <button className="btn s g" disabled={!pick} onClick={() => toast(run(dismiss, t.id, pick))}>
             Dismiss
           </button>
         </div>
@@ -106,7 +106,7 @@ function ReviewCard({ t, toast }: { t: ToCheck; toast: (m: string) => void }) {
             </option>
           ))}
         </select>
-        <button className="btn p s" onClick={() => toast(run(fillCell, t.id, pick))}>
+        <button className="btn p s" disabled={!pick} onClick={() => toast(run(fillCell, t.id, pick))}>
           Fill and remember
         </button>
       </div>
@@ -164,6 +164,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
   const u = meOf(s);
   const shell = useShell();
   const [cmt, setCmt] = useState(false);
+  const [cmtText, setCmtText] = useState("");
   const cmtRef = useRef<HTMLTextAreaElement>(null);
   const c = custOf(s.customers, o.cust);
   // The events as the page last drew them: "Viewed prices", logged on opening, and the assistant's
@@ -253,7 +254,7 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
       <div className="body">
         <div className="summary">
           <Icon name="spark" />
-          <RichSpan r={summarise(o, ev)} />
+          <RichSpan r={summarise(o, ev, s.toCheck)} />
         </div>
         <div className="labels">
           <Lbl state={o.state} />
@@ -372,14 +373,22 @@ function OrderPage({ s, o }: { s: DemoState; o: Order }) {
         </div>
         {draft ? <DraftBox key={draft.text} o={o} text={draft.text} toast={toast} copy={(t) => navigator.clipboard?.writeText(t).catch(() => {})} /> : null}
         <div className="cmt" id="cmt" hidden={!cmt}>
-          <textarea ref={cmtRef} id="cmtT" placeholder="Note for the team on this order…" aria-label="Comment" />
+          <textarea
+            ref={cmtRef}
+            id="cmtT"
+            placeholder="Note for the team on this order…"
+            aria-label="Comment"
+            value={cmtText}
+            onChange={(e) => setCmtText(e.target.value)}
+          />
           <div style={{ display: "flex", gap: 6 }}>
             <button
               className="btn p s"
+              disabled={!cmtText.trim()}
               onClick={() => {
-                const m = run(addComment, o.id, cmtRef.current?.value ?? "");
+                const m = run(addComment, o.id, cmtText);
                 if (!m) return;
-                if (cmtRef.current) cmtRef.current.value = "";
+                setCmtText("");
                 setCmt(false);
                 toast(m);
               }}

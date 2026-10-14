@@ -1,8 +1,8 @@
-/* Appearance: charcoal dark by default, paper light on request. Same key as the prototype. */
+/* Appearance: Sunlit Linen & Sienna light by default, Nordic Twilight Slate dark on request. */
 export const THEME_KEY = "pot-theme";
 
-/** Runs in <head> before first paint, so a saved light theme never flashes dark. */
-export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${THEME_KEY}");document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})()`;
+/** Runs in <head> before first paint, so a saved theme never flashes. */
+export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${THEME_KEY}");document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light")}catch(e){document.documentElement.setAttribute("data-theme","light")}})()`;
 
 export type Theme = "dark" | "light";
 

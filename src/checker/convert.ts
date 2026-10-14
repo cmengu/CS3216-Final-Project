@@ -2,7 +2,7 @@
  * Turn one saved invoice from the checking service into the shape the screens use.
  * No other file needs the service's names.
  */
-import type { CheckState, InvoiceLine, LineResult, SupplierInvoice } from "./types";
+import type { CheckState, InvoiceLine, LineResult, Outcome, SupplierInvoice } from "./types";
 
 export interface ServiceLine {
   part_number: string | null;
@@ -25,11 +25,16 @@ export interface ServiceCheckLine {
 export interface ServiceInvoice {
   id: string;
   filename: string;
+  document_hash?: string | null;
   status: string;
   mode: string;
   created_at: string;
   price_sheet_version: string | null;
   error: string | null;
+  /** Absent from a service that does not save decisions yet. */
+  outcome?: string | null;
+  outcome_reason?: string | null;
+  decided_at?: string | null;
   invoice: {
     supplier_name: string | null;
     invoice_number: string | null;
@@ -67,6 +72,11 @@ const errorOf = (saved: ServiceInvoice): string | null => {
   return null;
 };
 
+const OUTCOMES: string[] = ["ready_to_pay", "ready_to_pay_anyway", "raise_with_supplier"];
+
+/** An outcome this screen does not know is shown as no decision, never as one it might mean. */
+const outcomeOf = (value: string | null | undefined): Outcome | null => (value && OUTCOMES.includes(value) ? (value as Outcome) : null);
+
 export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
   const invoice = saved.invoice;
   const checks = new Map((saved.check?.lines ?? []).map((line) => [line.line_index, line]));
@@ -89,6 +99,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
   return {
     id: saved.id,
     fileName: saved.filename,
+    documentHash: saved.document_hash ?? null,
     uploadedAt: saved.created_at,
     state: stateOf(saved.status),
     supplier: invoice?.supplier_name ?? null,
@@ -104,5 +115,8 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     fixture: saved.mode === "fixture",
     warnings: saved.check?.warnings ?? [],
     error: errorOf(saved),
+    outcome: outcomeOf(saved.outcome),
+    outcomeReason: outcomeOf(saved.outcome) ? (saved.outcome_reason ?? null) : null,
+    decidedAt: outcomeOf(saved.outcome) ? (saved.decided_at ?? null) : null,
   };
 }

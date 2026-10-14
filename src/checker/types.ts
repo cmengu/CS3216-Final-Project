@@ -27,12 +27,20 @@ export interface InvoiceLine {
   overcharge?: number | null;
 }
 
+/**
+ * What the AP clerk decided. Ready to pay only for an invoice checked in full with every line
+ * matching; ready to pay anyway with a reason; raise with supplier when a line is over the sheet.
+ */
+export type Outcome = "ready_to_pay" | "ready_to_pay_anyway" | "raise_with_supplier";
+
 /** Where the invoice is in the pipeline. */
 export type CheckState = "checking" | "checked" | "failed";
 
 export interface SupplierInvoice {
   id: string;
   fileName: string;
+  /** The service's fingerprint of the PDF. Two uploads of the same file share it. */
+  documentHash?: string | null;
   /** When the PDF was uploaded, as local ISO date and time. */
   uploadedAt: string;
   state: CheckState;
@@ -58,4 +66,10 @@ export interface SupplierInvoice {
   warnings?: string[];
   /** The step that failed and why, in the service's words. Null unless the check failed. */
   error?: string | null;
+  /** The clerk's decision, saved in the service. Null until someone decides. */
+  outcome?: Outcome | null;
+  /** Why it can be paid anyway, in the clerk's words. */
+  outcomeReason?: string | null;
+  /** When the service saved the decision, as an ISO time. */
+  decidedAt?: string | null;
 }

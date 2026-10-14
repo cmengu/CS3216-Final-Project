@@ -7,7 +7,7 @@ import { Icon } from "@/components/icons";
 import { useInvoices } from "@/checker/api";
 import { summarize } from "@/checker/summary";
 import { canEdit, navAllowed, needsPin, visibleOrders } from "@/platform/access";
-import { NAV, navKeyOf } from "@/platform/nav";
+import { landingFor, NAV, NAV_GROUPS, navKeyOf } from "@/platform/nav";
 import { GROUP_LOGIN, ROLES } from "@/sample";
 import { meOf, reset, useDemo } from "@/state/demo-store";
 import { pick } from "@/state/session";
@@ -15,7 +15,7 @@ import { currentTheme, toggleTheme, type Theme } from "@/state/theme";
 import { initials } from "@/lib/format";
 import { useShell } from "./context";
 
-/** The side rail: static brand, nav with counts, the PO assistant item, Ask, and the profile pill with its upward menu. */
+/** The side rail: brand, nav sections with counts, the order assistant item, Ask, and the profile pill with its upward menu. */
 export function Rail({ open }: { open: boolean }) {
   const s = useDemo();
   const u = meOf(s);
@@ -23,7 +23,7 @@ export function Rail({ open }: { open: boolean }) {
   const router = useRouter();
   const shell = useShell();
   const [menu, setMenu] = useState(false);
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
   const popRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
@@ -43,7 +43,10 @@ export function Rail({ open }: { open: boolean }) {
 
   const count = (key: string): number => {
     if (key === "orders") return mine.filter((o) => o.state !== "delivered").length;
-    if (key === "invoices") return invoices ? summarize(invoices).piles.look.length : 0;
+    if (key === "invoices") {
+      if (!invoices) return 0;
+      return summarize(invoices).piles.decide.length;
+    }
     return 0;
   };
 
@@ -57,9 +60,9 @@ export function Rail({ open }: { open: boolean }) {
     setMenu(false);
     const p = s.people.find((x) => x.id === id);
     if (p && needsPin(p) && id !== s.user) router.push(`/who?pin=${id}`);
-    else {
+    else if (p) {
       pick(id);
-      router.push("/home");
+      router.push(landingFor(p));
     }
   };
 
@@ -68,27 +71,38 @@ export function Rail({ open }: { open: boolean }) {
   return (
     <aside className={`rail${open ? " open" : ""}`} id="rail">
       <div className="acct brand">
-        <span className="av">EG</span>
+        <span className="av">IC</span>
         <span style={{ minWidth: 0 }}>
-          <b>PO Tracker</b>
-          <small>Edible Garden City</small>
+          <b>Invoice Checker</b>
+          <small>{ROLES[u.role]}</small>
         </span>
       </div>
-      <nav className="nav" id="nav" aria-label="Sections">
-        {NAV.filter((n) => navAllowed(n.key, u)).map((n) => {
-          const c = count(n.key);
-          const dot = n.key === "home" && canEdit(u) && s.toCheck.length > 0;
-          return (
-            <Link key={n.key} href={n.href} className={route === n.key ? "on" : ""}>
-              <Icon name={n.icon} />
-              {n.label}
-              {c ? <span className="cnt">{c}</span> : dot ? <span className="dot" title="Waiting on you" /> : null}
-            </Link>
-          );
-        })}
-      </nav>
-      <div className="sec">Agent</div>
-      <nav className="nav" style={{ marginTop: 0 }}>
+      <div id="nav">
+      {NAV_GROUPS.map((g) => {
+        const items = NAV.filter((n) => n.group === g.key && navAllowed(n.key, u));
+        if (!items.length) return null;
+        return (
+          <div key={g.key}>
+            {g.label ? <div className="sec">{g.label}</div> : null}
+            <nav className="nav" aria-label={g.label ?? "Invoice checker"} style={g.label ? { marginTop: 0 } : undefined}>
+              {items.map((n) => {
+                const c = count(n.key);
+                const dot = n.key === "home" && canEdit(u) && s.toCheck.length > 0;
+                return (
+                  <Link key={n.key} href={n.href} className={route === n.key ? "on" : ""}>
+                    <Icon name={n.icon} />
+                    {n.label}
+                    {c ? <span className="cnt">{c}</span> : dot ? <span className="dot" title="Waiting on you" /> : null}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        );
+      })}
+      </div>
+      <div className="sec">Assistant</div>
+      <nav className="nav" style={{ marginTop: 0 }} aria-label="Assistant">
         <a
           href="#agent"
           onClick={(e) => {
@@ -97,7 +111,7 @@ export function Rail({ open }: { open: boolean }) {
           }}
         >
           <Icon name="spark" />
-          PO assistant<span className="cnt">{s.chat.length ? s.chat.length : ""}</span>
+          Order assistant<span className="cnt">{s.chat.length ? s.chat.length : ""}</span>
         </a>
       </nav>
       <div className="railfoot">
@@ -109,6 +123,7 @@ export function Rail({ open }: { open: boolean }) {
           <button
             ref={btnRef}
             className="mebtn"
+            aria-label={`${u.name}, ${ROLES[u.role]}: switch person and settings`}
             aria-haspopup="true"
             aria-expanded={menu}
             onClick={() => {

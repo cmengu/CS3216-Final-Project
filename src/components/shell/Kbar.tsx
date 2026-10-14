@@ -6,6 +6,16 @@ const KEYS = {
     ["↑↓", "Navigate"],
     ["⌘K", "Search"],
   ],
+  /* Only keys that work on these pages. */
+  invoices: [
+    ["⌘K", "Search"],
+    ["⌘I", "Ask"],
+  ],
+  invoice: [
+    ["Esc", "Back to invoices"],
+    ["⌘K", "Search"],
+    ["⌘I", "Ask"],
+  ],
   page: [
     ["⌘K", "Search"],
     ["⌘I", "Ask"],

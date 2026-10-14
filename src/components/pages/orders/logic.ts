@@ -5,7 +5,7 @@
  */
 import { seesCustomer, visibleOrders } from "@/platform/access";
 import { PRODUCTS } from "@/sample";
-import type { Customer, DemoState, Order, OrderEvent, OrderState, Person } from "@/sample";
+import type { Customer, DemoState, Order, OrderEvent, OrderState, Person, ToCheck } from "@/sample";
 import { dayLabel, fmtDay, isOverdue, outlets, ref, relDay, STATE, custOf } from "@/lib/format";
 import type { IconName } from "@/components/icons";
 
@@ -55,10 +55,14 @@ export interface Group {
 
 const DATE_ORDER = ["Today", "Tomorrow", "This week", "Later", "Earlier this week", "Earlier"];
 
-/** Filter by tab and customer, sort, and group (by delivery day, customer or status). */
-export function groupOrders(mine: Order[], customers: Record<string, Customer>, f: string, fc: string, sort: Sort): Group[] {
+/** Filter by tab, customer, and optional search query, then sort and group (by delivery day, customer or status). */
+export function groupOrders(mine: Order[], customers: Record<string, Customer>, f: string, fc: string, sort: Sort, q = ""): Group[] {
   const name = (o: Order) => custOf(customers, o.cust).name;
-  const list = mine.filter((o) => f === "all" || (f === "overdue" ? isOverdue(o) : o.state === f)).filter((o) => !fc || o.cust === fc);
+  const ql = q.trim().toLowerCase();
+  const list = mine
+    .filter((o) => f === "all" || (f === "overdue" ? isOverdue(o) : o.state === f))
+    .filter((o) => !fc || o.cust === fc)
+    .filter((o) => !ql || searchKey(o, custOf(customers, o.cust)).includes(ql));
   list.sort((a, b) =>
     sort === "customer"
       ? name(a).localeCompare(name(b)) || b.date.localeCompare(a.date)
@@ -78,12 +82,24 @@ export function groupOrders(mine: Order[], customers: Record<string, Customer>, 
 }
 
 /**
- * The row's grey line after the reference. The prototype writes the Needs check and Blocked
- * lines as fixed text (its seeded revision and its one missing SKU), whatever the review item.
+ * The row's grey line after the reference. Computes revision and missing-SKU summaries from
+ * the order's actual review item and lines, falling back gracefully when no review record exists.
  */
-export function whyText(o: Order): string {
-  if (o.state === "needs_check") return "qty 4 → 6 on line 1, unconfirmed";
-  if (o.state === "blocked") return "1 cell has no SKU";
+export function whyText(o: Order, toCheck?: ToCheck[]): string {
+  if (o.state === "needs_check") {
+    const rev = toCheck?.find((t): t is Extract<ToCheck, { kind: "revision" }> => t.order === o.id && t.kind === "revision");
+    if (rev && rev.diff[0]) {
+      const d = rev.diff[0];
+      return `${d.field.toLowerCase()} ${d.old} → ${d.new} on line ${d.line + 1}, unconfirmed`;
+    }
+    if (!toCheck) return "qty 4 → 6 on line 1, unconfirmed";
+    return "needs review, unconfirmed";
+  }
+  if (o.state === "blocked") {
+    const missing = o.lines.filter((l) => !l.sku).length;
+    if (missing > 0) return `${missing} ${missing === 1 ? "cell has" : "cells have"} no SKU`;
+    return "blocked · review required";
+  }
   return `${o.lines.length} lines · ${outlets(o).join(", ")}`;
 }
 
@@ -111,11 +127,28 @@ export type Rich = (string | { b: string })[];
 
 export const richText = (r: Rich) => r.map((p) => (typeof p === "string" ? p : p.b)).join("");
 
-/** The one-line summary under the order header (the Needs check sentence is fixed text in the prototype). */
-export function summarise(o: Order, ev: OrderEvent[]): Rich {
+/** The one-line summary under the order header, derived from the order's review items, lines, and events. */
+export function summarise(o: Order, ev: OrderEvent[], toCheck?: ToCheck[]): Rich {
   const conf = ev.filter((e) => e.kind === "confirmed").pop();
-  if (o.state === "needs_check") return [{ b: "Revised PO" }, " received 10:48. Line 1 qty ", { b: "4 → 6" }, ", unconfirmed."];
-  if (o.state === "blocked") return ["One cell has ", { b: "no SKU" }, ". Export is blocked until it is filled."];
+  if (o.state === "needs_check") {
+    const rev = toCheck?.find((t): t is Extract<ToCheck, { kind: "revision" }> => t.order === o.id && t.kind === "revision");
+    const revEv = [...ev].reverse().find((e) => e.kind === "received_again" || e.kind === "revision_proposed");
+    if (rev && rev.diff[0]) {
+      const d = rev.diff[0];
+      const time = revEv ? revEv.at.slice(11) : rev.from.split("·").pop()?.trim() || "";
+      return [{ b: "Revised PO" }, `${time ? ` received ${time}` : ""}. Line ${d.line + 1} ${d.field.toLowerCase()} `, { b: `${d.old} → ${d.new}` }, ", unconfirmed."];
+    }
+    if (!toCheck) {
+      const time = revEv ? revEv.at.slice(11) : "10:48";
+      return [{ b: "Revised PO" }, ` received ${time}. Line 1 qty `, { b: "4 → 6" }, ", unconfirmed."];
+    }
+    return [{ b: "Needs check" }, " · awaiting review before confirmation."];
+  }
+  if (o.state === "blocked") {
+    const missing = o.lines.filter((l) => !l.sku).length;
+    if (missing > 1) return [`${missing} cells have `, { b: "no SKU" }, ". Export is blocked until they are filled."];
+    return ["One cell has ", { b: "no SKU" }, ". Export is blocked until it is filled."];
+  }
   if (o.state === "draft") return ["Read, not yet confirmed."];
   if (isOverdue(o)) return ["Due ", { b: fmtDay(o.date) }, ", not marked delivered."];
   const out: Rich = [];

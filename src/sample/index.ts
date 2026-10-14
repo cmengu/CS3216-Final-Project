@@ -11,7 +11,7 @@ export { PRODUCTS } from "./products";
 
 /* Everything here is invented. Never put a real PO, product, customer or price in this folder. */
 export const COMPANY = "Edible Garden City";
-export const APP_NAME = "PO Tracker";
+export const APP_NAME = "Invoice Checker";
 export const GROUP_LOGIN = "orders@ediblegardencity.example";
 /** The demo's fixed "today", as in the prototype. */
 export const TODAY = "2026-10-01";

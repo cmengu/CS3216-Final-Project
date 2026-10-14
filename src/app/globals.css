@@ -1,25 +1,25 @@
 /*
- * PO Tracker design system. Ported verbatim from the approved prototype (Version 16,
+ * Invoice Checker design system (first built for the PO Tracker demo). Ported verbatim from the approved prototype (Version 16,
  * egc-platform-prd/prototype.html). Do not restyle: change values here only when the
  * prototype changes. Light "paper" tokens on :root, charcoal dark under [data-theme="dark"],
  * which is the default (set on <html> by the server, overridden before paint by the
  * theme script in layout.tsx when the viewer chose light).
  */
 :root{
-  --bg:#FAF6EF; --panel:#FFFDF9; --panel2:#F1EBE0; --ink:#1C1917; --ink2:#5C564E; --ink3:#8C8378;
-  --line:#E8E0D3; --line2:#D6CDBF; --accent:#1C1917; --accent-fg:#FFFDF9; --hover:#F4EFE6; --sel:#ECE4D6;
-  --good:#28633A; --good-soft:#E4F1E7; --warn:#8A5A0B; --warn-soft:#F6E8C6; --bad:#9C1C1C; --bad-soft:#F3E4E0; --info:#2B5BA8; --info-soft:#E3EAF4; --purple:#62479E; --purple-soft:#ECE6F3;
-  --leaf1:#6FB583; --leaf2:#28633A; --railbg:#F6F1E7; --band:#F7F2E9;
+  --bg:#FAF5EE; --panel:#FFFDF9; --panel2:#F2E9DC; --ink:#2A1C15; --ink2:#665247; --ink3:#947E72;
+  --line:#E6DBD0; --line2:#D4C5B6; --accent:#B84A27; --accent-fg:#FFFDF9; --hover:#F5EDE2; --sel:#EBE0D1;
+  --good:#2D6A3E; --good-soft:#E3F2E7; --warn:#9A5B0A; --warn-soft:#F9EBD2; --bad:#A82020; --bad-soft:#FBE6E6; --info:#2B5B84; --info-soft:#E4EEF7; --purple:#62479E; --purple-soft:#ECE6F3;
+  --leaf1:#6FB583; --leaf2:#2D6A3E; --railbg:#F3ECE1; --band:#F5EDE2;
   --flag:#FED7AA; --flag-ink:#9A3412;
   --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"Geist Mono",ui-monospace,Menlo,Consolas,monospace;
-  --rail:248px; --pane:340px; --r:8px; --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);
+  --rail:248px; --pane:340px; --r:8px; --shadow:0 1px 2px rgba(42,28,21,.05),0 8px 24px rgba(42,28,21,.07);
 }
 :root[data-theme="dark"]{
-  --bg:#181817; --panel:#181817; --panel2:#232322; --ink:#F3F2F0; --ink2:#ABA9A4; --ink3:#7C7A75;
-  --line:#2A2A28; --line2:#3A3A37; --accent:#F3F2F0; --accent-fg:#181817; --hover:#1F1F1E; --sel:#282827;
-  --good:#6BD98B; --good-soft:#1B3023; --warn:#E8B658; --warn-soft:#362B14; --bad:#F27E7E; --bad-soft:#371D1C; --info:#93BAF9; --info-soft:#1D2B42; --purple:#BBA6F8; --purple-soft:#2A2340;
-  --leaf1:#A6F0BC; --leaf2:#3BAF66; --railbg:#131312; --band:#1E1E1D; --panel:#1B1B1A;
-  --flag:#4A2B12; --flag-ink:#FDBA74; --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px rgba(0,0,0,.6);
+  --bg:#1E293B; --panel:#243247; --panel2:#31425C; --ink:#F1F5F9; --ink2:#CBD5E1; --ink3:#94A3B8;
+  --line:#334663; --line2:#475E80; --accent:#10B981; --accent-fg:#0B192C; --hover:#2B3B54; --sel:#364966;
+  --good:#34D399; --good-soft:#133B36; --warn:#FBBF24; --warn-soft:#3D3118; --bad:#FB7185; --bad-soft:#451E2D; --info:#60A5FA; --info-soft:#1E3458; --purple:#BBA6F8; --purple-soft:#2A2340;
+  --leaf1:#A6F0BC; --leaf2:#34D399; --railbg:#192333; --band:#202C40;
+  --flag:#4A2B12; --flag-ink:#FDBA74; --shadow:0 1px 2px rgba(15,23,42,.45),0 12px 32px rgba(15,23,42,.55);
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -262,7 +262,7 @@ table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 .agent .ah .ib{margin-left:auto}
 .agent .ab{flex:1;overflow:auto;padding:14px;display:grid;align-content:start;gap:12px}
 .agent .emptyst{display:grid;place-items:center;gap:10px;padding:40px 0 20px;text-align:center}
-.agent .emptyst h4{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.agent .emptyst h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
 /* seedling: grows once with a spring, then idles — breathing glow, slow orbit, rising motes, gentle sway */
 .sprout{width:112px;height:112px;overflow:visible}
 .sprout .halo{transform-origin:60px 56px;animation:halo 4.8s ease-in-out infinite}
@@ -563,7 +563,7 @@ h3+.conn{border-top:0;padding-top:2px}
 .tgl{width:36px;height:21px;border-radius:999px;background:var(--line2);position:relative;flex:none;transition:background .2s}
 .tgl::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
 .tgl.on{background:var(--good)} .tgl.on::after{transform:translateX(15px)}
-.stepper{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink2)} .stepper i{width:18px;height:3px;border-radius:2px;background:var(--line2)} .stepper i.on{background:var(--ink)} .stepper span{margin-left:8px}
+.cbody .stepper{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink2)} .cbody .stepper i{width:18px;height:3px;border-radius:2px;background:var(--line2)} .cbody .stepper i.on{background:var(--ink)} .cbody .stepper span{margin-left:8px}
 .prov button{display:flex;align-items:center;gap:12px;transition:background .15s,border-color .15s,transform .15s} .prov button:active{transform:scale(.985)}
 /* scoped to .prov (prototype had a bare .pl, which also hit the ⌘K list and collapsed it to 30px) */
 .prov .pl{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 14%,var(--panel2));flex:none}
