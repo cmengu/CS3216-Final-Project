@@ -6,6 +6,7 @@ INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real step
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import BoundedSemaphore
@@ -19,17 +20,33 @@ from pydantic import ValidationError
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
-from .contracts import InvoiceSummary, SavedInvoice
+from .contracts import InvoiceSummary, OutcomeChoice, SavedInvoice
 from .stages import FixtureStages, Stages
 from .storage import Store
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger(__name__)
+
+
+def _load_dotenv() -> None:
+    if "pytest" in sys.modules:
+        return
+    env_file = BACKEND_DIR / ".env"
+    if not env_file.is_file():
+        return
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
 
 
 def create_app(
     *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf_bounded
 ) -> FastAPI:
+    _load_dotenv()
     store_dir = storage_dir or Path(os.environ.get("INVOICE_DATA_DIR", ROOT / "backend/runtime"))
 
     @asynccontextmanager
@@ -44,7 +61,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type"],
     )
 
@@ -153,6 +170,21 @@ def create_app(
             raise HTTPException(404, "Invoice not found")
         return saved
 
+    @app.put("/invoices/{invoice_id}/outcome", response_model=SavedInvoice)
+    def set_outcome(invoice_id: UUID, choice: OutcomeChoice):
+        saved = invoice(invoice_id)
+        if saved.status != "completed":
+            raise HTTPException(409, "Only a completed check can be marked with a decision")
+        reason = (choice.reason or "").strip() or None
+        if reason and len(reason) > 200:
+            raise HTTPException(422, "Keep the note under 200 characters")
+        if choice.outcome == "ready_to_pay_anyway" and not reason:
+            raise HTTPException(422, "Give a short reason before marking this ready to pay anyway")
+        updated = app.state.store.decide(str(invoice_id), choice.outcome, reason)
+        if updated is None:
+            raise HTTPException(404, "Invoice not found")
+        return updated
+
     @app.get("/invoices/{invoice_id}/file")
     def invoice_file(invoice_id: UUID):
         saved = invoice(invoice_id)
@@ -169,6 +201,13 @@ def create_app(
     return app
 
 
+def _resolve_path(raw: str) -> Path:
+    path = Path(raw)
+    if not path.is_absolute() and not path.exists() and (BACKEND_DIR / path).exists():
+        return (BACKEND_DIR / path).resolve()
+    return path
+
+
 def _stages_from_environment() -> Stages | None:
     mode = os.environ.get("INVOICE_MODE")
     if not mode:
@@ -179,18 +218,19 @@ def _stages_from_environment() -> Stages | None:
         sheet = os.environ.get("INVOICE_PRICE_SHEET")
         if not sheet:
             raise ValueError("Set INVOICE_PRICE_SHEET to the price sheet .xlsx for live mode")
+        sheet_path = _resolve_path(sheet)
         checker = os.environ.get("INVOICE_CHECKER", "standard")
         if checker == "csv_context":
             from .csv_live import LiveStages as CsvLiveStages
 
             if not os.environ.get("OPENAI_API_KEY", "").strip():
                 raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
-            return CsvLiveStages(Path(sheet), model=os.environ.get("OPENAI_MODEL", ""))
+            return CsvLiveStages(sheet_path, model=os.environ.get("OPENAI_MODEL", ""))
         if checker != "standard":
             raise ValueError("INVOICE_CHECKER must be standard or csv_context")
         from .live import LiveStages
 
-        return LiveStages(Path(sheet))
+        return LiveStages(sheet_path)
     raise ValueError("INVOICE_MODE must be fixture or live")
 
 

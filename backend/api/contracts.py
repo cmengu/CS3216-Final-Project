@@ -26,6 +26,19 @@ class CheckResult(Contract):
     warnings: list[str]
 
 
+OutcomeValue = Literal[
+    "ready_to_pay",
+    "ready_to_pay_anyway",
+    "Hold: overcharged",
+    "Hold: check lines",
+]
+
+
+class OutcomeChoice(Contract):
+    outcome: OutcomeValue | None = None
+    reason: str | None = None
+
+
 class InvoiceSummary(Contract):
     id: str
     filename: str
@@ -36,6 +49,9 @@ class InvoiceSummary(Contract):
     updated_at: str
     error: str | None
     price_sheet_version: str
+    outcome: OutcomeValue | None = None
+    outcome_reason: str | None = None
+    decided_at: str | None = None
 
 
 class SavedInvoice(InvoiceSummary):

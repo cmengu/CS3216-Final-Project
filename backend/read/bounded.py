@@ -24,6 +24,7 @@ def read_pdf_bounded(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             result = subprocess.run(
                 command,
                 cwd=Path(__file__).resolve().parents[1],
+                env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
                 capture_output=True,
                 timeout=timeout,
                 check=False,
@@ -35,4 +36,4 @@ def read_pdf_bounded(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
         if result.returncode:
             # Native/library logs can contain document data; do not expose them in HTTP errors.
             raise ValueError(f"OCR worker failed (exit {result.returncode})")
-        return ParsedDocument.model_validate_json(output.read_text())
+        return ParsedDocument.model_validate_json(output.read_text(encoding="utf-8"))

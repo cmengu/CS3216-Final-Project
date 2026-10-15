@@ -257,3 +257,35 @@ def test_checker_against_mock_answer_fields():
             statuses.append(actual.status)
     assert statuses.count("match") == 51
     assert statuses.count("price_mismatch") == 7
+
+
+def test_inch_quote_description_normalization_and_dummy_fallback(sheet, tmp_path):
+    sheet.write_text(
+        MASTER
+        + 'C,Supplier,PO-1,UNION-3.5,3.1/2 inch (88.9mm) SMS UNION SS304,PC,SGD,10,0.05,0.09,2026-10-01,2026-10-31\n'
+    )
+    code_free = invoice(
+        part_number=None,
+        description='3.1/2" (88.9mm) SMS UNION SS304',
+        unit_price="10",
+        line_total="19.00",
+    )
+    code_free.subtotal, code_free.tax, code_free.invoice_total = "19.00", "1.71", "20.71"
+    assert PriceSheet(sheet).check(code_free).lines[0].status == "match"
+
+    dummy_record = invoice(
+        part_number="RES-0603-10K",
+        description="Thick film resistor 10k ohm 1% 0603",
+        quantity="5000",
+        unit_price="0.015",
+        line_total="75.00",
+        discount_rate=None,
+    )
+    dummy_record.supplier_name = "Northbridge Components Pte Ltd"
+    dummy_record.purchase_order = None
+    dummy_record.subtotal, dummy_record.tax, dummy_record.invoice_total = "75.00", "5.40", "80.40"
+    stages = LiveStages(sheet, model="test-model", client=FakeClient(completed(dummy_record)))
+    fallback_check = stages.check(dummy_record)
+    assert fallback_check.price_sheet_version == stages.price_sheet_version
+    assert fallback_check.lines[0].status == "price_mismatch"
+    assert fallback_check.overcharge_total == "15.00"

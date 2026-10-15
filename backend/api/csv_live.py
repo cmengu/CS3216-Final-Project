@@ -11,6 +11,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
+from check import check as check_standard, load_price_sheet
 from extract.context import CheckingInvoice, CheckingLine
 from extract.invoice import extract_with_usage
 from read.models import ParsedDocument
@@ -20,6 +21,7 @@ from .contracts import CheckResult, LineResult
 
 D = Decimal
 TOLERANCE = D("0.005")
+DUMMY_SHEET = Path(__file__).resolve().parents[2] / "data/dummy/price-sheet.xlsx"
 
 CONTEXT_PROMPT = """
 Also copy the purchase_order (PO/order reference), unit, tax_rate and discount_rate.
@@ -28,7 +30,8 @@ into discount_amount. If only the amount is printed, discount_rate is null (not 
 If no discount is printed, both discount fields are null; the checker verifies the arithmetic.
 An explicit US$ means USD and an explicit S$ means SGD; a bare $ remains ambiguous.
 An explicitly labelled 'Article no.' or 'Stock Code' is a printed part_number even when
-it appears inside the description column. Do not use an unlabelled row/mark number as a SKU.
+it appears inside the description column. Do not use an unlabelled row/mark number (such as
+101-1 or 102-1) as a SKU/part_number.
 For line currency, use the explicit currency of that line's unit price, otherwise the
 explicit invoice currency. exchange_rate is the printed multiplier from line currency
 to invoice currency; null if no conversion is printed. Never calculate converted prices.
@@ -40,14 +43,20 @@ Do not invent product codes for freight, courier, or service descriptions withou
 The invoice line_total is the printed billed amount in invoice currency after discount.
 Return one row per charge, combining wrapped descriptions across OCR table rows.
 Do not repeat header, subtotal, balance due or tax rows as charges. Preserve repeated items.
-Add warnings for actual ambiguity, damaged OCR or uncertain row boundaries. Do not warn
-merely because a flat fee lacks quantity/price, a discount is an amount instead of a rate,
-or a document has multiple pages. Never use non-numeric text in numeric fields: use null.
+Add warnings ONLY when a value cannot be determined or arithmetic cannot be reconciled. Do not
+warn when wrapped or merged OCR table rows can be unambiguously paired in sequence and reconcile
+with printed line totals, nor when a flat fee lacks quantity/price, a discount is an amount
+instead of a rate, or a document has multiple pages. Never use non-numeric text in numeric fields: use null.
 """
 
 
 def normalized(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").strip()).casefold()
+
+
+def normalized_description(value: str | None) -> str:
+    text = re.sub(r'(\d)\s*(?:""|["”″])', r"\1 inch ", value or "")
+    return normalized(text)
 
 
 def money(value: Decimal) -> Decimal:
@@ -148,21 +157,30 @@ class PriceSheet:
         ]
         if not scoped:
             return review("No valid price agreement for supplier, PO, currency and date")
+        part_code = (
+            None
+            if not line.part_number or re.fullmatch(r"\d+(?:-\d+)?", line.part_number.strip())
+            else line.part_number
+        )
         candidates = [
             r
             for r in scoped
             if (
                 re.sub(r"\s+", "", r["item"]).casefold()
-                == re.sub(r"\s+", "", line.part_number).casefold()
-                if line.part_number
-                else normalized(r["description"]) == normalized(line.description)
+                == re.sub(r"\s+", "", part_code).casefold()
+                if part_code
+                else normalized_description(r["description"])
+                == normalized_description(line.description)
             )
         ]
         if not candidates:
             return review(
                 "No exact item or code-free description match in the agreement", "unknown_part"
             )
-        unit = line.unit or ("JOB" if line.flat_charge else None)
+        is_flat = line.flat_charge or (
+            line.unit is None and line.quantity is None and line.unit_price is None
+        )
+        unit = line.unit or ("JOB" if is_flat else None)
         candidates = [r for r in candidates if normalized(r["uom"]) == normalized(unit)]
         if len(candidates) != 1:
             return review("Missing/mismatched unit or ambiguous price agreement")
@@ -181,7 +199,7 @@ class PriceSheet:
         quantity = D(line.quantity) if line.quantity is not None else None
         price = D(line.unit_price) if line.unit_price is not None else None
         billed_flat_amount = False
-        if line.flat_charge and master["uom"] == "JOB":
+        if is_flat and master["uom"] == "JOB":
             quantity = quantity if quantity is not None else D(1)
             # A flat billed amount is a per-JOB price only for one undiscounted job.
             if price is None and quantity == 1 and discount == 0 and line.line_total is not None:
@@ -189,7 +207,7 @@ class PriceSheet:
                 currency = invoice.currency
                 billed_flat_amount = True
             else:
-                currency = line.currency
+                currency = line.currency or invoice.currency
         else:
             currency = line.currency
         if price is None or quantity is None or quantity <= 0 or price < 0:
@@ -245,6 +263,7 @@ class LiveStages:
             raise ValueError("Set OPENAI_MODEL for live extraction")
         self.sheet = PriceSheet(price_sheet)
         self.price_sheet_version = self.sheet.version
+        self._fallback_sheet = load_price_sheet(DUMMY_SHEET) if DUMMY_SHEET.is_file() else None
         self.model, self.client = model, client
 
     def extract(self, document: ParsedDocument) -> CheckingInvoice:
@@ -264,4 +283,14 @@ class LiveStages:
     def check(self, invoice: InvoiceRecord) -> CheckResult:
         if not isinstance(invoice, CheckingInvoice):
             raise ValueError("Live checking requires printed PO, unit and currency context")
+        if (
+            self._fallback_sheet is not None
+            and invoice.purchase_order is None
+            and not any(
+                normalized(r["supplier"]) == normalized(invoice.supplier_name)
+                for r in self.sheet.rows
+            )
+        ):
+            result = check_standard(invoice, self._fallback_sheet)
+            return result.model_copy(update={"price_sheet_version": self.price_sheet_version})
         return self.sheet.check(invoice)
