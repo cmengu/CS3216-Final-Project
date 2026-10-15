@@ -113,6 +113,7 @@ first model load. Batch queues, authentication and connectors remain future work
 | GET | `/invoices?limit=50&offset=0` | Newest-first summaries; limit 1–100 |
 | GET | `/invoices/{id}` | Saved full record including read output, fields and results |
 | GET | `/invoices/{id}/file` | Original PDF for inline viewing |
+| PUT | `/invoices/{id}/outcome` | JSON `{"outcome", "reason"}`; saves or clears the clerk's decision (proposed) |
 
 `POST /invoices?force_ocr=true` explicitly overrides embedded-text selection. A processing
 failure returns 422 with the saved failed record; malformed inputs return an HTTP error and
@@ -128,6 +129,14 @@ Line statuses: `match`, `price_mismatch`, `unknown_part`, `needs_person`. The pr
 contains both unit prices, signed per-unit difference, and known overcharge. `null` means
 unavailable, not zero. Fixture invoice 2 has a 0.003 unit-price difference on 5,000 parts,
 giving SGD 15.00 overcharge. Fixture invoice 8 is an undercharge: mismatch, zero overcharge.
+
+Outcomes (proposed, not yet agreed): `ready_to_pay`, `ready_to_pay_anyway`,
+`raise_with_supplier`, or `null` to clear one. Every record carries `outcome`,
+`outcome_reason` and `decided_at` (the service's clock). `ready_to_pay` is accepted only on a
+completed invoice with a non-null `overcharge_total` and every line a `match`;
+`raise_with_supplier` only when a line is a `price_mismatch` with a positive difference;
+`ready_to_pay_anyway` on any finished invoice, failed ones included, with a reason of 1–500
+characters. An invoice still being checked answers 409, a missing reason 422.
 
 CORS allows localhost/127.0.0.1 on port 3000. HTTP errors use `detail`; processing failures
 include `error` on the saved record. Original document bytes, SQLite and results are stored
