@@ -289,3 +289,62 @@ def test_inch_quote_description_normalization_and_dummy_fallback(sheet, tmp_path
     assert fallback_check.price_sheet_version == stages.price_sheet_version
     assert fallback_check.lines[0].status == "price_mismatch"
     assert fallback_check.overcharge_total == "15.00"
+
+
+def test_agentic_reflection_repairs_ocr_misread_and_never_leaks_prices(sheet):
+    from read.models import Location, SourceBlock
+    from read.reader import _is_sideways_page
+
+    sideways_blocks = [
+        SourceBlock(
+            id=f"page-1:#/texts/{i}",
+            text="SIDEWAYS TEXT",
+            locations=[Location(page=1, bbox={"l": 10, "t": 300, "r": 25, "b": 50})],
+        )
+        for i in range(5)
+    ]
+    upright_blocks = [
+        SourceBlock(
+            id=f"page-1:#/texts/{i}",
+            text="UPRIGHT TEXT",
+            locations=[Location(page=1, bbox={"l": 50, "t": 100, "r": 300, "b": 85})],
+        )
+        for i in range(5)
+    ]
+    assert _is_sideways_page(sideways_blocks) is True
+    assert _is_sideways_page(upright_blocks) is False
+
+    misread = invoice(quantity="9", line_total="22.80", description="Garbled OCR Part")
+    repaired = invoice(quantity="2", line_total="22.80", description="Part")
+
+    class SequenceClient:
+        def __init__(self, responses):
+            self.calls = []
+            self._responses = list(responses)
+
+        @property
+        def responses(self):
+            return self
+
+        def parse(self, **kwargs):
+            self.calls.append(kwargs)
+            return self._responses.pop(0)
+
+    seq_client = SequenceClient([completed(misread), completed(repaired)])
+    stages = LiveStages(sheet, model="test-model", client=seq_client)
+    doc = lightweight_reader(DATA / "invoice-01.pdf")
+    doc.docling_document = {"page_images": {"1": "data:image/jpeg;base64,AAAA"}}
+
+    extracted = stages.extract(doc)
+    assert len(seq_client.calls) == 2
+    assert extracted.lines[0].quantity == "2"
+    assert extracted.lines[0].description == "Part"
+    second_input = str(seq_client.calls[1]["input"][1]["content"])
+    assert "VERIFICATION CRITIQUE" in second_input
+    assert "input_image" in second_input
+    assert "unit_price=10" not in second_input
+    assert "0.09" not in second_input or "tax_rate" in second_input
+    check = stages.check(extracted)
+    assert check.lines[0].status == "price_mismatch"
+    assert check.overcharge_total == "3.80"
+
