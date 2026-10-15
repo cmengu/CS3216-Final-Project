@@ -4,10 +4,19 @@
  */
 import type { InvoiceLine, LineResult, SupplierInvoice } from "./types";
 
-/** The three piles the Invoices page sorts invoices into. A PDF that could not be read needs a look. */
-export type Pile = "look" | "checking" | "match";
+/**
+ * What the check found, as one word. A PDF the service could not finish is its own kind, so an
+ * unread file never passes for a priced problem. Each row's label says which kind it is.
+ */
+export type CheckPile = "look" | "failed" | "checking" | "match";
+
+/** The two piles the Invoices page sorts invoices into: no outcome yet, and decided. */
+export type Pile = "decide" | "done";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** "1 invoice", "3 invoices". */
+export const invoiceCount = (n: number) => `${n} invoice${n === 1 ? "" : "s"}`;
 
 /** An amount with thousands separators and two decimals: 1,284.50. */
 export const amount = (n: number) => n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,21 +41,37 @@ export function lineOver(l: InvoiceLine): number {
 export const overcharge = (inv: SupplierInvoice) =>
   inv.overchargeTotal !== undefined ? (inv.overchargeTotal ?? 0) : round2(inv.lines.reduce((a, l) => a + lineOver(l), 0));
 
+/**
+ * True when the service stands behind the invoice's overcharge: it was checked and sent a total.
+ * A null total means part of the check was uncertain, so "no overcharge" cannot be claimed.
+ */
+export const totalKnown = (inv: SupplierInvoice) => inv.state === "checked" && inv.overchargeTotal !== null;
+
 export const problemLines = (inv: SupplierInvoice) => inv.lines.filter((l) => l.result !== "match");
 
-export function pileOf(inv: SupplierInvoice): Pile {
+export function pileOf(inv: SupplierInvoice): CheckPile {
   if (inv.state === "checking") return "checking";
-  if (inv.state === "failed" || problemLines(inv).length) return "look";
+  if (inv.state === "failed") return "failed";
+  if (problemLines(inv).length || !totalKnown(inv)) return "look";
   return "match";
 }
+
+/** To decide until the clerk saves an outcome; Done after. */
+export const reviewPile = (inv: SupplierInvoice): Pile => (inv.outcome ? "done" : "decide");
+
+/** The step a failed invoice stopped at, from the service's "step: reason". */
+const failedStep = (inv: SupplierInvoice) => inv.error?.match(/^(reading|extracting|checking):/)?.[1] ?? null;
 
 /** The status label on an invoice's row: [label class, text]. */
 export function invoiceLabel(inv: SupplierInvoice): [string, string] {
   if (inv.state === "checking") return ["l-info", "Checking…"];
-  if (inv.state === "failed") return ["l-bad", "Could not read"];
+  if (inv.state === "failed") {
+    const step = failedStep(inv);
+    return ["l-bad", step === "reading" || step === "extracting" ? "Could not read" : "Could not check"];
+  }
   const over = overcharge(inv);
   if (over > 0) return ["l-bad", `${inv.currency ?? ""} ${amount(over)} over`.trim()];
-  if (inv.lines.some((l) => l.result === "needs_person")) return ["l-warn", "Needs a person"];
+  if (inv.lines.some((l) => l.result === "needs_person") || !totalKnown(inv)) return ["l-warn", "Needs a person"];
   if (inv.lines.some((l) => l.result === "unknown_part")) return ["l-purple", "Unknown part"];
   return ["l-good", "All match"];
 }
@@ -57,12 +82,26 @@ export function invoiceMeta(inv: SupplierInvoice): string {
   if (inv.state === "failed") return failure(inv);
   const n = problemLines(inv).length;
   const all = inv.lines.length;
-  return n ? `${n} of ${all} lines ${n === 1 ? "needs" : "need"} a look` : `${all} line${all === 1 ? "" : "s"}`;
+  if (n) return `${n} of ${all} lines ${n === 1 ? "needs" : "need"} a look`;
+  if (!totalKnown(inv)) return inv.warnings?.[0] ?? "The check could not confirm the totals";
+  return `${all} line${all === 1 ? "" : "s"}`;
 }
 
-/** Why a failed invoice failed, as one line. The service names the step and the reason. */
-export const failure = (inv: SupplierInvoice) =>
-  inv.error ? `Could not be checked. ${inv.error}` : "The PDF could not be read. Open it to check by hand.";
+const STEP_FAILED: Record<string, string> = {
+  reading: "The text in this PDF could not be read.",
+  extracting: "The PDF was read, but the invoice's details could not be picked out of it.",
+  checking: "The invoice was read, but its lines could not be checked against the price sheet.",
+};
+
+/**
+ * Why a failed invoice failed, as one plain sentence. The service's own "step: reason" stays on
+ * the invoice for the details; it is not the first thing a person reads.
+ */
+export function failure(inv: SupplierInvoice): string {
+  const step = failedStep(inv);
+  if (step) return STEP_FAILED[step];
+  return inv.error ? "The checking service could not finish this invoice." : "The checking service did not say what went wrong.";
+}
 
 /** "Today 10:42", "Yesterday", "25 Sept", from the upload time and the reader's own clock. */
 export function uploadedLabel(uploadedAt: string, now: Date = new Date()): string {
@@ -83,16 +122,36 @@ export interface Summary {
   over: [string, number][];
   /** How many invoices the overcharge comes from. */
   overInvoices: number;
+  /** Invoices checked in full: the service stands behind their overcharge, even when it is none. */
+  known: number;
+  /** Invoices whose overcharge is not known: still checking, not finished, or checked with an uncertain total. */
+  unknown: number;
+  /** To decide newest upload first; Done newest decision first. */
   piles: Record<Pile, SupplierInvoice[]>;
+}
+
+/**
+ * A newer upload of the same PDF, when there is one, so this failed attempt no longer counts.
+ * Only an undecided failed attempt is set aside; two finished checks of one file both stay, and
+ * so does a failed attempt someone already decided on.
+ */
+export function supersededBy(inv: SupplierInvoice, list: SupplierInvoice[]): SupplierInvoice | null {
+  if (inv.state !== "failed" || !inv.documentHash || inv.outcome) return null;
+  return newestFirst(list).find((x) => x.id !== inv.id && x.documentHash === inv.documentHash && x.uploadedAt > inv.uploadedAt) ?? null;
 }
 
 /** The totals boxes on the Invoices page, and the invoices in each pile (newest first). */
 export function summarize(list: SupplierInvoice[]): Summary {
   const over = new Map<string, number>();
   let overInvoices = 0;
-  const piles: Record<Pile, SupplierInvoice[]> = { look: [], checking: [], match: [] };
+  let known = 0;
+  let unknown = 0;
+  const piles: Record<Pile, SupplierInvoice[]> = { decide: [], done: [] };
   for (const inv of newestFirst(list)) {
-    piles[pileOf(inv)].push(inv);
+    if (supersededBy(inv, list)) continue;
+    piles[reviewPile(inv)].push(inv);
+    if (totalKnown(inv)) known++;
+    else unknown++;
     const o = overcharge(inv);
     if (o > 0) {
       overInvoices++;
@@ -100,7 +159,23 @@ export function summarize(list: SupplierInvoice[]): Summary {
       over.set(cur, round2((over.get(cur) ?? 0) + o));
     }
   }
-  return { over: [...over], overInvoices, piles };
+  piles.done.sort((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""));
+  return { over: [...over], overInvoices, known, unknown, piles };
+}
+
+/**
+ * The words in the overcharge box. "None found" is said only about invoices checked in full,
+ * and the box always says how many invoices it cannot speak for yet.
+ */
+export function overchargeBox(s: Summary): { value: string; note: string; found: boolean } {
+  const open = s.unknown ? `${invoiceCount(s.unknown)} not checked in full` : "";
+  if (s.over.length) {
+    const value = s.over.map(([cur, n]) => `${cur} ${amount(n)}`.trim()).join(" · ");
+    return { value, note: [`on ${invoiceCount(s.overInvoices)}`, open].filter(Boolean).join(" · "), found: true };
+  }
+  if (!s.known && !s.unknown) return { value: "Nothing yet", note: "Upload a PDF to check it", found: false };
+  if (!s.known) return { value: "Not known yet", note: open, found: false };
+  return { value: "None found", note: s.unknown ? `in ${invoiceCount(s.known)} checked in full · ${open}` : `in all ${invoiceCount(s.known)}`, found: false };
 }
 
 const ORDER: Record<LineResult, number> = { price_mismatch: 0, needs_person: 1, unknown_part: 2, match: 3 };
@@ -120,3 +195,13 @@ export const RESULT: Record<LineResult, [string, string]> = {
   unknown_part: ["l-purple", "Unknown part"],
   match: ["l-good", "Match"],
 };
+
+/** A line's label, saying which way a price mismatch goes: [label class, text]. */
+export function resultLabel(l: InvoiceLine): [string, string] {
+  if (l.result === "price_mismatch" && l.difference !== null && l.difference > 0) return ["l-bad", "Over sheet price"];
+  if (l.result === "price_mismatch" && l.difference !== null && l.difference < 0) return ["l-warn", "Under sheet price"];
+  return RESULT[l.result];
+}
+
+/** A price sheet's name, or the start of its fingerprint when the service sends only that. */
+export const sheetName = (sheet: string | null) => (!sheet ? "the price sheet" : /^[0-9a-f]{32,}$/i.test(sheet) ? `price sheet ${sheet.slice(0, 8)}` : sheet);

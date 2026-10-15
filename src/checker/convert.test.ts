@@ -103,3 +103,15 @@ describe("toSupplierInvoice", () => {
     expect(toSupplierInvoice({ ...invoice02, status: "failed" }).state).toBe("failed");
   });
 });
+
+describe("the clerk's outcome", () => {
+  it("is carried from the service, and is no decision when the service does not save them yet", () => {
+    const decided = toSupplierInvoice({ ...invoice02, outcome: "raise_with_supplier", outcome_reason: null, decided_at: "2026-10-15T02:00:00+00:00" });
+    expect([decided.outcome, decided.outcomeReason, decided.decidedAt]).toEqual(["raise_with_supplier", null, "2026-10-15T02:00:00+00:00"]);
+    expect(toSupplierInvoice(invoice02).outcome).toBeNull();
+  });
+  it("shows an outcome this screen does not know as no decision", () => {
+    const odd = toSupplierInvoice({ ...invoice02, outcome: "paid", outcome_reason: "x", decided_at: "2026-10-15T02:00:00+00:00" });
+    expect([odd.outcome, odd.outcomeReason, odd.decidedAt]).toEqual([null, null, null]);
+  });
+});

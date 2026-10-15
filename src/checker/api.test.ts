@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listInvoices, uploadFailure, uploadInvoice, uploadProblem } from "./api";
+import { decideInvoice, decisionFailure, listInvoices, uploadFailure, uploadInvoice, uploadProblem } from "./api";
 import type { ServiceInvoice } from "./convert";
 
 const id = "11111111-1111-1111-1111-111111111111";
@@ -118,5 +118,31 @@ describe("uploadInvoice", () => {
     await expect(uploadInvoice(new File(["%PDF"], "invoice-02.pdf", { type: "application/pdf" }))).rejects.toThrow(
       "This invoice could not be checked.",
     );
+  });
+});
+
+describe("decideInvoice", () => {
+  it("sends the outcome and reason, and returns the saved invoice", async () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      new Response(JSON.stringify({ ...saved("Invented Silicon Trading", "15.00"), outcome: "ready_to_pay_anyway", outcome_reason: "Credit note agreed", decided_at: "2026-10-15T02:00:00+00:00" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const invoice = await decideInvoice(id, "ready_to_pay_anyway", "Credit note agreed");
+    expect(fetchMock.mock.calls[0][0]).toMatch(new RegExp(`/invoices/${id}/outcome$`));
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("PUT");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ outcome: "ready_to_pay_anyway", reason: "Credit note agreed" });
+    expect(invoice.outcomeReason).toBe("Credit note agreed");
+  });
+  it("says why the service refused a decision", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "Ready to pay anyway needs a short reason" }), { status: 422 })));
+    await expect(decideInvoice(id, "ready_to_pay_anyway", null)).rejects.toThrow("Ready to pay anyway needs a short reason.");
+  });
+  it("tells a service from before outcomes apart from a missing invoice", () => {
+    expect(decisionFailure(404, "Not Found")).toBe("The checking service cannot save decisions yet.");
+    expect(decisionFailure(404, "Invoice not found")).toBe("No invoice with this link. It may have been removed.");
+    expect(decisionFailure(409, "The invoice is still being checked; decide once the check has finished")).toBe(
+      "The invoice is still being checked; decide once the check has finished.",
+    );
+    expect(decisionFailure(500)).toBe("The checking service had a problem. Try again in a moment.");
   });
 });

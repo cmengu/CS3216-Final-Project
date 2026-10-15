@@ -44,10 +44,14 @@ describe("groupOrders", () => {
     expect(g[0].items.map((o) => o.id)).toEqual(["o3", "o5"]);
   });
 
-  it("filters by tab and customer", () => {
+  it("filters by tab, customer, and search query", () => {
     expect(groupOrders(S.orders, S.customers, "blocked", "", "date").flatMap((g) => g.items.map((o) => o.id))).toEqual(["o4"]);
     expect(groupOrders(S.orders, S.customers, "all", "C10388", "date").flatMap((g) => g.items.map((o) => o.id))).toEqual(["o3", "o9"]);
     expect(groupOrders(S.orders, S.customers, "draft", "", "date")).toEqual([]);
+    expect(groupOrders(S.orders, S.customers, "all", "", "date", "RC-0917").map((g) => [g.k, g.items.map((o) => o.id)])).toEqual([
+      ["This week", ["o4"]],
+    ]);
+    expect(groupOrders(S.orders, S.customers, "all", "", "date", "nonexistent-po")).toEqual([]);
   });
 
   it("groups by customer name and by status label", () => {
@@ -64,7 +68,8 @@ describe("groupOrders", () => {
 
 describe("row text", () => {
   it("explains a revision, a missing SKU, or lists lines and outlets", () => {
-    expect(whyText(order(S, "o2"))).toBe("qty 4 → 6 on line 1, unconfirmed");
+    expect(whyText(order(S, "o2"), S.toCheck)).toBe("qty 4 → 6 on line 1, unconfirmed");
+    expect(whyText({ ...order(S, "o1"), state: "needs_check" }, S.toCheck)).toBe("needs review, unconfirmed");
     expect(whyText(order(S, "o4"))).toBe("1 cell has no SKU");
     expect(whyText(order(S, "o1"))).toBe("6 lines · Banquet kitchen, Room service");
   });
@@ -78,7 +83,7 @@ describe("row text", () => {
 
 describe("summarise", () => {
   it("reads like the prototype for each state", () => {
-    const t = (id: string) => richText(summarise(order(S, id), evOf(S, id)));
+    const t = (id: string) => richText(summarise(order(S, id), evOf(S, id), S.toCheck));
     expect(t("o2")).toBe("Revised PO received 10:48. Line 1 qty 4 → 6, unconfirmed.");
     expect(t("o4")).toBe("One cell has no SKU. Export is blocked until it is filled.");
     expect(t("o1")).toBe("Confirmed by Eunice today 09:40, exported. Deliver Fri, 2 Oct.");

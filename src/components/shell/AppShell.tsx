@@ -12,7 +12,11 @@ import { Palette } from "./Palette";
 import { Rail } from "./Rail";
 
 const AGENT_W = "pot-agentw";
-const LIST_ROUTES = ["/orders", "/invoices", "/customers"];
+const LIST_ROUTES = ["/orders", "/customers"];
+
+/** Which keyboard hints the bar shows, so it never lists a key the page does not answer. */
+const kbarKind = (pathname: string) =>
+  pathname === "/invoices" ? "invoices" : pathname.startsWith("/invoices/") ? "invoice" : LIST_ROUTES.includes(pathname) ? "list" : "page";
 
 /**
  * The app frame: rail · assistant column · main (page + keyboard bar), plus the ⌘K palette and toasts.
@@ -143,7 +147,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className={`main${pane === "on" ? " withpane" : ""}`} id="main" ref={mainRef}>
           <div className="content">
             <RouteGuard>{children}</RouteGuard>
-            <Kbar kind={LIST_ROUTES.includes(pathname) ? "list" : "page"} />
+            <Kbar kind={kbarKind(pathname)} />
           </div>
           {pane !== "off" ? <aside className="pane" ref={setPaneHost} /> : null}
         </main>

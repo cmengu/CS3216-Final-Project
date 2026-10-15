@@ -82,7 +82,7 @@ for (const who of [
     await page.fill(".whobox input[name=pin]", "1234");
     await page.click(".whobox .btn.p");
   } else ok(!(await page.locator(".whobox input[name=pin]").count()), `${tag}: no PIN asked`);
-  await page.waitForURL(/\/home$/);
+  await page.waitForURL(/\/(home|invoices)$/);
   await page.waitForSelector(".hd h1");
 
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("pot-demo-v3")));
@@ -153,7 +153,7 @@ for (const who of [
   if (["owner", "finance"].includes(who.role)) {
     await page.goto(`${APP}/invoices`);
     await page.waitForSelector(".ck-boxes");
-    ok((await page.locator("main").innerText()).includes("Overcharged so far"), `${tag}: Invoices shows the overcharge found`);
+    ok((await page.locator("main").innerText()).includes("Overcharge found"), `${tag}: Invoices shows the overcharge found`);
   }
 
   // The assistant: every suggested question and a few about money and other customers.

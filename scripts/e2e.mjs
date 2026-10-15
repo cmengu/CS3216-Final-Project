@@ -47,7 +47,8 @@ async function switchTo(page, name, pin) {
     await page.fill(".whobox input[name=pin]", pin);
     await page.click(".whobox .btn.p");
   }
-  await page.waitForURL(/\/home$/);
+  // Owner and Finance land on Invoices; everyone else on Home.
+  await page.waitForURL(/\/(home|invoices)$/);
   await page.waitForSelector(".mebtn");
   ok((await page.locator(".mebtn").innerText()).includes(name), `now working as ${name}`);
 }
@@ -122,27 +123,27 @@ async function switchTo(page, name, pin) {
   await page.waitForSelector(".ck-boxes");
   await page.waitForFunction(() => {
     const t = document.querySelector("#main")?.textContent || "";
-    return /could not be reached|could not be loaded|Nothing needs a look/.test(t) || document.querySelector(".ck-row");
+    return /could not be reached|could not be loaded|Nothing to decide|No invoices yet/.test(t) || document.querySelector(".ck-row");
   });
   const invText = await text(page);
   const serviceDown = /could not be reached|could not be loaded/.test(invText);
   if (serviceDown) {
     ok(true, "Invoices says the checking service could not be reached");
   } else {
-    ok(invText.includes("Overcharged so far"), "Invoices totals the overcharge found");
-    for (const label of ["Needs a look", "Checking", "All match"]) {
+    ok(invText.includes("Overcharge found"), "Invoices totals the overcharge found");
+    for (const label of ["To decide", "Done"]) {
       await page.click(`button.ck-box:has-text("${label}")`);
       const n = Number((await page.locator("button.ck-box.on .num").textContent()) || 0);
       const rows = await page.locator(".ck-row").count();
       ok(rows === n, `${label} lists its ${n} invoice${n === 1 ? "" : "s"}`);
     }
-    await page.click('button.ck-box:has-text("Needs a look")');
+    await page.click('button.ck-box:has-text("To decide")');
     const look = Number((await page.locator("button.ck-box.on .num").textContent()) || 0);
-    ok((await navCount(page, "/invoices")) === look, "rail Invoices count is the invoices that need a look");
+    ok((await navCount(page, "/invoices")) === look, "rail Invoices count is the invoices still to decide");
     if (look) {
       await page.click(".ck-row");
-      await page.waitForSelector(".ck-card, .hint");
-      ok((await page.locator(".ck-split, .hint").count()) > 0, "an invoice opens from the list");
+      await page.waitForSelector(".ck-split, .ck-panel");
+      ok((await page.locator(".ck-split, .ck-panel").count()) > 0, "an invoice opens from the list");
     }
   }
   await shot(page, "05b-invoice");
@@ -151,9 +152,9 @@ async function switchTo(page, name, pin) {
   const invoicePdf = process.env.INVOICE_PDF || "data/dummy/invoice-02.pdf";
   if (existsSync(invoicePdf)) {
     await page.goto(`${APP}/invoices`);
-    await page.waitForSelector(".ck-drop");
+    await page.waitForSelector("input.ck-file", { state: "attached" });
     await page.setInputFiles("input.ck-file", invoicePdf);
-    await page.waitForSelector("button:has-text('Checking')");
+    await page.waitForSelector(".ck-status.on");
     if (serviceDown) {
       await toast(page, /could not be reached|not ready|could not be checked/);
       ok(true, "upload says what went wrong, in one sentence");

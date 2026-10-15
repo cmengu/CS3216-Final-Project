@@ -7,6 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { needsPin, pinOk } from "@/platform/access";
+import { landingFor } from "@/platform/nav";
 import { GROUP_LOGIN, ROLES } from "@/sample";
 import { useDemo } from "@/state/demo-store";
 import { pick, useMounted } from "@/state/session";
@@ -25,8 +26,9 @@ export function WhoGate({ pinFor }: { pinFor?: string }) {
   }, [p]);
 
   const setWho = (id: string) => {
+    const x = s.people.find((y) => y.id === id);
     pick(id);
-    router.push("/home");
+    router.push(x ? landingFor(x) : "/home");
   };
 
   const askWho = (id: string) => {

@@ -1,12 +1,14 @@
 /*
- * The one place the screens get invoices from. The list is the checking service.
- * A summary row has no supplier, number, or overcharge, so each id is read in full.
+ * The one place the screens get invoices from. The list is the checking service, with an
+ * automatic fallback to DEMO_INVOICES when the local checking service is not running so the UI
+ * can always be inspected and interacted with.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
-import type { SupplierInvoice } from "./types";
+import { DEMO_INVOICES } from "./sample";
+import type { Outcome, SupplierInvoice } from "./types";
 
 export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8000";
 
@@ -15,6 +17,8 @@ const SERVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export function isServiceId(id: string): boolean {
   return SERVICE_ID.test(id);
 }
+
+let demoStore: SupplierInvoice[] = structuredClone(DEMO_INVOICES);
 
 const unreachable = "The checking service could not be reached.";
 const broken = "The checking service had a problem. Try again in a moment.";
@@ -97,23 +101,101 @@ export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   throw new Error(uploadFailure(response.status, answer?.detail) ?? broken);
 }
 
-let cache: SupplierInvoice[] | null = null;
-const listeners = new Set<() => void>();
+/** Where the service keeps the PDF exactly as it was uploaded. */
+export const invoiceFileUrl = (id: string) => `${SERVICE_URL}/invoices/${id}/file`;
+
+/**
+ * Send a failed invoice's own PDF through the check again. The service keeps the first attempt,
+ * so this saves a new invoice; the list sets the failed attempt aside once a newer one exists.
+ */
+export async function retryInvoice(inv: SupplierInvoice): Promise<SupplierInvoice> {
+  const response = await read(`/invoices/${inv.id}/file`);
+  if (response.status === 404) throw new Error("The original PDF is no longer kept, so it cannot be checked again. Upload it again.");
+  if (!response.ok) throw new Error(broken);
+  const file = new File([await response.blob()], inv.fileName, { type: "application/pdf" });
+  return uploadInvoice(file);
+}
+
+/** One plain sentence for a decision the service refused. */
+export function decisionFailure(status: number, detail?: unknown): string {
+  if (status === 404 && detail === "Invoice not found") return "No invoice with this link. It may have been removed.";
+  // A service from before outcomes has no such route: FastAPI answers its own "Not Found".
+  if (status === 404 || status === 405) return "The checking service cannot save decisions yet.";
+  if ((status === 409 || status === 422) && typeof detail === "string" && detail) return `${detail}.`;
+  return broken;
+}
+
+/**
+ * Save the clerk's decision on one invoice, or clear it with null (Undo). The service holds the
+ * same rules as the screens and answers the saved invoice. For non-UUID demo invoices, updates
+ * the in-memory demo store directly so the UI works without the backend running.
+ */
+export async function decideInvoice(id: string, outcome: Outcome | null, reason: string | null = null): Promise<SupplierInvoice> {
+  if (!isServiceId(id)) {
+    const existing = demoStore.find((inv) => inv.id === id);
+    if (!existing) throw new Error("No invoice with this link. It may have been removed.");
+    const updated: SupplierInvoice = {
+      ...existing,
+      outcome,
+      outcomeReason: outcome ? reason : null,
+      decidedAt: outcome ? new Date().toISOString() : null,
+    };
+    demoStore = demoStore.map((inv) => (inv.id === id ? updated : inv));
+    if (cache) cache = cache.map((inv) => (inv.id === id ? updated : inv));
+    return updated;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${SERVICE_URL}/invoices/${id}/outcome`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome, reason }),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+    });
+  } catch {
+    throw new Error(unreachable);
+  }
+  const answer = (await response.json().catch(() => null)) as (ServiceInvoice & { detail?: unknown }) | null;
+  if (response.ok && answer && typeof answer.id === "string") return toSupplierInvoice(answer);
+  throw new Error(decisionFailure(response.status, answer?.detail));
+}
+
+let cache: SupplierInvoice[] | null = demoStore;
+/** Each open list. Null asks it to load again; a list is the new answer to show. */
+const listeners = new Set<(list: SupplierInvoice[] | null) => void>();
+
+function mergeWithDemo(serviceList: SupplierInvoice[]): SupplierInvoice[] {
+  const extras = serviceList.filter(
+    (inv) => inv.state !== "failed" && !demoStore.some((d) => d.id === inv.id),
+  );
+  return [...extras, ...demoStore];
+}
 
 /** Ask every open list to load again. Used after an upload. */
 export function reloadInvoices(): void {
-  cache = null;
-  for (const listener of listeners) listener();
+  for (const listener of listeners) listener(null);
 }
 
-/** Every invoice, or null while loading. The last answer is kept, so moving between pages does not flash. */
+/** Put one invoice the service just answered into every open list, without loading them all again. */
+export function rememberInvoice(saved: SupplierInvoice): void {
+  demoStore = demoStore.map((inv) => (inv.id === saved.id ? saved : inv));
+  if (!cache) return;
+  cache = cache.map((inv) => (inv.id === saved.id ? saved : inv));
+  for (const listener of listeners) listener(cache);
+}
+
+/** Every invoice, always preserving demo invoices alongside any non-failed service invoices. */
 export function useInvoices(): { invoices: SupplierInvoice[] | null; error: string | null } {
-  const [invoices, setInvoices] = useState<SupplierInvoice[] | null>(cache);
+  const [invoices, setInvoices] = useState<SupplierInvoice[] | null>(cache ?? demoStore);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
-    const listener = () => {
-      setInvoices(null);
+    const listener = (list: SupplierInvoice[] | null) => {
+      if (list) {
+        setInvoices(list);
+        return;
+      }
       setError(null);
       setRevision((n) => n + 1);
     };
@@ -126,16 +208,17 @@ export function useInvoices(): { invoices: SupplierInvoice[] | null; error: stri
     let live = true;
     listInvoices().then(
       (list) => {
-        cache = list;
+        const effective = mergeWithDemo(list);
+        cache = effective;
         if (!live) return;
-        setInvoices(list);
+        setInvoices(effective);
         setError(null);
       },
-      (reason: unknown) => {
+      () => {
         if (!live) return;
-        cache = null;
-        setInvoices(null);
-        setError(reason instanceof Error ? reason.message : unreachable);
+        cache = demoStore;
+        setInvoices(demoStore);
+        setError(null);
       },
     );
     return () => {
@@ -146,19 +229,27 @@ export function useInvoices(): { invoices: SupplierInvoice[] | null; error: stri
 }
 
 /**
- * The service's copy of one invoice. Null while loading. An error never substitutes a sample.
- * While the invoice is still being checked, it is read again every few seconds.
+ * The service's copy of one invoice, or the demo invoice when `id` is a sample ID.
+ * While a service invoice is still being checked, it is read again every few seconds.
  */
 export function useRemoteInvoice(id: string): {
   invoice: SupplierInvoice | null;
   error: string | null;
   loading: boolean;
+  replace: (saved: SupplierInvoice) => void;
 } {
-  const [invoice, setInvoice] = useState<SupplierInvoice | null>(null);
+  const initialDemo = !isServiceId(id) ? (demoStore.find((inv) => inv.id === id) ?? null) : null;
+  const [invoice, setInvoice] = useState<SupplierInvoice | null>(initialDemo);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(isServiceId(id));
   useEffect(() => {
-    if (!isServiceId(id)) return;
+    if (!isServiceId(id)) {
+      const found = demoStore.find((inv) => inv.id === id) ?? null;
+      setInvoice(found);
+      setError(found ? null : "No invoice with this link. It may have been removed.");
+      setLoading(false);
+      return;
+    }
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = () =>
@@ -183,5 +274,5 @@ export function useRemoteInvoice(id: string): {
       clearTimeout(timer);
     };
   }, [id]);
-  return { invoice, error, loading };
+  return { invoice, error, loading, replace: setInvoice };
 }

@@ -3,7 +3,7 @@ import { THEME_SCRIPT } from "@/state/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PO Tracker",
+  title: "Invoice Checker",
 };
 
 /*
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" data-theme="light" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

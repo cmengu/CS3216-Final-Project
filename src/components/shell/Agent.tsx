@@ -25,7 +25,7 @@ interface Pending {
 }
 
 /**
- * The PO assistant column (⌘I), ported from the prototype's renderAgent() and ask(): the empty state
+ * The order assistant column (⌘I), ported from the prototype's renderAgent() and ask(): the empty state
  * with the seedling and suggested questions, "Reading the record…" for a moment, then each answer as
  * the steps taken, the records found and a line or two. Answers come from src/platform/assistant.
  */
@@ -115,7 +115,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
   );
 
   return (
-    <aside className="agent" id="agent" role="complementary" aria-label="PO assistant" ref={self}>
+    <aside className="agent" id="agent" role="complementary" aria-label="Order assistant" ref={self}>
       <div
         className="rz"
         title="Drag to resize"
@@ -144,7 +144,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
       <div className="ah">
         <span className="ttl">
           <Icon name="spark" />
-          PO assistant <small>as {u.name}</small>
+          Order assistant <small>as {u.name}</small>
         </span>
         <span className="sp" />
         <button
@@ -170,7 +170,7 @@ export function Agent({ req, onResize }: { req: AssistantRequest & { n: number }
           <>
             <div className="emptyst">
               <Sprout />
-              <h4>PO assistant</h4>
+              <h2>Order assistant</h2>
             </div>
             <div className="qa">
               {suggestions(ctxOrder).map((t) => (

@@ -1,56 +1,191 @@
-/* Invoices (the invoice checker): the totals boxes, the list rows, and one invoice's page beside its problem lines. */
+/* Invoices: Formal B2B Accounts Payable Ledger, Split-Pane Audit Workbench, and Commercial Invoice View */
 
-/* list */
-.ck-list{gap:14px}
-.ck-boxes{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
-.ck-box{display:grid;gap:2px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel);text-align:left;min-width:0}
-.ck-box span{color:var(--ink3);font-size:12px}
-.ck-box b{font-size:24px;font-weight:600;letter-spacing:-.01em}
-.ck-box small{color:var(--ink2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-button.ck-box:hover{background:var(--hover)}
-button.ck-box.on{border-color:var(--ink)}
-.ck-box.over{background:var(--bad-soft);border-color:transparent}
-.ck-box.over span,.ck-box.over b,.ck-box.over small{color:var(--bad)}
-.ck-drop{border:1px dashed var(--line);border-radius:10px;padding:14px 16px;text-align:center;color:var(--ink2);font-size:13px}
-.ck-drop.busy{color:var(--ink)}
-.ck-gh{padding:4px 0 6px}
-.ck-row{grid-template-columns:minmax(150px,240px) auto minmax(0,1fr) auto;padding-left:0;padding-right:0}
-.ck-row+.ck-row{border-top:1px solid var(--line)}
-.ck-mark{background:color-mix(in srgb,var(--c) 16%,var(--panel2));color:var(--c)}
+.hd.ck-hd{min-height:62px;padding-top:10px;padding-bottom:10px}
+@media (max-width:700px){
+  .hd.ck-hd{flex-wrap:wrap;row-gap:6px;padding-top:8px;padding-bottom:8px}
+  .hd.ck-hd h1{flex:1 1 0}
+  .hd.ck-hd .acts{flex:1 0 100%;margin-left:0;flex-wrap:wrap}
+}
 
-/* one invoice */
+.ck-workspace{display:flex;flex-direction:column;min-height:calc(100dvh - 62px)}
+.ck-workspace.drag{outline:2px dashed var(--accent);outline-offset:-8px}
+.ck-banner-status{padding:8px 24px;background:var(--info-soft);color:var(--info);border-bottom:1px solid var(--line);font-size:12.5px;font-weight:500}
+
+/* Notice dot for overcharge in 1-line bar */
+.o-notice-dot.bad{background:var(--bad)}
+
+/* Sub-tab counts */
+.tab .cnt{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-left:5px}
+.tab.on .cnt{color:var(--ink2)}
+
+/* Formal Ledger Cells & Status Dots */
+.o-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:500;color:var(--ink)}
+.b{width:6px;height:6px;border-radius:1.5px;display:inline-block;flex:none;background:var(--ink3)}
+.b.b-bad{background:var(--bad)}
+.b.b-warn{background:var(--warn)}
+.b.b-good{background:var(--good)}
+.b.b-info{background:var(--info)}
+.o-amt{font-weight:500;color:var(--ink)}
+.o-dash{color:var(--ink3)}
+.ck-subfile{font-size:11px;color:var(--ink3);font-weight:400;margin-top:1px}
+.ck-flag-cnt{color:var(--warn);font-weight:600;font-size:11.5px}
+.ck-over-cell{color:var(--bad);font-weight:600}
+.ck-under-cell{color:var(--warn);font-weight:500}
+.ck-pending-txt{color:var(--ink2)}
+.ck-empty{display:grid;justify-items:center;gap:12px}
+.ck-empty p{margin:0}
+
+/* Audit Workbench (Mode 2) */
+.o-triage{display:grid;grid-template-columns:320px minmax(0,1fr);min-height:calc(100dvh - 62px)}
+.o-triage-rail{border-right:1px solid var(--line);background:var(--bg);display:flex;flex-direction:column}
+.o-triage-rail-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.o-triage-item{font:inherit;width:100%;padding:12px 16px;border:0;border-bottom:1px solid var(--line);border-left:2px solid transparent;cursor:pointer;display:grid;gap:4px;text-align:left;background:transparent;color:var(--ink)}
+.o-triage-item:hover{background:var(--hover)}
+.o-triage-item.on{background:var(--panel);border-left-color:var(--accent)}
+.o-triage-item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.o-triage-po{font-size:12.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.o-triage-cust{font-size:11.5px;color:var(--ink2)}
+.o-triage-meta{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11.5px;color:var(--ink3)}
+
+.o-triage-work{display:flex;flex-direction:column;min-width:0}
+.o-work-hd{padding:18px 24px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:flex-start;justify-content:space-between;gap:16px 24px;flex-wrap:wrap}
+.o-work-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.o-work-title h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.o-work-sub{font-size:12px;color:var(--ink2);margin-top:5px}
+.o-work-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.o-work-body{padding:20px 24px 32px;display:grid;gap:16px;align-content:start}
+
+.o-Resolve-box{border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden}
+.o-Resolve-box-hd{padding:10px 16px;background:var(--panel2);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink2)}
+.o-Resolve-box-body{padding:16px}
+
+/* Ready to Pay Batch Bar (Mode 3) */
+.o-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;padding:12px 24px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.o-batch-title{font-size:13px;font-weight:600;color:var(--ink)}
+.o-batch-sub{font-size:12px;color:var(--ink2);margin-top:2px}
+.o-batch-acts{display:flex;align-items:center;gap:8px}
+
+.ck-work-no{font-size:13px;color:var(--ink2);background:var(--panel2);border:1px solid var(--line);padding:1px 7px;border-radius:4px}
+.btn.bad{background:var(--bad);color:#FFFDF9;border-color:var(--bad)}
+.btn.bad:hover{opacity:.92}
+
+/* Inline Override Reason Bar */
+.ck-override-bar{padding:12px 24px;background:var(--panel2);border-bottom:1px solid var(--line);display:grid;gap:8px}
+.ck-override-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px}
+.ck-override-top span{color:var(--ink2)}
+.ck-override-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ck-override-inp{flex:1 1 320px;font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--line2);border-radius:5px;background:var(--panel);color:var(--ink)}
+.ck-override-inp:focus{outline:2px solid var(--ink);outline-offset:-1px}
+
+/* Summary Strip inside Audit Workbench */
+.ck-summary-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden}
+.ck-stat-cell{padding:10px 14px;display:grid;gap:3px;border-right:1px solid var(--line)}
+.ck-stat-cell:last-child{border-right:0}
+.ck-stat-cell.bad{background:color-mix(in srgb,var(--bad-soft) 45%,var(--panel))}
+.ck-stat-cell.bad b{color:var(--bad)}
+.ck-stat-lbl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3)}
+.ck-stat-cell b{font-size:13.5px;font-weight:600;color:var(--ink)}
+
+.ck-warn-strip{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line));border-radius:6px;background:color-mix(in srgb,var(--warn-soft) 50%,var(--panel));font-size:12px;color:var(--ink)}
+
+.ck-flagged-row td{background:color-mix(in srgb,var(--warn-soft) 28%,transparent)}
+.ck-line-reason{font-size:11.5px;color:var(--ink2);margin-top:3px;padding-left:8px;border-left:2px solid var(--line2)}
+
+/* Individual Invoice Page (/invoices/[id]) */
 .hd h1 .ck-no{font-size:13px;color:var(--ink2);font-weight:500}
 .hd h1 .ck-name{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:700px){.hd h1 .ck-no{display:none}}
-.ck-split{display:flex;flex-wrap:wrap;align-items:flex-start;min-height:calc(100% - 56px)}
-.ck-pagewrap{flex:999 1 520px;min-width:0;align-self:stretch;background:var(--panel2);padding:16px 24px 24px;display:grid;gap:10px;align-content:start}
-.ck-page{max-width:760px;width:100%;margin:0 auto;box-sizing:border-box;background:#fff;color:#222;border-radius:4px;box-shadow:var(--shadow);padding:28px 32px;display:grid;gap:18px;font-family:Georgia,"Times New Roman",serif;font-size:12px}
-.ck-pagehd{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.ck-pagehd b{font-size:16px}
-.ck-pagehd span{text-align:right}
-.ck-scroll{overflow-x:auto}
-.ck-page table{width:100%;min-width:480px;border-collapse:collapse;font-size:11.5px;color:#222}
-.ck-page th{text-align:left;padding:5px 6px;border-bottom:2px solid #222;font-weight:700}
-.ck-page td{padding:5px 6px;border-bottom:1px solid #e4e4e4}
-.ck-page .r{text-align:right}
-.ck-page tr.ck-price_mismatch td{background:#FDE2DC;cursor:pointer}
-.ck-page tr.ck-needs_person td{background:#FBEBC6;cursor:pointer}
-.ck-page tr.ck-unknown_part td{background:#E9E2F5;cursor:pointer}
-.ck-page tr.cur td{box-shadow:inset 0 2px 0 #1C1917,inset 0 -2px 0 #1C1917}
-.ck-page .ck-m{font-family:var(--sans);font-weight:600;font-size:10.5px;width:14px}
-.ck-totals{justify-self:end;display:grid;grid-template-columns:auto auto;gap:3px 24px;text-align:right}
 
-.ck-side{flex:1 1 320px;max-width:420px;min-width:0;box-sizing:border-box;padding:16px 20px 24px;display:grid;gap:10px}
-.ck-sidehd{display:flex;align-items:baseline;gap:8px;font-size:15px}
-.ck-sidehd .hint{margin-left:auto}
-.ck-warning{color:var(--ink)}
-.ck-card{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);text-align:left;width:100%}
-.ck-card:hover{background:var(--hover)}
-.ck-card.cur{border-color:var(--ink);box-shadow:inset 2px 0 0 var(--ink)}
-.ck-cardhd{display:flex;align-items:center;gap:8px;min-width:0}
-.ck-cardhd .lbl{margin-left:auto}
-.ck-dot{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-weight:600;flex:none}
-.ck-dot.ck-price_mismatch{background:#9C1C1C}.ck-dot.ck-needs_person{background:#8A5A0B}.ck-dot.ck-unknown_part{background:#62479E}
-.ck-prices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-variant-numeric:tabular-nums;font-weight:500}
-.ck-prices small{display:block;color:var(--ink3);font-size:11.5px;font-weight:400}
-.ck-reason{color:var(--ink2);font-size:12px}
+/* Top Decision Bar on /invoices/[id] */
+.ck-top-decide{padding:10px 24px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.ck-top-decide-main{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap}
+.ck-top-decide-info{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ink)}
+.ck-top-decide-why{color:var(--ink2)}
+.ck-top-decide-meta{color:var(--ink2);font-size:12px}
+.ck-top-decide-reason{color:var(--ink);font-weight:500}
+.ck-top-decide-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+
+/* Checking & Failed States */
+.ck-panel{max-width:62ch;display:grid;gap:10px;padding:8px 0}
+.ck-panel h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.ck-panel p{margin:0;color:var(--ink2);line-height:1.55}
+.ck-newer{color:var(--ink)}
+.ck-newer a{text-decoration:underline;text-underline-offset:3px;font-weight:500}
+.ck-acts{display:flex;flex-wrap:wrap;gap:8px}
+.ck-details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;font-size:12px}
+.ck-details summary{cursor:pointer;color:var(--ink2);width:max-content;font-weight:500}
+.ck-details summary:hover{color:var(--ink)}
+.ck-details dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 16px;margin:10px 0 0}
+.ck-details dt{color:var(--ink3)}
+.ck-details dd{margin:0;overflow-wrap:anywhere}
+
+/* Split Commercial Document + Audit Findings Layout */
+.ck-split{display:grid;grid-template-columns:minmax(0,1fr) 390px;align-items:start;min-height:calc(100dvh - 115px)}
+.ck-pagewrap{padding:20px 24px 32px;min-width:0}
+
+/* Formal Commercial Invoice Sheet */
+.ck-doc{background:var(--panel);border:1px solid var(--line2);border-radius:6px;overflow:hidden}
+.ck-doc-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;padding:20px 24px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.ck-doc-tag{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink3);margin-bottom:4px}
+.ck-doc-supplier{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.ck-doc-meta{font-size:12px;color:var(--ink2);margin-top:4px}
+.ck-doc-meta-grid{display:flex;gap:20px;flex-wrap:wrap}
+.ck-doc-meta-grid > div{display:grid;gap:2px;text-align:right}
+.ck-doc-meta-grid span{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3)}
+.ck-doc-meta-grid b{font-size:13px;color:var(--ink)}
+
+.ck-scroll{overflow-x:auto}
+.ck-doc-table{width:100%;min-width:580px;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12.5px}
+.ck-doc-table th{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3);text-align:left;padding:10px 12px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+.ck-doc-table th:first-child,.ck-doc-table td:first-child{padding-left:20px}
+.ck-doc-table th:last-child,.ck-doc-table td:last-child{padding-right:20px}
+.ck-doc-table th.r,.ck-doc-table td.r{text-align:right}
+.ck-doc-table td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ck-doc-table tr[id]{scroll-margin:80px 0 56px}
+.ck-doc-table tr.ck-price_mismatch td{background:color-mix(in srgb,var(--bad-soft) 50%,transparent);cursor:pointer}
+.ck-doc-table tr.ck-needs_person td{background:color-mix(in srgb,var(--warn-soft) 55%,transparent);cursor:pointer}
+.ck-doc-table tr.ck-unknown_part td{background:color-mix(in srgb,var(--purple-soft) 55%,transparent);cursor:pointer}
+.ck-doc-table tr.cur td{box-shadow:inset 0 1.5px 0 var(--ink),inset 0 -1.5px 0 var(--ink)}
+.ck-desc{color:var(--ink2);font-size:12px;margin-top:1px}
+
+.ck-ref-badge{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:4px;color:#FFFDF9;font-family:var(--mono);font-size:11px;font-weight:600;flex:none}
+.ck-ref-badge.ck-price_mismatch{background:var(--bad)}
+.ck-ref-badge.ck-needs_person{background:var(--warn)}
+.ck-ref-badge.ck-unknown_part{background:var(--purple)}
+
+.ck-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ck-doc-table tr.ck-fold td{padding:0;border-bottom:1px solid var(--line)}
+.ck-doc-table tr.ck-fold button,.ck-foldall{display:block;width:100%;padding:7px 12px;font:inherit;font-size:11.5px;font-weight:500;color:var(--ink2);text-align:center;background:var(--panel2);border:0;cursor:pointer}
+.ck-doc-table tr.ck-fold button:hover,.ck-foldall:hover{color:var(--ink);background:var(--hover)}
+.ck-foldall{border-bottom:1px solid var(--line)}
+
+.ck-doc-ft{padding:16px 24px;background:var(--panel2);display:flex;justify-content:flex-end}
+.ck-totals{display:grid;grid-template-columns:auto auto;gap:4px 28px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--ink2)}
+.ck-tot-lbl,.ck-tot-val{padding-top:6px;margin-top:4px;border-top:1px solid var(--line2);font-size:13.5px;color:var(--ink)}
+
+/* Right Audit Sidebar on /invoices/[id] */
+.ck-side{border-left:1px solid var(--line);padding:20px 20px 32px;display:grid;gap:16px;align-content:start;min-height:100%}
+.ck-side-box{border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden}
+.ck-side-hd{padding:10px 14px;background:var(--panel2);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.ck-side-body{padding:12px 14px;display:grid;gap:10px}
+.ck-clear{margin:0;color:var(--ink2);font-size:12.5px;line-height:1.5}
+
+.ck-prob-list{display:grid;gap:8px}
+.ck-prob-item{font:inherit;text-align:left;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:5px;background:var(--bg);cursor:pointer;display:grid;gap:4px}
+.ck-prob-item:hover{background:var(--hover)}
+.ck-prob-item.cur{border-color:var(--ink);background:var(--sel);box-shadow:inset 2px 0 0 var(--ink)}
+.ck-prob-top{display:flex;align-items:center;gap:8px}
+.ck-prob-part{font-size:12px;font-weight:600;color:var(--ink)}
+.ck-prob-top .lbl{margin-left:auto}
+.ck-prob-desc{font-size:12px;color:var(--ink2)}
+.ck-prob-math{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:var(--ink2);margin-top:2px}
+.ck-prob-reason{font-size:11.5px;color:var(--ink3);margin-top:2px}
+
+.ck-dispute-pre{margin:0;padding:10px 12px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font-family:var(--mono);font-size:11.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
+
+@media (max-width:960px){
+  .o-triage,.ck-split{grid-template-columns:1fr}
+  .o-triage-rail{border-right:0;border-bottom:1px solid var(--line)}
+  .ck-side{border-left:0;border-top:1px solid var(--line)}
+  .ck-summary-strip{grid-template-columns:1fr 1fr}
+}
