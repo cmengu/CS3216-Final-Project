@@ -84,6 +84,144 @@ def _converter(ocr: bool):
     )
 
 
+@lru_cache(maxsize=1)
+def _rapid_ocr():
+    from rapidocr import RapidOCR
+
+    return RapidOCR()
+
+
+def _is_sideways_page(blocks: list[SourceBlock]) -> bool:
+    text_boxes = [
+        loc.bbox
+        for block in blocks
+        if "tables" not in block.id and len(block.text.strip()) >= 3
+        for loc in block.locations
+        if isinstance(loc.bbox, dict) and all(k in loc.bbox for k in ("l", "t", "r", "b"))
+    ]
+    if len(text_boxes) < 4:
+        return False
+    vertical = sum(
+        1
+        for bbox in text_boxes
+        if abs(float(bbox["t"]) - float(bbox["b"])) > abs(float(bbox["r"]) - float(bbox["l"])) * 2.0
+    )
+    return vertical > len(text_boxes) / 2
+
+
+def _encode_page_image(pil_image) -> str:
+    import base64
+    import io
+
+    image = pil_image.convert("RGB")
+    image.thumbnail((1400, 1400))
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=85)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _render_page_pil(path: Path, page_number: int, *, scale: float = 2.0):
+    import pypdfium2 as pdfium
+
+    pdf_doc = pdfium.PdfDocument(str(path))
+    try:
+        return pdf_doc[page_number - 1].render(scale=scale).to_pil()
+    finally:
+        pdf_doc.close()
+
+
+def _recover_sideways_page(
+    path: Path, page_number: int
+) -> tuple[str, list[SourceBlock], int, str] | None:
+    import numpy as np
+    from PIL import Image
+
+    pil_image = _render_page_pil(path, page_number, scale=2.0)
+    engine = _rapid_ocr()
+    keywords = ("INVOICE", "TOTAL", "AMOUNT", "DATE", "QUANTITY", "PRICE", "DESCRIPTION", "CODE")
+
+    best_out = None
+    best_image = None
+    best_score = -1
+    for transpose_op in (Image.Transpose.ROTATE_270, Image.Transpose.ROTATE_90):
+        rotated = pil_image.transpose(transpose_op)
+        out = engine(np.array(rotated))
+        txts = getattr(out, "txts", None)
+        boxes = getattr(out, "boxes", None)
+        if txts is None or boxes is None or len(txts) == 0 or len(boxes) == 0:
+            continue
+        upper_blob = " ".join(txts).upper()
+        kw_hits = sum(1 for kw in keywords if kw in upper_blob)
+        score = kw_hits * 1000 + len(txts)
+        if score > best_score:
+            best_score = score
+            best_out = out
+            best_image = rotated
+        if kw_hits >= 4:
+            break
+
+    if best_out is None or best_image is None:
+        return None
+
+    width, height = best_image.size
+    items = []
+    for box, text in zip(best_out.boxes, best_out.txts):
+        cleaned = (text or "").strip()
+        if not cleaned:
+            continue
+        xs = [float(pt[0]) for pt in box]
+        ys = [float(pt[1]) for pt in box]
+        items.append(
+            {
+                "text": cleaned,
+                "x_min": min(xs),
+                "x_max": max(xs),
+                "y_min": min(ys),
+                "y_max": max(ys),
+                "y_center": sum(ys) / len(ys),
+            }
+        )
+    if not items:
+        return None
+
+    items.sort(key=lambda item: item["y_center"])
+    rows: list[list[dict]] = []
+    for item in items:
+        if not rows or abs(item["y_center"] - rows[-1][0]["y_center"]) > 18.0:
+            rows.append([item])
+        else:
+            rows[-1].append(item)
+
+    lines_md: list[str] = []
+    blocks: list[SourceBlock] = []
+    for row_idx, row in enumerate(rows, start=1):
+        row.sort(key=lambda item: item["x_min"])
+        line_text = " | ".join(item["text"] for item in row)
+        lines_md.append(line_text)
+        blocks.append(
+            SourceBlock(
+                id=f"page-{page_number}:#/upright/{row_idx}",
+                text=line_text,
+                locations=[
+                    Location(
+                        page=page_number,
+                        bbox={
+                            "l": min(item["x_min"] for item in row),
+                            "t": min(item["y_min"] for item in row),
+                            "r": max(item["x_max"] for item in row),
+                            "b": max(item["y_max"] for item in row),
+                            "coord_origin": "TOPLEFT",
+                        },
+                        page_width=float(width),
+                        page_height=float(height),
+                    )
+                ],
+            )
+        )
+    return "\n".join(lines_md), blocks, len(items), _encode_page_image(best_image)
+
+
 def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
     document_hash, page_count = validate_pdf(path)
     from docling.datamodel.base_models import ConversionStatus
@@ -91,6 +229,7 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
 
     source = PdfReader(path)
     blocks, pages, documents = [], [], []
+    page_images: dict[str, str] = {}
     # CPU models are cached and used serially. Each textless page takes the full-page OCR
     # branch, so ocr_ran describes an executed stage, not merely enabled configuration.
     with _conversion_lock:
@@ -114,12 +253,27 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
                 for location in block.locations:
                     location.page = index
             ocr_cells = sum(1 for p in result.pages for cell in p.cells if cell.from_ocr)
+            markdown = result.document.export_to_markdown()
+            if use_ocr and _is_sideways_page(page_blocks):
+                recovered = _recover_sideways_page(path, index)
+                if recovered is not None:
+                    upright_md, upright_blocks, upright_cells, image_data_url = recovered
+                    markdown = upright_md
+                    page_blocks = upright_blocks
+                    ocr_cells = max(ocr_cells, upright_cells)
+                    page_images[str(index)] = image_data_url
+            elif use_ocr:
+                try:
+                    page_images[str(index)] = _encode_page_image(
+                        _render_page_pil(path, index, scale=1.5)
+                    )
+                except Exception:
+                    pass
             warnings = []
             if not page_blocks:
                 warnings.append("No readable content on this page; human review required")
             if use_ocr and not ocr_cells:
                 warnings.append("OCR produced no recognized text")
-            markdown = result.document.export_to_markdown()
             pages.append(
                 PageRead(
                     page_number=index,
@@ -136,6 +290,9 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             documents.append({"page_number": index, "document": result.document.export_to_dict()})
     if not blocks:
         raise ValueError("No readable text or tables; retry with --force-ocr or review manually")
+    docling_payload: dict = {"page_documents": documents}
+    if page_images:
+        docling_payload["page_images"] = page_images
     return ParsedDocument(
         document_hash=document_hash,
         filename=path.name,
@@ -144,5 +301,6 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
         markdown="\n\n".join(f"<!-- Page {p.page_number} -->\n{p.markdown}" for p in pages),
         blocks=blocks,
         pages=pages,
-        docling_document={"page_documents": documents},
+        docling_document=docling_payload,
     )
+

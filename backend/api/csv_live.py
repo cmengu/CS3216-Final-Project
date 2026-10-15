@@ -11,8 +11,9 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
+from check import check as check_standard, load_price_sheet
 from extract.context import CheckingInvoice, CheckingLine
-from extract.invoice import extract_with_usage
+from extract.invoice import extract_with_usage, refine_with_usage
 from read.models import ParsedDocument
 from schema import InvoiceRecord
 
@@ -20,6 +21,7 @@ from .contracts import CheckResult, LineResult
 
 D = Decimal
 TOLERANCE = D("0.005")
+DUMMY_SHEET = Path(__file__).resolve().parents[2] / "data/dummy/price-sheet.xlsx"
 
 CONTEXT_PROMPT = """
 Also copy the purchase_order (PO/order reference), unit, tax_rate and discount_rate.
@@ -28,7 +30,8 @@ into discount_amount. If only the amount is printed, discount_rate is null (not 
 If no discount is printed, both discount fields are null; the checker verifies the arithmetic.
 An explicit US$ means USD and an explicit S$ means SGD; a bare $ remains ambiguous.
 An explicitly labelled 'Article no.' or 'Stock Code' is a printed part_number even when
-it appears inside the description column. Do not use an unlabelled row/mark number as a SKU.
+it appears inside the description column. Do not use an unlabelled row/mark number (such as
+101-1 or 102-1) as a SKU/part_number.
 For line currency, use the explicit currency of that line's unit price, otherwise the
 explicit invoice currency. exchange_rate is the printed multiplier from line currency
 to invoice currency; null if no conversion is printed. Never calculate converted prices.
@@ -40,14 +43,20 @@ Do not invent product codes for freight, courier, or service descriptions withou
 The invoice line_total is the printed billed amount in invoice currency after discount.
 Return one row per charge, combining wrapped descriptions across OCR table rows.
 Do not repeat header, subtotal, balance due or tax rows as charges. Preserve repeated items.
-Add warnings for actual ambiguity, damaged OCR or uncertain row boundaries. Do not warn
-merely because a flat fee lacks quantity/price, a discount is an amount instead of a rate,
-or a document has multiple pages. Never use non-numeric text in numeric fields: use null.
+Add warnings ONLY when a value cannot be determined or arithmetic cannot be reconciled. Do not
+warn when wrapped or merged OCR table rows can be unambiguously paired in sequence and reconcile
+with printed line totals, nor when a flat fee lacks quantity/price, a discount is an amount
+instead of a rate, or a document has multiple pages. Never use non-numeric text in numeric fields: use null.
 """
 
 
 def normalized(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").strip()).casefold()
+
+
+def normalized_description(value: str | None) -> str:
+    text = re.sub(r'(\d)\s*(?:""|["”″])', r"\1 inch ", value or "")
+    return normalized(text)
 
 
 def money(value: Decimal) -> Decimal:
@@ -148,21 +157,30 @@ class PriceSheet:
         ]
         if not scoped:
             return review("No valid price agreement for supplier, PO, currency and date")
+        part_code = (
+            None
+            if not line.part_number or re.fullmatch(r"\d+(?:-\d+)?", line.part_number.strip())
+            else line.part_number
+        )
         candidates = [
             r
             for r in scoped
             if (
                 re.sub(r"\s+", "", r["item"]).casefold()
-                == re.sub(r"\s+", "", line.part_number).casefold()
-                if line.part_number
-                else normalized(r["description"]) == normalized(line.description)
+                == re.sub(r"\s+", "", part_code).casefold()
+                if part_code
+                else normalized_description(r["description"])
+                == normalized_description(line.description)
             )
         ]
         if not candidates:
             return review(
                 "No exact item or code-free description match in the agreement", "unknown_part"
             )
-        unit = line.unit or ("JOB" if line.flat_charge else None)
+        is_flat = line.flat_charge or (
+            line.unit is None and line.quantity is None and line.unit_price is None
+        )
+        unit = line.unit or ("JOB" if is_flat else None)
         candidates = [r for r in candidates if normalized(r["uom"]) == normalized(unit)]
         if len(candidates) != 1:
             return review("Missing/mismatched unit or ambiguous price agreement")
@@ -181,7 +199,7 @@ class PriceSheet:
         quantity = D(line.quantity) if line.quantity is not None else None
         price = D(line.unit_price) if line.unit_price is not None else None
         billed_flat_amount = False
-        if line.flat_charge and master["uom"] == "JOB":
+        if is_flat and master["uom"] == "JOB":
             quantity = quantity if quantity is not None else D(1)
             # A flat billed amount is a per-JOB price only for one undiscounted job.
             if price is None and quantity == 1 and discount == 0 and line.line_total is not None:
@@ -189,7 +207,7 @@ class PriceSheet:
                 currency = invoice.currency
                 billed_flat_amount = True
             else:
-                currency = line.currency
+                currency = line.currency or invoice.currency
         else:
             currency = line.currency
         if price is None or quantity is None or quantity <= 0 or price < 0:
@@ -236,6 +254,150 @@ class PriceSheet:
             overcharge=str(money(overcharge)),
         )
 
+    def catalog_grounding_hints(self, invoice: CheckingInvoice) -> list[dict[str, str]]:
+        """Return strictly price-free catalog items (never unit_price, discount, or tax)."""
+        po_norm = normalized(invoice.purchase_order)
+        sup_norm = normalized(invoice.supplier_name)
+        matched = [
+            r
+            for r in self.rows
+            if (po_norm and normalized(r["po"]) == po_norm)
+            or (sup_norm and normalized(r["supplier"]) == sup_norm)
+        ]
+        seen = set()
+        hints = []
+        for r in matched:
+            sig = (r["supplier"], r["po"], r["item"], r["description"], r["uom"])
+            if sig not in seen:
+                seen.add(sig)
+                hints.append(
+                    {
+                        "supplier": r["supplier"],
+                        "po": r["po"],
+                        "item": r["item"],
+                        "description": r["description"],
+                        "uom": r["uom"],
+                    }
+                )
+        return hints
+
+    def verify_extraction(self, invoice: CheckingInvoice) -> list[str]:
+        """Deterministic self-verification critic for agentic reflection."""
+        critique: list[str] = []
+        if not invoice.supplier_name:
+            critique.append("Header supplier_name is missing; check printed supplier header.")
+        if not invoice.invoice_number:
+            critique.append("Header invoice_number is missing; check printed invoice number.")
+        if not invoice.invoice_date:
+            critique.append("Header invoice_date is missing or not in YYYY-MM-DD format.")
+        if not invoice.currency:
+            critique.append("Header currency is missing; check explicit SGD/USD/S$/US$ markers.")
+        if not invoice.lines:
+            critique.append("No line items were extracted from the invoice.")
+
+        hints = self.catalog_grounding_hints(invoice)
+        known_items = {re.sub(r"\s+", "", h["item"]).casefold() for h in hints}
+        known_descs = {normalized_description(h["description"]) for h in hints}
+        need_catalog_hint = False
+
+        for idx, line in enumerate(invoice.lines):
+            label = line.part_number or line.description or f"row {idx + 1}"
+            is_flat = line.flat_charge or (
+                line.unit is None and line.quantity is None and line.unit_price is None
+            )
+            if not line.description:
+                critique.append(f"Line {idx + 1} is missing its item description.")
+            if line.line_total is None:
+                critique.append(f"Line {idx + 1} ({label}) is missing line_total.")
+            if not is_flat and (line.quantity is None or line.unit_price is None):
+                critique.append(
+                    f"Line {idx + 1} ({label}) is missing quantity or unit_price."
+                )
+            elif (
+                line.quantity is not None
+                and line.unit_price is not None
+                and line.line_total is not None
+            ):
+                qty = D(line.quantity)
+                price = D(line.unit_price)
+                if (
+                    line.currency
+                    and invoice.currency
+                    and line.currency != invoice.currency
+                    and line.exchange_rate is not None
+                ):
+                    price *= D(line.exchange_rate)
+                disc_rate = D(line.discount_rate) if line.discount_rate is not None else D(0)
+                disc_amt = (
+                    D(line.discount_amount)
+                    if line.discount_amount is not None
+                    else money(qty * price * disc_rate)
+                )
+                expected_line = money(qty * price) - disc_amt
+                billed_line = D(line.line_total)
+                if abs(expected_line - billed_line) > D("0.01"):
+                    hint_ratio = ""
+                    if price > 0:
+                        implied_qty = billed_line / price
+                        if implied_qty == implied_qty.to_integral_value():
+                            hint_ratio = f" (note: {billed_line} / {price} = {int(implied_qty)})"
+                    critique.append(
+                        f"Line {idx + 1} ({label}): quantity ({line.quantity}) * unit_price "
+                        f"({line.unit_price}) minus discount gives {expected_line}, which does not "
+                        f"reconcile with printed line_total ({line.line_total}){hint_ratio}. "
+                        f"Re-read the printed quantity, unit_price, and line_total."
+                    )
+
+            if hints:
+                part_code = (
+                    None
+                    if not line.part_number
+                    or re.fullmatch(r"\d+(?:-\d+)?", line.part_number.strip())
+                    else re.sub(r"\s+", "", line.part_number).casefold()
+                )
+                desc_norm = normalized_description(line.description)
+                if part_code and part_code not in known_items:
+                    need_catalog_hint = True
+                    critique.append(
+                        f"Line {idx + 1}: extracted part_number '{line.part_number}' does not match "
+                        f"any known catalog code for this supplier/PO; check for OCR typos."
+                    )
+                elif not part_code and desc_norm not in known_descs:
+                    need_catalog_hint = True
+                    critique.append(
+                        f"Line {idx + 1}: extracted description '{line.description}' does not match "
+                        f"any known catalog description for this supplier/PO; check for garbled OCR."
+                    )
+
+        amounts = [D(line.line_total) for line in invoice.lines if line.line_total is not None]
+        if invoice.lines and len(amounts) == len(invoice.lines) and invoice.subtotal is not None:
+            if abs(sum(amounts, D(0)) - D(invoice.subtotal)) > D("0.01"):
+                critique.append(
+                    f"Sum of line_total values ({sum(amounts, D(0))}) does not reconcile with "
+                    f"printed subtotal ({invoice.subtotal}). Check for missed, duplicated, or misread lines."
+                )
+        if all(x is not None for x in (invoice.subtotal, invoice.tax, invoice.invoice_total)):
+            if abs(D(invoice.subtotal) + D(invoice.tax) - D(invoice.invoice_total)) > D("0.01"):
+                critique.append(
+                    f"Printed subtotal ({invoice.subtotal}) + tax ({invoice.tax}) does not "
+                    f"reconcile with invoice_total ({invoice.invoice_total})."
+                )
+        if invoice.warnings:
+            critique.append(
+                f"Initial extraction recorded warnings {invoice.warnings}; verify against the "
+                f"document text/image and clear warnings if all fields are resolved."
+            )
+        if need_catalog_hint and hints:
+            catalog_lines = [
+                f"  * item={h['item']} | description={h['description']} | uom={h['uom']}"
+                for h in hints
+            ]
+            critique.append(
+                "Known catalog items (price-free) for this supplier/PO to help disambiguate OCR typos:\n"
+                + "\n".join(catalog_lines)
+            )
+        return critique
+
 
 class LiveStages:
     mode = "live"
@@ -245,6 +407,7 @@ class LiveStages:
             raise ValueError("Set OPENAI_MODEL for live extraction")
         self.sheet = PriceSheet(price_sheet)
         self.price_sheet_version = self.sheet.version
+        self._fallback_sheet = load_price_sheet(DUMMY_SHEET) if DUMMY_SHEET.is_file() else None
         self.model, self.client = model, client
 
     def extract(self, document: ParsedDocument) -> CheckingInvoice:
@@ -258,10 +421,39 @@ class LiveStages:
         record = result.record
         if not isinstance(record, CheckingInvoice):
             raise ValueError("Live extraction returned no checking context")
+        critique = self.sheet.verify_extraction(record)
+        if critique:
+            try:
+                refined = refine_with_usage(
+                    document,
+                    record,
+                    critique,
+                    client=self.client,
+                    model=self.model,
+                    record_type=CheckingInvoice,
+                    extra_instructions=CONTEXT_PROMPT,
+                ).record
+                if isinstance(refined, CheckingInvoice) and len(
+                    self.sheet.verify_extraction(refined)
+                ) <= len(critique):
+                    record = refined
+            except ValueError:
+                pass
         record.warnings.extend(w for page in document.pages for w in page.warnings)
         return record
 
     def check(self, invoice: InvoiceRecord) -> CheckResult:
         if not isinstance(invoice, CheckingInvoice):
             raise ValueError("Live checking requires printed PO, unit and currency context")
+        if (
+            self._fallback_sheet is not None
+            and invoice.purchase_order is None
+            and not any(
+                normalized(r["supplier"]) == normalized(invoice.supplier_name)
+                for r in self.sheet.rows
+            )
+        ):
+            result = check_standard(invoice, self._fallback_sheet)
+            return result.model_copy(update={"price_sheet_version": self.price_sheet_version})
         return self.sheet.check(invoice)
+

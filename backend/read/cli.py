@@ -12,5 +12,5 @@ def main():
     args = parser.parse_args()
     document = read_pdf(args.input, force_ocr=args.force_ocr)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(document.model_dump_json(indent=2) + "\n")
-    print(f"Read {document.page_count} pages → {args.out}")
+    args.out.write_text(document.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    print(f"Read {document.page_count} pages -> {args.out}")

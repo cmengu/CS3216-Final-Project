@@ -40,6 +40,15 @@ class ExtractedInvoice(BaseModel):
     usage: TokenUsage
 
 
+REFLECTION_PROMPT = """
+You are performing a second-pass verification and self-correction of an initial invoice extraction.
+Review the original page text (and attached page image, if provided), the initial draft JSON, and the verification critique.
+Correct any OCR misreads or extraction mistakes (such as misread digits on rotated scans, garbled item descriptions, split/merged table rows, or missed printed codes/units) so every field matches the printed invoice.
+Never calculate or fabricate numbers that are not printed. If the printed invoice itself genuinely contains an arithmetic mistake, keep the exact printed numbers.
+If all issues are resolved after correcting OCR misreads, return an empty warnings list.
+"""
+
+
 def extract(document: ParsedDocument, *, client=None, model: str | None = None) -> InvoiceRecord:
     return extract_with_usage(document, client=client, model=model).record
 
@@ -54,19 +63,108 @@ def extract_with_usage(
 ) -> ExtractedInvoice:
     text = _page_text(document)
     selected = _model_name(model)
+    options = _reasoning_options()
+    return _call_parse(
+        client=client,
+        selected=selected,
+        system_content=SYSTEM_PROMPT + extra_instructions,
+        user_content=text,
+        record_type=record_type,
+        options=options,
+    )
+
+
+def refine_with_usage(
+    document: ParsedDocument,
+    draft: InvoiceRecord,
+    critique: list[str],
+    *,
+    client=None,
+    model: str | None = None,
+    record_type: type[InvoiceRecord] = InvoiceRecord,
+    extra_instructions: str = "",
+    include_page_images: bool = True,
+) -> ExtractedInvoice:
+    text = _page_text(document)
+    selected = _model_name(model)
+    options = _reasoning_options()
+    system_content = SYSTEM_PROMPT + extra_instructions + REFLECTION_PROMPT
+    critique_block = "\n".join(f"- {item}" for item in critique)
+    reflection_text = (
+        f"{text}\n\n"
+        f"--- INITIAL EXTRACTED DRAFT ---\n{draft.model_dump_json(indent=2)}\n\n"
+        f"--- VERIFICATION CRITIQUE ---\n{critique_block}"
+    )
+    page_images = (
+        document.docling_document.get("page_images", {})
+        if include_page_images and isinstance(document.docling_document, dict)
+        else {}
+    )
+    if page_images:
+        ordered_urls = [
+            url
+            for _, url in sorted(
+                page_images.items(),
+                key=lambda kv: int(kv[0]) if str(kv[0]).isdigit() else 0,
+            )
+            if isinstance(url, str) and url.startswith("data:image/")
+        ]
+    else:
+        ordered_urls = []
+
+    if ordered_urls:
+        multimodal_content = [
+            {"type": "input_text", "text": reflection_text},
+            *[{"type": "input_image", "image_url": url} for url in ordered_urls[:4]],
+        ]
+        try:
+            return _call_parse(
+                client=client,
+                selected=selected,
+                system_content=system_content,
+                user_content=multimodal_content,
+                record_type=record_type,
+                options=options,
+            )
+        except ValueError:
+            pass
+
+    return _call_parse(
+        client=client,
+        selected=selected,
+        system_content=system_content,
+        user_content=reflection_text,
+        record_type=record_type,
+        options=options,
+    )
+
+
+def _reasoning_options() -> dict:
     options = {}
     effort = os.environ.get("OPENAI_REASONING_EFFORT", "").strip()
     if effort:
         if effort not in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
             raise ValueError("Invalid OPENAI_REASONING_EFFORT")
         options["reasoning"] = {"effort": effort}
+    return options
+
+
+def _call_parse(
+    *,
+    client,
+    selected: str,
+    system_content: str,
+    user_content,
+    record_type: type[InvoiceRecord],
+    options: dict,
+) -> ExtractedInvoice:
     try:
         response = _client(client).responses.parse(
             model=selected,
             store=False,
             input=[
-                {"role": "system", "content": SYSTEM_PROMPT + extra_instructions},
-                {"role": "user", "content": text},
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
             text_format=record_type,
             **options,
@@ -89,6 +187,7 @@ def extract_with_usage(
             "The model's answer did not match the invoice field list; no invoice was accepted"
         ) from exc
     return ExtractedInvoice(record=record, usage=_token_usage(response, selected))
+
 
 
 def _page_text(document: ParsedDocument) -> str:

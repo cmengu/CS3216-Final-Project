@@ -28,7 +28,8 @@ class Store:
                 id TEXT PRIMARY KEY, filename TEXT NOT NULL, document_hash TEXT NOT NULL,
                 status TEXT NOT NULL, mode TEXT NOT NULL, created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL, error TEXT, price_sheet_version TEXT NOT NULL,
-                document TEXT, invoice TEXT, check_result TEXT
+                document TEXT, invoice TEXT, check_result TEXT,
+                outcome TEXT, outcome_reason TEXT, decided_at TEXT
             )""")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS invoice_time ON invoices(created_at DESC, id DESC)"
