@@ -26,6 +26,16 @@ class CheckResult(Contract):
     warnings: list[str]
 
 
+Outcome = Literal["ready_to_pay", "ready_to_pay_anyway", "raise_with_supplier"]
+
+
+class OutcomeRequest(Contract):
+    """The AP clerk's decision on a finished invoice. A null outcome clears it."""
+
+    outcome: Outcome | None
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class InvoiceSummary(Contract):
     id: str
     filename: str
@@ -36,6 +46,9 @@ class InvoiceSummary(Contract):
     updated_at: str
     error: str | None
     price_sheet_version: str
+    outcome: Outcome | None = None
+    outcome_reason: str | None = None
+    decided_at: str | None = None
 
 
 class SavedInvoice(InvoiceSummary):

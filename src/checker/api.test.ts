@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { decideInvoice, decisionFailure, listInvoices, uploadFailure, uploadInvoice, uploadProblem } from "./api";
-import type { ServiceInvoice } from "./convert";
+import { decideInvoice, decisionFailure, getInvoice, listInvoices, retryInvoice, uploadFailure, uploadInvoice, uploadProblem } from "./api";
+import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 
 const id = "11111111-1111-1111-1111-111111111111";
 
@@ -32,6 +32,19 @@ afterEach(() => {
 });
 
 describe("listInvoices", () => {
+  it("keeps failed processing attempts from the service", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.includes("/invoices?") ? [{ id }] : { ...saved("Unread supplier", null), status: "failed", check: null, error: "reading: No readable text" },
+    ), { status: 200 })));
+    const list = await listInvoices();
+    expect(list).toHaveLength(1);
+    expect(list[0].state).toBe("failed");
+  });
+
+  it("keeps an empty service list empty", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+    expect(await listInvoices()).toEqual([]);
+  });
   it("reads each summary in full, because a summary has no supplier or overcharge", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/invoices?")) return new Response(JSON.stringify([{ id }]), { status: 200 });
@@ -77,6 +90,18 @@ describe("uploadProblem", () => {
 });
 
 describe("uploadInvoice", () => {
+  it("posts the PDF as multipart file to the invoice service", async () => {
+    const file = new File(["%PDF"], "upload.pdf", { type: "application/pdf" });
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      new Response(JSON.stringify(saved("Supplier", "0.00")), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await uploadInvoice(file);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/invoices$/);
+    expect(init?.method).toBe("POST");
+    expect((init?.body as FormData).get("file")).toBe(file);
+    expect(init?.headers).toBeUndefined();
+  });
   it("names the three refusals in one sentence each", () => {
     expect(uploadFailure(429)).toBe("Another invoice is being checked. Try again in a moment.");
     expect(uploadFailure(503)).toBe("The checking service is not ready.");
@@ -118,6 +143,31 @@ describe("uploadInvoice", () => {
     await expect(uploadInvoice(new File(["%PDF"], "invoice-02.pdf", { type: "application/pdf" }))).rejects.toThrow(
       "This invoice could not be checked.",
     );
+  });
+});
+
+describe("service invoice retrieval", () => {
+  it("does not invent a demo record or call the service for a sample ID", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getInvoice("sample-invoice")).rejects.toThrow("No invoice with this link");
+    await expect(decideInvoice("sample-invoice", "ready_to_pay")).rejects.toThrow("No invoice with this link");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("retries by fetching the original PDF and posting it as a new invoice", async () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url) =>
+      url.endsWith("/file")
+        ? new Response("%PDF-original", { status: 200, headers: { "Content-Type": "application/pdf" } })
+        : new Response(JSON.stringify(saved("Supplier", "0.00")), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const invoice = toSupplierInvoice(saved("Supplier", "0.00"));
+    await retryInvoice(invoice);
+    expect(fetchMock.mock.calls[0][0]).toMatch(new RegExp(`/invoices/${id}/file$`));
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/invoices$/);
+    expect(fetchMock.mock.calls[1][1]?.method).toBe("POST");
+    const file = (fetchMock.mock.calls[1][1]?.body as FormData).get("file") as File;
+    expect(await file.text()).toBe("%PDF-original");
   });
 });
 

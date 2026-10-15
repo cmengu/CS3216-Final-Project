@@ -227,3 +227,124 @@ def test_dummy_set_truth_and_scan_integrity():
                 assert case["invoice"]["invoice_number"] in pages[0].extract_text()
     assert len(PdfReader(DATA / "invoice-10.pdf").pages) > 1
     assert any(p["unit_price"] == "0.0047" for p in CATALOG)
+
+
+def _upload(client, name):
+    data = (DATA / name).read_bytes()
+    return client.post("/invoices", files={"file": (name, data, "application/pdf")}).json()
+
+
+def _decide(client, saved, outcome, reason=None):
+    return client.put(
+        f"/invoices/{saved['id']}/outcome", json={"outcome": outcome, "reason": reason}
+    )
+
+
+def test_an_outcome_is_saved_listed_and_kept_across_restart(tmp_path):
+    stages = FixtureStages(DATA)
+    with TestClient(
+        create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    ) as client:
+        clean = _upload(client, "invoice-01.pdf")
+        assert (clean["outcome"], clean["outcome_reason"], clean["decided_at"]) == (None,) * 3
+        response = _decide(client, clean, "ready_to_pay")
+        assert response.status_code == 200, response.text
+        decided = response.json()
+        assert decided["outcome"] == "ready_to_pay" and decided["decided_at"]
+        assert decided["updated_at"] == clean["updated_at"]
+        assert client.get("/invoices").json()[0]["outcome"] == "ready_to_pay"
+
+    with TestClient(
+        create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    ) as c:
+        assert c.get(f"/invoices/{clean['id']}").json() == decided
+
+
+def test_clearing_an_outcome_is_undo(tmp_path):
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        over = _upload(client, "invoice-02.pdf")
+        assert _decide(client, over, "raise_with_supplier").json()["outcome"] == (
+            "raise_with_supplier"
+        )
+        cleared = _decide(client, over, None).json()
+        assert (cleared["outcome"], cleared["outcome_reason"], cleared["decided_at"]) == (None,) * 3
+        assert _decide(client, over, None, "why").status_code == 422
+
+
+def test_ready_to_pay_only_when_checked_in_full_and_every_line_matches(tmp_path):
+    def unreadable(*args, **kwargs):
+        raise ValueError("No readable text or tables")
+
+    stages = FixtureStages(DATA)
+    with TestClient(
+        create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    ) as client:
+        for name in ("invoice-02.pdf", "invoice-03.pdf", "invoice-05.pdf", "invoice-08.pdf"):
+            response = _decide(client, _upload(client, name), "ready_to_pay")
+            assert response.status_code == 409, name
+            assert "every line matching" in response.json()["detail"]
+    with TestClient(create_app(storage_dir=tmp_path, stages=stages, reader=unreadable)) as client:
+        assert _decide(client, _upload(client, "invoice-01.pdf"), "ready_to_pay").status_code == 409
+
+
+def test_ready_to_pay_anyway_needs_a_reason_and_a_finished_invoice(tmp_path):
+    def unreadable(*args, **kwargs):
+        raise ValueError("No readable text or tables")
+
+    stages = FixtureStages(DATA)
+    with TestClient(
+        create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    ) as client:
+        over = _upload(client, "invoice-02.pdf")
+        for reason in (None, "", "   "):
+            response = _decide(client, over, "ready_to_pay_anyway", reason)
+            assert response.status_code == 422
+            assert response.json()["detail"] == "Ready to pay anyway needs a short reason"
+        assert _decide(client, over, "ready_to_pay_anyway", "x" * 501).status_code == 422
+        saved = _decide(client, over, "ready_to_pay_anyway", "  Credit note agreed  ").json()
+        assert saved["outcome_reason"] == "Credit note agreed"
+
+        app = client.app
+        app.state.store.insert("00000000-0000-4000-8000-000000000001", "x.pdf", "h", "fixture", "v")
+        stuck = {"id": "00000000-0000-4000-8000-000000000001"}
+        assert _decide(client, stuck, "ready_to_pay_anyway", "Checked by hand").status_code == 409
+
+    with TestClient(create_app(storage_dir=tmp_path, stages=stages, reader=unreadable)) as client:
+        failed = _upload(client, "invoice-01.pdf")
+        response = _decide(client, failed, "ready_to_pay_anyway", "Checked by hand")
+        assert response.status_code == 200 and response.json()["status"] == "failed"
+
+
+def test_raise_with_supplier_needs_a_line_over_the_sheet_price(tmp_path):
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        for name in ("invoice-01.pdf", "invoice-03.pdf", "invoice-08.pdf"):
+            response = _decide(client, _upload(client, name), "raise_with_supplier")
+            assert response.status_code == 409, name
+        assert _decide(client, _upload(client, "invoice-06.pdf"), "raise_with_supplier").is_success
+        assert _decide(client, {"id": "not-an-id"}, "ready_to_pay").status_code == 422
+        missing = {"id": "00000000-0000-0000-0000-000000000000"}
+        assert _decide(client, missing, "ready_to_pay").status_code == 404
+        assert _decide(client, _upload(client, "invoice-01.pdf"), "paid").status_code == 422
+
+
+def test_a_database_from_before_outcomes_gains_the_columns(tmp_path):
+    import sqlite3
+
+    with sqlite3.connect(tmp_path / "invoices.sqlite3") as db:
+        db.execute("""CREATE TABLE invoices (
+            id TEXT PRIMARY KEY, filename TEXT NOT NULL, document_hash TEXT NOT NULL,
+            status TEXT NOT NULL, mode TEXT NOT NULL, created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL, error TEXT, price_sheet_version TEXT NOT NULL,
+            document TEXT, invoice TEXT, check_result TEXT
+        )""")
+        db.execute(
+            "INSERT INTO invoices VALUES ('a','x.pdf','h','failed','fixture','t','t','e','v',"
+            "NULL,NULL,NULL)"
+        )
+    db.close()
+    store = Store(tmp_path)
+    assert store.list(10, 0)[0].outcome is None
+    store.decide("a", "ready_to_pay_anyway", "Checked by hand")
+    assert store.get("a").outcome_reason == "Checked by hand"
