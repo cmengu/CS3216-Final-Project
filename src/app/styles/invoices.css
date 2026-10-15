@@ -9,6 +9,17 @@
 
 .ck-workspace{display:flex;flex-direction:column;min-height:calc(100dvh - 62px)}
 .ck-workspace.drag{outline:2px dashed var(--accent);outline-offset:-8px}
+.ck-upload-panel{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 24px 12px;padding:20px;border:1px dashed var(--accent);border-radius:12px;background:var(--panel);scroll-margin-top:90px}
+.ck-upload-panel>div{min-width:0}
+.ck-upload-panel h2{margin:0 0 6px;font-size:16px;font-weight:600;color:var(--ink)}
+.ck-upload-panel p{margin:0;max-width:65ch;color:var(--ink2);font-size:13px;line-height:1.5}
+.ck-upload-panel>.btn{flex-shrink:0;min-height:42px;padding:10px 16px}
+.ck-mode-caption{margin:0 24px 12px;font-size:12px;color:var(--ink3)}
+@media(max-width:700px){
+  .ck-upload-panel{flex-direction:column;align-items:stretch;margin:16px;padding:16px}
+  .ck-upload-panel>.btn{justify-content:center;width:100%}
+  .ck-mode-caption{margin:0 16px 12px}
+}
 .ck-banner-status{padding:8px 24px;background:var(--info-soft);color:var(--info);border-bottom:1px solid var(--line);font-size:12.5px;font-weight:500}
 
 /* Notice dot for overcharge in 1-line bar */

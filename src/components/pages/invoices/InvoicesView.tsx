@@ -9,12 +9,12 @@
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
 import { decideInvoice, invoiceFileUrl, reloadInvoices, rememberInvoice, retryInvoice, uploadInvoice, uploadProblem, useInvoices } from "@/checker/api";
-import { choices, csvName, decidedLabel, disputeNote, OUTCOME, overSheet, REASON_MAX, readyToPay, readyToPayCsv } from "@/checker/review";
+import { choices, csvName, decidedLabel, disputeNote, OUTCOME, REASON_MAX, readyToPay, readyToPayCsv } from "@/checker/review";
 import {
   amount,
   failure,
@@ -31,7 +31,7 @@ import {
   unitPrice,
   uploadedLabel,
 } from "@/checker/summary";
-import type { InvoiceLine, Outcome, SupplierInvoice } from "@/checker/types";
+import type { Outcome, SupplierInvoice } from "@/checker/types";
 
 export type InvoiceDutyMode = "ledger" | "audit" | "payable";
 export type LedgerFilter = "all" | "pending" | "overcharged" | "decided";
@@ -115,6 +115,7 @@ export function InvoicesView() {
   // Override reason state inside Audit Queue workbench
   const [askingOverride, setAskingOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [formInvoiceId, setFormInvoiceId] = useState<string | null>(null);
   const [savingDecision, setSavingDecision] = useState(false);
 
   const [sendingName, setSendingName] = useState<string | null>(null);
@@ -136,11 +137,14 @@ export function InvoicesView() {
     pendingList[0] ??
     null;
 
-  useEffect(() => {
+  // Reset the form before displaying a different invoice, without an extra effect render.
+  const currentInvoiceId = activeAuditInvoice?.id ?? null;
+  if (formInvoiceId !== currentInvoiceId) {
+    setFormInvoiceId(currentInvoiceId);
     setAskingOverride(false);
     setOverrideReason("");
     setShowAllLines(false);
-  }, [activeAuditInvoice?.id]);
+  }
 
   // Unique supplier names for the ledger filter
   const suppliers = Array.from(
@@ -241,7 +245,6 @@ export function InvoicesView() {
         className="ck-hd"
         acts={
           <div className="filt">
-            <span className="o-role-hint">{MODE_CAPTIONS[mode]}</span>
             {mode === "ledger" ? (
               <span className="fw">
                 <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} aria-label="Filter by supplier">
@@ -255,18 +258,6 @@ export function InvoicesView() {
                 <Icon name="chevDown" />
               </span>
             ) : null}
-            <input
-              ref={fileInput}
-              className="ck-file"
-              type="file"
-              accept="application/pdf,.pdf"
-              hidden
-              onChange={(event) => void send(event.target.files)}
-            />
-            <button className="btn p" disabled={busy} onClick={() => fileInput.current?.click()}>
-              <Icon name="arrowUp" />
-              {busy ? "Checking…" : "Upload Invoice PDF"}
-            </button>
           </div>
         }
       >
@@ -321,6 +312,33 @@ export function InvoicesView() {
           void send(event.dataTransfer.files);
         }}
       >
+        <section id="upload" className="ck-upload-panel" aria-labelledby="ck-upload-title" aria-busy={busy}>
+          <div>
+            <h2 id="ck-upload-title">Upload an invoice</h2>
+            <p id="ck-upload-help">Choose a PDF or drop it here to extract its fields and check prices. One PDF at a time, up to 20 MB.</p>
+          </div>
+          <input
+            ref={fileInput}
+            className="ck-file"
+            type="file"
+            accept="application/pdf,.pdf"
+            aria-label="Invoice PDF"
+            disabled={busy}
+            hidden
+            onChange={(event) => void send(event.target.files)}
+          />
+          <button
+            type="button"
+            className="btn p"
+            disabled={busy}
+            aria-describedby="ck-upload-help"
+            onClick={() => fileInput.current?.click()}
+          >
+            <Icon name="arrowUp" />
+            {busy ? "Processing PDF…" : "Choose PDF & process"}
+          </button>
+        </section>
+        <p className="ck-mode-caption">{MODE_CAPTIONS[mode]}</p>
         {statusMsg ? (
           <div className="ck-banner-status" role="status">
             {statusMsg}
