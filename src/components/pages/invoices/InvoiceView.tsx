@@ -25,7 +25,6 @@ import {
   resultLabel,
   sheetName,
   supersededBy,
-  totalKnown,
   unitPrice,
   uploadedLabel,
 } from "@/checker/summary";
@@ -90,9 +89,6 @@ function Invoice({ inv, onSaved }: { inv: SupplierInvoice; onSaved: Saved }) {
             {inv.fixture ? <span className="lbl l-warn">{FIXTURE_MARK}</span> : null}
             <span className={`lbl ${cls}`}>{text}</span>
             {inv.outcome ? <span className={`lbl ${OUTCOME[inv.outcome][0]}`}>{OUTCOME[inv.outcome][1]}</span> : null}
-            <a className="btn s" href={invoiceFileUrl(inv.id)} target="_blank" rel="noreferrer">
-              Open Original PDF ↗
-            </a>
             {next ? (
               <Link className="btn s" href={`/invoices/${next.id}`}>
                 Next Pending ({next.number ?? next.supplier ?? next.fileName}) →
@@ -124,11 +120,11 @@ function Invoice({ inv, onSaved }: { inv: SupplierInvoice; onSaved: Saved }) {
 }
 
 function decideWhy(inv: SupplierInvoice): string {
-  if (choices(inv).pay) return "All line items match the contract price sheet. Ready for payment run.";
+  if (choices(inv).pay) return "All items match.";
   if (inv.state === "failed") return "PDF could not be read automatically. Verify manually against the contract price sheet before approving.";
   const over = inv.lines.filter(overSheet).length;
   if (over) return `${over} ${over === 1 ? "line is" : "lines are"} billed above the contract price sheet (+${inv.currency ?? ""} ${amount(overcharge(inv))}). Dispute with supplier or record an override reason.`;
-  if (problemLines(inv).length) return `${problemLines(inv).length} ${problemLines(inv).length === 1 ? "line requires" : "lines require"} manual verification against the contract sheet.`;
+  if (problemLines(inv).length) return `${problemLines(inv).length} out of ${inv.lines.length} require manual verification.`;
   return "Header subtotal/tax math could not be confirmed automatically. Verify totals before approving.";
 }
 
@@ -389,40 +385,13 @@ function rowsOf(lines: InvoiceLine[], fold: boolean): Row[] {
 function Checked({ inv }: { inv: SupplierInvoice }) {
   const shell = useShell();
   const problems = problemsFirst(inv.lines).filter((l) => l.result !== "match");
-  const mark = new Map<InvoiceLine, string>(problems.map((l, i) => [l, String.fromCharCode(65 + i)]));
-  const [picked, setPicked] = useState<InvoiceLine | null>(problems[0] ?? null);
   const [showAll, setShowAll] = useState(false);
-  const known = totalKnown(inv);
   const matching = inv.lines.length - problems.length;
   const rows = rowsOf(inv.lines, problems.length > 0 && !showAll);
   const note = disputeNote(inv);
 
-  const pick = (l: InvoiceLine, scroll: boolean) => {
-    setPicked(l);
-    if (!scroll) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document.getElementById(`ck-line-${inv.lines.indexOf(l)}`)?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
-  };
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
-      const k = e.key.toLowerCase();
-      if ((k === "j" || k === "k") && problems.length) {
-        e.preventDefault();
-        const at = picked ? problems.indexOf(picked) : -1;
-        const next = k === "j" ? Math.min(at + 1, problems.length - 1) : Math.max(at - 1, 0);
-        pick(problems[next], true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
   return (
-    <div className="ck-split">
+    <div className="ck-invoice-detail">
       {/* Left: Formal Commercial Invoice Document */}
       <section className="ck-pagewrap" aria-label="Commercial invoice document">
         <div className="ck-doc">
@@ -431,7 +400,7 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
               <div className="ck-doc-tag">Supplier Tax Invoice (Extracted)</div>
               <h2 className="ck-doc-supplier">{inv.supplier ?? inv.fileName}</h2>
               <div className="ck-doc-meta">
-                Source PDF: <span className="mono">{inv.fileName}</span> · Audited against <b>{sheetName(inv.priceSheet)}</b>
+                Source PDF: <a className="mono" href={invoiceFileUrl(inv.id)} target="_blank" rel="noreferrer" style={{ textDecoration: "underline", textUnderlineOffset: "3px" }}>{inv.fileName}</a> · Audited against <b>{sheetName(inv.priceSheet)}</b>
               </div>
             </div>
             <div className="ck-doc-meta-grid">
@@ -454,13 +423,13 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
             <table className="ck-doc-table">
               <thead>
                 <tr>
-                  <th style={{ width: 28 }} aria-label="Ref" />
                   <th>Part Code / Description</th>
                   <th className="r" style={{ width: 72 }}>Qty</th>
                   <th className="r" style={{ width: 100 }}>Billed Unit</th>
                   <th className="r" style={{ width: 100 }}>Sheet Unit</th>
                   <th className="r" style={{ width: 105 }}>Variance</th>
                   <th className="r" style={{ width: 110 }}>Line Amount</th>
+                  <th>Audit Finding</th>
                 </tr>
               </thead>
               <tbody>
@@ -476,32 +445,22 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
                       </tr>
                     );
                   const l = row.line;
-                  const m = mark.get(l);
+                  const flagged = l.result !== "match";
+                  const [findingClass, findingText] = resultLabel(l);
                   const lOver = lineOver(l);
                   const under = l.result === "price_mismatch" && l.difference !== null && l.difference < 0;
                   return (
                     <tr
                       key={row.index}
                       id={`ck-line-${row.index}`}
-                      className={`${m ? "ck-" + l.result : ""}${picked === l ? " cur" : ""}`}
-                      onClick={m ? () => pick(l, false) : undefined}
+                      className={flagged ? `ck-${l.result}` : undefined}
                     >
-                      <td className="ck-m">
-                        {m ? (
-                          <>
-                            <span className={`ck-ref-badge ck-${l.result}`} aria-hidden="true">{m}</span>
-                            <span className="ck-sr">{`${m}: ${resultLabel(l)[1]}`}</span>
-                          </>
-                        ) : (
-                          <span className="mono" style={{ color: "var(--ink3)", fontSize: 11 }}>{row.index + 1}</span>
-                        )}
-                      </td>
                       <td>
                         <div className="mono ck-code" style={{ fontWeight: 600 }}>{l.part ?? "—"}</div>
                         <div className="ck-desc">{l.description}</div>
                       </td>
                       <td className="r mono">{num(l.quantity, (n) => n.toLocaleString("en-SG"))}</td>
-                      <td className="r mono" style={{ fontWeight: m ? 600 : 400 }}>{num(l.unitPrice, unitPrice)}</td>
+                      <td className="r mono" style={{ fontWeight: flagged ? 600 : 400 }}>{num(l.unitPrice, unitPrice)}</td>
                       <td className="r mono" style={{ color: "var(--ink2)" }}>{num(l.sheetPrice, unitPrice)}</td>
                       <td className={`r mono ${lOver > 0 ? "ck-over-cell" : under ? "ck-under-cell" : ""}`}>
                         {lOver > 0
@@ -513,6 +472,10 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
                               : "—"}
                       </td>
                       <td className="r mono">{num(l.lineTotal)}</td>
+                      <td className="ck-finding-cell">
+                        <span className={`lbl ${findingClass}`}>{findingText}</span>
+                        {flagged && l.result !== "unknown_part" && l.reason ? <div className="ck-prob-reason">{l.reason}</div> : null}
+                      </td>
                     </tr>
                   );
                 })}
@@ -545,80 +508,12 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
             </div>
           </div>
         </div>
-      </section>
-
-      {/* Right: Formal Audit Findings & Supplier Dispute Note */}
-      <aside className="ck-side" aria-label="Audit findings">
-        <div className="ck-side-box">
-          <div className="ck-side-hd">
-            <b>
-              {problems.length
-                ? `Flagged Discrepancies (${problems.length})`
-                : known
-                  ? "Zero Discrepancies"
-                  : "Header Totals Unconfirmed"}
-            </b>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--ink3)" }}>
-              {`${matching}/${inv.lines.length} lines match`}
-            </span>
+        {(inv.warnings ?? []).map((warning) => (
+          <div className="ck-warn-strip" key={warning}>
+            <span className="o-notice-dot" />
+            <span>{warning}</span>
           </div>
-
-          <div className="ck-side-body">
-            {!problems.length && known ? (
-              <p className="ck-clear">
-                All {inv.lines.length} line items match <b>{sheetName(inv.priceSheet)}</b>. No overcharge detected.
-              </p>
-            ) : null}
-
-            {(inv.warnings ?? []).map((warning) => (
-              <div className="ck-warn-strip" key={warning}>
-                <span className="o-notice-dot" />
-                <span>{warning}</span>
-              </div>
-            ))}
-
-            {problems.length > 0 ? (
-              <div className="ck-prob-list">
-                {problems.map((l) => {
-                  const [lc, lt] = resultLabel(l);
-                  const over = lineOver(l);
-                  const under = l.result === "price_mismatch" && l.difference !== null && l.difference < 0;
-                  const refLetter = mark.get(l);
-                  return (
-                    <button
-                      key={refLetter}
-                      type="button"
-                      className={`ck-prob-item${picked === l ? " cur" : ""}`}
-                      aria-pressed={picked === l}
-                      onClick={() => pick(l, true)}
-                    >
-                      <div className="ck-prob-top">
-                        <span className={`ck-ref-badge ck-${l.result}`}>{refLetter}</span>
-                        <span className="mono ck-prob-part">{l.part ?? "Unlisted SKU"}</span>
-                        <span className={`lbl ${lc}`}>{lt}</span>
-                      </div>
-                      <div className="ck-prob-desc">{l.description}</div>
-                      <div className="ck-prob-math mono">
-                        <span>Billed: {num(l.unitPrice, unitPrice)}</span>
-                        <span>·</span>
-                        <span>Contract: {num(l.sheetPrice, unitPrice)}</span>
-                        <span>·</span>
-                        <b className={over > 0 ? "ck-over-cell" : ""}>
-                          {over > 0
-                            ? `+${inv.currency ?? ""} ${amount(over)}`
-                            : under
-                              ? `-${unitPrice(Math.abs(l.difference!))}/ea`
-                              : "Manual check"}
-                        </b>
-                      </div>
-                      {l.reason ? <div className="ck-prob-reason">{l.reason}</div> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        ))}
 
         {/* Ready-to-Send Supplier Dispute Note (shown whenever overcharges exist) */}
         {note ? (
@@ -645,7 +540,7 @@ function Checked({ inv }: { inv: SupplierInvoice }) {
             </div>
           </div>
         ) : null}
-      </aside>
+      </section>
     </div>
   );
 }

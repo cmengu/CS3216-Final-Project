@@ -200,3 +200,14 @@
   .ck-side{border-left:0;border-top:1px solid var(--line)}
   .ck-summary-strip{grid-template-columns:1fr 1fr}
 }
+
+.ck-ledger-filters{display:flex;flex-wrap:wrap;gap:12px;padding:12px 24px}
+.ck-ledger-filters .fw{min-width:200px;max-width:100%}
+.ck-ledger-filters select{width:100%;padding-right:32px}
+.ck-ledger-filters .fw svg{top:50%;transform:translateY(-50%);right:10px}
+@media(max-width:700px){.ck-ledger-filters{padding:12px 16px}.ck-ledger-filters .fw{flex:1 1 200px;min-width:0}.ck-ledger-filters select{width:100%}}
+
+.ck-invoice-detail{min-width:0}
+.ck-invoice-detail .ck-finding-cell{min-width:150px;max-width:260px}
+.ck-invoice-detail .ck-doc-table tr td{cursor:default}
+.ck-invoice-detail .ck-side-box{margin-top:16px}

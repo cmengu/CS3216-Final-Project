@@ -175,7 +175,7 @@ class PriceSheet:
         ]
         if not candidates:
             return review(
-                "No exact item or code-free description match in the agreement", "unknown_part"
+                "Not exist in Master Sheet", "unknown_part"
             )
         is_flat = line.flat_charge or (
             line.unit is None and line.quantity is None and line.unit_price is None

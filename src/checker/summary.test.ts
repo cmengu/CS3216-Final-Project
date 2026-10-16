@@ -189,7 +189,7 @@ describe("resultLabel and sheetName", () => {
   it("says which way a price mismatch goes", () => {
     expect(resultLabel(line({ result: "price_mismatch", difference: 0.02 }))).toEqual(["l-bad", "Over sheet price"]);
     expect(resultLabel(line({ result: "price_mismatch", difference: -0.05 }))).toEqual(["l-warn", "Under sheet price"]);
-    expect(resultLabel(line({ result: "unknown_part" }))).toEqual(["l-purple", "Unknown part"]);
+    expect(resultLabel(line({ result: "unknown_part" }))).toEqual(["l-bad", "Unknown"]);
   });
   it("shortens a price sheet fingerprint and keeps a name", () => {
     expect(sheetName("83f0560805227ca1e5c253659194423b4f69ff9e7015256110fca148a75cfd51")).toBe("price sheet 83f05608");

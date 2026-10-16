@@ -72,7 +72,7 @@ export function invoiceLabel(inv: SupplierInvoice): [string, string] {
   const over = overcharge(inv);
   if (over > 0) return ["l-bad", `${inv.currency ?? ""} ${amount(over)} over`.trim()];
   if (inv.lines.some((l) => l.result === "needs_person") || !totalKnown(inv)) return ["l-warn", "Needs a person"];
-  if (inv.lines.some((l) => l.result === "unknown_part")) return ["l-purple", "Unknown part"];
+  if (inv.lines.some((l) => l.result === "unknown_part")) return ["l-bad", "Unknown"];
   return ["l-good", "All match"];
 }
 
@@ -192,7 +192,7 @@ export function problemsFirst(lines: InvoiceLine[]): InvoiceLine[] {
 export const RESULT: Record<LineResult, [string, string]> = {
   price_mismatch: ["l-bad", "Price mismatch"],
   needs_person: ["l-warn", "Needs a person"],
-  unknown_part: ["l-purple", "Unknown part"],
+  unknown_part: ["l-bad", "Unknown"],
   match: ["l-good", "Match"],
 };
 

@@ -21,7 +21,6 @@ import {
   invoiceLabel,
   lineOver,
   overcharge,
-  overchargeBox,
   problemLines,
   problemsFirst,
   resultLabel,
@@ -40,9 +39,9 @@ export type LedgerFilter = "all" | "pending" | "overcharged" | "decided";
 export const FIXTURE_MARK = "Fixture answers, not a live check";
 
 const MODE_CAPTIONS: Record<InvoiceDutyMode, string> = {
-  ledger: "Read-only accounts payable register · switch mode to audit or export",
-  audit: "Audit mode · verify contract price variances and record payment decisions",
-  payable: "Payment run mode · review approved invoices and export CSV for banking",
+  ledger: "",
+  audit: "",
+  payable: "",
 };
 
 /** Hand the reader a file. Nothing leaves the browser. */
@@ -125,7 +124,6 @@ export function InvoicesView() {
 
   const listAll = invoices ?? [];
   const s = summarize(listAll);
-  const box = overchargeBox(s);
   const pendingList = s.piles.decide;
   const decidedList = s.piles.done;
   const payableList = readyToPay(listAll);
@@ -243,23 +241,7 @@ export function InvoicesView() {
     <>
       <Header
         className="ck-hd"
-        acts={
-          <div className="filt">
-            {mode === "ledger" ? (
-              <span className="fw">
-                <select value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} aria-label="Filter by supplier">
-                  <option value="">All suppliers</option>
-                  {suppliers.map((sup) => (
-                    <option key={sup} value={sup}>
-                      {sup}
-                    </option>
-                  ))}
-                </select>
-                <Icon name="chevDown" />
-              </span>
-            ) : null}
-          </div>
-        }
+
       >
         <div className="o-duty-switch" role="tablist" aria-label="Invoice workspace mode">
           <button
@@ -314,8 +296,8 @@ export function InvoicesView() {
       >
         <section id="upload" className="ck-upload-panel" aria-labelledby="ck-upload-title" aria-busy={busy}>
           <div>
-            <h2 id="ck-upload-title">Upload an invoice</h2>
-            <p id="ck-upload-help">Choose a PDF or drop it here to extract its fields and check prices. One PDF at a time, up to 20 MB.</p>
+            <h2 id="ck-upload-title">Drag a file here, or</h2>
+            <p id="ck-upload-help">Choose a file to upload</p>
           </div>
           <input
             ref={fileInput}
@@ -335,10 +317,10 @@ export function InvoicesView() {
             onClick={() => fileInput.current?.click()}
           >
             <Icon name="arrowUp" />
-            {busy ? "Processing PDF…" : "Choose PDF & process"}
+            {busy ? "Processing PDF…" : "Upload an Invoice PDF"}
           </button>
         </section>
-        <p className="ck-mode-caption">{MODE_CAPTIONS[mode]}</p>
+        {mode !== "ledger" ? <p className="ck-mode-caption">{MODE_CAPTIONS[mode]}</p> : null}
         {statusMsg ? (
           <div className="ck-banner-status" role="status">
             {statusMsg}
@@ -350,61 +332,23 @@ export function InvoicesView() {
             ==================================================================== */}
         {mode === "ledger" ? (
           <>
-            <div className="tabs">
-              {(
-                [
-                  ["all", "All invoices", allOrdered.length],
-                  ["pending", "Pending audit", pendingList.length],
-                  ["overcharged", "Overcharged", allOrdered.filter((i) => overcharge(i) > 0).length],
-                  ["decided", "Audited / Done", decidedList.length],
-                ] as const
-              ).map(([k, label, count]) => (
-                <button
-                  key={k}
-                  type="button"
-                  className={`tab${ledgerFilter === k ? " on" : ""}`}
-                  onClick={() => setLedgerFilter(k)}
-                >
-                  {label}
-                  <span className="cnt">{count}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* 1-Line Formal Variance Summary Bar */}
-            <div className="o-notice" role="region" aria-label="Audit summary">
-              <span className={`o-notice-dot${box.found ? " bad" : pendingList.length ? "" : " good"}`} />
-              {pendingList.length > 0 ? (
-                <>
-                  <b>
-                    {pendingList.length} {pendingList.length === 1 ? "invoice awaits" : "invoices await"} price-sheet audit
-                  </b>
-                  <span className="o-notice-sep">·</span>
-                  <span className="o-notice-detail">
-                    {box.found ? `Detected ${box.value} in supplier overcharges (${box.note})` : box.note}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <b>All uploaded invoices have been audited</b>
-                  <span className="o-notice-sep">·</span>
-                  <span className="o-notice-detail">
-                    {payableList.length} approved for payment
-                  </span>
-                </>
-              )}
-              <div className="o-notice-acts">
-                {pendingList.length > 0 ? (
-                  <button type="button" className="o-link-btn primary" onClick={() => setMode("audit")}>
-                    Open Audit Queue ({pendingList.length}) →
-                  </button>
-                ) : null}
-                {payableList.length > 0 ? (
-                  <button type="button" className="o-link-btn" onClick={() => setMode("payable")}>
-                    View Ready to Pay ({payableList.length}) →
-                  </button>
-                ) : null}
-              </div>
+            <div className="filt ck-ledger-filters">
+              <span className="fw">
+                <select value={ledgerFilter} onChange={(event) => setLedgerFilter(event.target.value as LedgerFilter)} aria-label="Filter by invoice status">
+                  <option value="all">All invoices ({allOrdered.length})</option>
+                  <option value="pending">Pending audit ({pendingList.length})</option>
+                  <option value="overcharged">Overcharged ({allOrdered.filter((invoice) => overcharge(invoice) > 0).length})</option>
+                  <option value="decided">Audited / Done ({decidedList.length})</option>
+                </select>
+                <Icon name="chevDown" />
+              </span>
+              <span className="fw">
+                <select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} aria-label="Filter by supplier">
+                  <option value="">All suppliers</option>
+                  {suppliers.map((supplier) => <option key={supplier} value={supplier}>{supplier}</option>)}
+                </select>
+                <Icon name="chevDown" />
+              </span>
             </div>
 
             <div className="body o-ledger-wrap" style={{ paddingTop: 12 }}>
@@ -493,7 +437,7 @@ export function InvoicesView() {
               {/* Left Queue Rail */}
               <aside className="o-triage-rail" aria-label="Invoices awaiting audit">
                 <div className="o-triage-rail-hd">
-                  <span>Pending Audit Queue ({pendingList.length})</span>
+                  <span>Audit Queue ({pendingList.length})</span>
                   <span>Variance</span>
                 </div>
                 {pendingList.map((inv) => {
@@ -518,15 +462,6 @@ export function InvoicesView() {
                         {inv.total !== null ? ` · ${inv.currency ?? ""} ${amount(inv.total)}` : ""}
                       </div>
                       <div className="o-triage-meta">
-                        <span>
-                          {inv.state === "failed"
-                            ? "OCR / extraction failed"
-                            : problemLines(inv).length
-                              ? `${problemLines(inv).length} of ${inv.lines.length} lines flagged`
-                              : !totalKnown(inv)
-                                ? "Header math mismatch"
-                                : `All ${inv.lines.length} lines match contract`}
-                        </span>
                         <span>{inv.date ?? uploadedLabel(inv.uploadedAt)}</span>
                       </div>
                     </button>
@@ -557,10 +492,10 @@ export function InvoicesView() {
                             </div>
                             <div className="o-work-sub">
                               {inv.date ? `Invoice date ${inv.date} · ` : ""}
-                              Checked against <b>{sheetName(inv.priceSheet)}</b> · File <span className="mono">{inv.fileName}</span>
-                              {" · "}
+                              Checked against <b>{sheetName(inv.priceSheet)}</b> · File
+                              {" "}
                               <Link href={`/invoices/${inv.id}`} className="o-link-btn">
-                                Open full document view ↗
+                                {inv.fileName}↗
                               </Link>
                             </div>
                           </div>
@@ -742,7 +677,7 @@ export function InvoicesView() {
                                               {l.part ?? "No part code"}
                                             </div>
                                             <div style={{ color: "var(--ink2)", fontSize: 12 }}>{l.description}</div>
-                                            {l.result !== "match" && l.reason ? (
+                                            {l.result !== "match" && l.result !== "unknown_part" && l.reason ? (
                                               <div className="ck-line-reason">{l.reason}</div>
                                             ) : null}
                                           </td>
