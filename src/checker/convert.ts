@@ -92,7 +92,10 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
       result: check?.status ?? "needs_person",
       sheetPrice: numberOf(check?.agreed_price),
       difference: numberOf(check?.difference),
-      reason: check?.reason ?? "The check gave no result for this line.",
+      // Older saved checks retain the original backend wording.
+      reason: check?.reason === "No exact item or code-free description match in the agreement"
+        ? "Not exist in Master Sheet"
+        : check?.reason ?? "The check gave no result for this line.",
       overcharge: numberOf(check?.overcharge),
     };
   });
