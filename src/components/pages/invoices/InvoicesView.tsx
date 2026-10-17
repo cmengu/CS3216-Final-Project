@@ -8,7 +8,7 @@
  *   3. Ready to Pay (approved payment run register with 1-click CSV export)
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
@@ -105,7 +105,9 @@ export function InvoicesView() {
   const router = useRouter();
   const { invoices, error } = useInvoices();
 
-  const [mode, setMode] = useState<InvoiceDutyMode>("ledger");
+  // Home's Check discrepancies opens the Audit Queue at ?mode=audit.
+  const startMode = useSearchParams().get("mode");
+  const [mode, setMode] = useState<InvoiceDutyMode>(() => (startMode === "audit" ? "audit" : "ledger"));
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("");
   const [activeAuditId, setActiveAuditId] = useState<string | null>(null);

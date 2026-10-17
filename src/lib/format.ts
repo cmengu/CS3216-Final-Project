@@ -70,6 +70,22 @@ export const dayLabel = (d: string) =>
 export const relDay = (d: string) =>
   d === TODAY ? "Today" : d === addDays(TODAY, 1) ? "Tomorrow" : d === addDays(TODAY, -1) ? "Yesterday" : fmtShort(d);
 
+/** When an order still to go out is due: today, tomorrow, or later this week (the next six days). */
+export type Due = "today" | "tomorrow" | "week";
+
+export const DUE: Record<Due, string> = { today: "Due today", tomorrow: "Due tomorrow", week: "Later this week" };
+
+export function dueOf(o: Pick<Order, "date" | "state">): Due | null {
+  if (o.state === "delivered") return null;
+  if (o.date === TODAY) return "today";
+  if (o.date === addDays(TODAY, 1)) return "tomorrow";
+  if (o.date > addDays(TODAY, 1) && o.date <= addDays(TODAY, 6)) return "week";
+  return null;
+}
+
+/** A ?due= value from the address, or null when it is missing or not one of the three. */
+export const parseDue = (v: string | null): Due | null => (v === "today" || v === "tomorrow" || v === "week" ? v : null);
+
 /** Lower-case the first letter of a sentence, so "Read PO" reads as "read PO" after a name. */
 export const lc = (t: string) => (/^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t);
 

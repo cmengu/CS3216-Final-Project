@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { CustomerMark, Lbl } from "@/components/bits";
-import { Icon } from "@/components/icons";
+import type { ReactNode } from "react";
+import { Icon, type IconName } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
-import { canEdit, canPrice, seesCustomer, visibleOrders } from "@/platform/access";
+import { canPrice, visibleOrders } from "@/platform/access";
 import { TODAY } from "@/sample";
-import type { DemoState, Order, Person } from "@/sample";
+import type { Customer, DemoState, Order, Person } from "@/sample";
 import { meOf, useDemo, useShownEvents } from "@/state/demo-store";
-import { markGreeted, pickCount, shouldGreet } from "@/state/session";
-import { addDays, dayLabel, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, relDay, slotText, custOf } from "@/lib/format";
+import { addDays, custOf, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, STATE } from "@/lib/format";
+import { dueCards, eventTime, goingOut, nextActions, recentEvents, relLabel, reviewItems, toneOf, type NextAction } from "./home/home";
 
 /** The Handover digest, one line per item, as plain text. */
 export function digestLines(s: DemoState, u: Person, mine: Order[]): string[] {
@@ -39,164 +38,239 @@ export function digestLines(s: DemoState, u: Person, mine: Order[]): string[] {
   return out;
 }
 
+/** The customer's own line icon from the data, drawn as a plain grey stroke; a building when it has none. */
+function CustIcon({ c }: { c: Customer }) {
+  if (!c.logo) return <Icon name="building" style={{ width: 22, height: 22 }} />;
+  return <svg className="i hm-ci" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: c.logo }} />;
+}
+
+function Pill({ n, tone, noun }: { n: number; tone: "warn" | "neutral"; noun: string }) {
+  return (
+    <span className={`hm-pill ${tone}`}>
+      {n}
+      <span className="sr">{` ${noun}${n === 1 ? "" : "s"}`}</span>
+    </span>
+  );
+}
+
+function Card({ id, title, pill, children }: { id: string; title: string; pill?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="hm-card" aria-labelledby={id}>
+      <div className="hm-ch">
+        <h2 id={id}>{title}</h2>
+        {pill}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const Arrow = () => (
+  <svg className="i" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);
+
+const CAL = (
+  <svg className="i hm-cal" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3.5" y="5" width="17" height="15" rx="2" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </svg>
+);
+
+const ACT_ICON: Record<NextAction["key"], IconName> = { review: "doc", upload: "arrowUp", discrepancies: "warn" };
+
 export function HomeView() {
   const s = useDemo();
   const u = meOf(s);
   const shell = useShell();
-  // "Hi <name>" once per page load, and again after each pick of a person, even while on Home.
-  const picks = pickCount();
-  const [greeting, setGreeting] = useState(() => ({ on: shouldGreet(), picks }));
-  if (greeting.picks !== picks) setGreeting({ on: true, picks });
-  const greet = greeting.on;
-  useEffect(markGreeted, [greeting.picks]);
+  const shownEvents = useShownEvents();
 
   const cust = (o: Order) => custOf(s.customers, o.cust);
   const mine = visibleOrders(s.orders, u);
-  const edit = canEdit(u);
-  const waiting = edit ? s.toCheck : [];
-  const overdue = mine.filter(isOverdue);
-  const sched = mine
-    .filter((o) => o.date >= TODAY && o.state !== "delivered")
-    .sort((a, b) => a.date.localeCompare(b.date) || a.cust.localeCompare(b.cust));
-  const days = [...new Set(sched.map((o) => o.date))].slice(0, 2);
-  const need = overdue.length + waiting.length;
-  const toInv = mine.filter((o) => o.state === "delivered" && !o.invoiced);
-  const formal =
-    u.role === "finance"
-      ? toInv.length
-        ? `${toInv.length} order${toInv.length > 1 ? "s" : ""} to invoice · ${money(toInv.reduce((a, o) => a + orderTotal(o), 0))}`
-        : "Nothing to invoice"
-      : need
-        ? `${need} order${need > 1 ? "s" : ""} awaiting review`
-        : "No orders awaiting review";
-  const names = (os: Order[]) => [...new Set(os.map((o) => cust(o).name))].join(", ");
-  const liveO = (d: string) => mine.filter((o) => o.date === d && o.state !== "delivered");
-  const later = mine.filter((o) => o.date > addDays(TODAY, 1) && o.date <= addDays(TODAY, 6) && o.state !== "delivered");
-  const mods: [string, Order[]][] = [
-    ["Today", liveO(TODAY)],
-    ["Tomorrow", liveO(addDays(TODAY, 1))],
-    ["Later this week", later],
-  ];
+  const due = dueCards(s, mine);
+  const review = reviewItems(s, u, mine);
+  const out = goingOut(mine);
+  const actions = nextActions(u, review.length);
+  const recent = recentEvents(s, u, shownEvents);
+  const toInv = u.role === "finance" ? mine.filter((o) => o.state === "delivered" && !o.invoiced) : [];
   const byId = (id: string) => s.orders.find((o) => o.id === id);
-  const shownEvents = useShownEvents();
-  const recent = shownEvents
-    .filter((e) => {
-      const o = byId(e.order);
-      return e.kind !== "price_viewed" && !!o && seesCustomer(u, o.cust);
-    })
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 5);
-
-  const row = (o: Order, title: ReactNode, sub: ReactNode, key: string) => (
-    <Link className="it" href={`/orders/${o.id}`} key={key}>
-      <CustomerMark c={cust(o)} />
-      <span className="t">
-        <b>{title}</b>
-        <small>{sub}</small>
-      </span>
-      <span className="r">
-        <Lbl state={o.state} />
-      </span>
-    </Link>
-  );
 
   const handover = () => shell.copyText(digestLines(s, u, mine).join("\n"), "Copied handover");
 
   return (
     <>
       <Header
+        className="hm-hd"
         icon="home"
+        title="div"
         acts={
-          <>
-            <button className="btn s g" onClick={handover}>
-              <Icon name="copy" />
-              Handover
-            </button>
-          </>
+          <button type="button" className="hm-hand" onClick={handover} aria-label="Handover: copy today's digest">
+            <Icon name="copy" />
+            <span>Handover</span>
+          </button>
         }
       >
         {fmtDay(TODAY)}
       </Header>
-      <div className="body home">
-        <div className="hmain">
-          <p className={`lead${greet ? " greet" : ""}`} key={greeting.picks}>
-            <span className="hi">Hi {u.name.split(" ")[0]}</span>
-            <span className="fm">{formal}</span>
-          </p>
-          <div className="mods">
-            {mods.map(([k, os]) => (
-              <Link className="mod" href="/orders" key={k}>
-                <span className="k">{k}</span>
-                <span className="v">{os.length}</span>
-                <span className="m">{os.length ? names(os) : "No deliveries"}</span>
+      <div className="body home hm">
+        <div className="hm-main">
+          <h1 className="hm-h1">Welcome back, {u.name.split(" ")[0]}</h1>
+
+          <section className="hm-due" aria-label="Due dates">
+            {due.map((d) => (
+              <Link className="hm-dc" href={`/orders?due=${d.key}`} key={d.key}>
+                {CAL}
+                <span className="hm-dt">
+                  <span className="k">{d.label}</span>
+                  <span className="v">{d.count}</span>
+                  <span className="m">{d.names.length ? d.names.join(", ") : "Nothing due"}</span>
+                </span>
               </Link>
             ))}
-          </div>
-          {need ? (
-            <section>
-              <h3>Awaiting review</h3>
-              <div className="list">
-                {overdue.map((o) => row(o, cust(o).name, `${ref(o)} · was due ${fmtDay(o.date)}`, "od" + o.id))}
-                {waiting.map((t) => {
-                  const o = byId(t.order);
-                  if (!o) return null;
-                  const why =
-                    t.kind === "revision" ? `qty ${t.diff[0].old} → ${t.diff[0].new} on line ${t.diff[0].line + 1}` : t.kind === "cell" ? "one cell has no SKU" : "message to place";
-                  return row(o, cust(o).name, `${ref(o)} · ${why}`, t.id);
-                })}
+          </section>
+
+          <Card id="hm-review" title="Awaiting review" pill={<Pill n={review.length} tone="warn" noun="order" />}>
+            {review.length ? (
+              <div className="hm-tbl" role="table" aria-labelledby="hm-review">
+                <div className="hm-tr hm-th" role="row">
+                  <span role="columnheader">Customer / Order</span>
+                  <span role="columnheader">Issue</span>
+                  <span role="columnheader" className="r">
+                    Action
+                  </span>
+                </div>
+                {review.map((r) => (
+                  <div className="hm-tr" role="row" key={r.key}>
+                    <div className="c-who" role="cell">
+                      <CustIcon c={cust(r.order)} />
+                      <span className="hm-nm">
+                        <b>{cust(r.order).name}</b>
+                        <small>{ref(r.order)}</small>
+                      </span>
+                    </div>
+                    <div className="c-det" role="cell">
+                      {r.issue}
+                    </div>
+                    <div className="c-act r" role="cell">
+                      <Link className="hm-go" href={`/orders/${r.order.id}`} aria-label={`${r.action} ${cust(r.order).name} ${ref(r.order)}`}>
+                        {r.action}
+                        <Arrow />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </section>
-          ) : null}
-          {u.role === "finance" && toInv.length ? (
-            <section>
-              <h3>To invoice</h3>
-              <div className="list">{toInv.slice(0, 5).map((o) => row(o, cust(o).name, `${ref(o)} · ${money(orderTotal(o))}`, o.id))}</div>
-            </section>
-          ) : null}
-          <section>
-            <h3>
-              Going out<Link href="/orders">All orders</Link>
-            </h3>
-            {days.length ? (
-              days.map((d) => (
-                <Fragment key={d}>
-                  <div className="day">
-                    <b>{dayLabel(d)}</b>
-                    {fmtDay(d)}
-                  </div>
-                  <div className="list">
-                    {sched.filter((o) => o.date === d).map((o) => row(o, cust(o).name, `${o.lines.length} lines · ${slotText(cust(o))}`, o.id))}
-                  </div>
-                </Fragment>
-              ))
             ) : (
-              <div className="hint">No deliveries scheduled.</div>
+              <p className="hm-empty">Nothing is waiting for review.</p>
             )}
-          </section>
+          </Card>
+
+          <Card id="hm-out" title="Going out" pill={<Pill n={out.length} tone="neutral" noun="order" />}>
+            {out.length ? (
+              <div className="hm-tbl" role="table" aria-labelledby="hm-out">
+                <div className="hm-tr hm-th" role="row">
+                  <span role="columnheader">Customer</span>
+                  <span role="columnheader">Schedule</span>
+                  <span role="columnheader" className="r">
+                    Status
+                  </span>
+                </div>
+                {out.map((o) => (
+                  <div className="hm-tr" role="row" key={o.id}>
+                    <div className="c-who" role="cell">
+                      <CustIcon c={cust(o)} />
+                      <span className="hm-nm">
+                        <Link href={`/orders/${o.id}`} className="hm-link">
+                          {cust(o).name}
+                        </Link>
+                      </span>
+                    </div>
+                    <div className="c-det hm-sch" role="cell">
+                      <span>{relLabel(o)}</span>
+                      <small>{fmtDay(o.date)}</small>
+                    </div>
+                    <div className="c-act r" role="cell">
+                      <span className={`hm-pill ${toneOf(o.state)}`}>{STATE[o.state][1]}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="hm-empty">Nothing is going out in the next seven days.</p>
+            )}
+          </Card>
+
+          {u.role === "finance" ? (
+            <Card id="hm-inv" title="To invoice" pill={<Pill n={toInv.length} tone="neutral" noun="order" />}>
+              {toInv.length ? (
+                <ul className="hm-list">
+                  {toInv.slice(0, 5).map((o) => (
+                    <li key={o.id}>
+                      <CustIcon c={cust(o)} />
+                      <span className="hm-nm">
+                        <Link href={`/orders/${o.id}`} className="hm-link">
+                          {cust(o).name}
+                        </Link>
+                        <small>{ref(o)}</small>
+                      </span>
+                      <span className="hm-amt">{money(orderTotal(o))}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="hm-empty">Every delivered order is invoiced.</p>
+              )}
+            </Card>
+          ) : null}
         </div>
-        <aside className="hside">
-          <section>
-            <h3>History</h3>
-            <div className="log tl">
-              {recent.map((e, i) => {
-                const o = byId(e.order)!;
-                return (
-                  <Link className={`ev ${e.actor === u.name ? "me" : ""}`} href={`/orders/${o.id}`} key={i}>
-                    <span className="ic">
-                      <Icon name={evIcon(e.kind)} />
-                    </span>
-                    <span className="tx">
-                      <b>{e.actor}</b>{` ${lc(e.text)}`}
-                      <small>{`${ref(o)} · ${relDay(e.at.slice(0, 10))} ${e.at.slice(11)}`}</small>
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-            <Link className="btn s more" href="/history">
-              Show more
+
+        <aside className="hm-side" aria-label="Next actions and recent activity">
+          <Card id="hm-next" title="Next actions">
+            {actions.length ? (
+              <ul className="hm-acts">
+                {actions.map((a) => (
+                  <li key={a.key}>
+                    <Link href={a.href}>
+                      <Icon name={ACT_ICON[a.key]} />
+                      <span className="t">{a.title}</span>
+                      {a.count ? <Pill n={a.count} tone="warn" noun="order" /> : null}
+                      <Icon name="chev" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hm-empty">No actions for your role right now.</p>
+            )}
+          </Card>
+
+          <Card id="hm-act" title="Recent activity">
+            {recent.length ? (
+              <ol className="hm-tl">
+                {recent.map((e, i) => {
+                  const o = byId(e.order)!;
+                  return (
+                    <li key={i}>
+                      <span className="ic" aria-hidden="true">
+                        <Icon name={evIcon(e.kind)} />
+                      </span>
+                      <span className="tx">
+                        {`${e.actor} ${lc(e.text)}`}
+                        <small>{`${ref(o)} · ${eventTime(e.at)}`}</small>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="hm-empty">No activity yet.</p>
+            )}
+            <Link className="hm-go hm-more" href="/history">
+              View all activity
+              <Arrow />
             </Link>
-          </section>
+          </Card>
         </aside>
       </div>
     </>

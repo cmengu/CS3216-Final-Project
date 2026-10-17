@@ -1,0 +1,111 @@
+/*
+ * Home (approved redesign, October 2026). White page on the warm rail; every block a white card
+ * with a 1px warm-grey border. Three accents only: terracotta (--accent) for links, actions and
+ * focus; amber (--warn) for attention; green (--good) for success. Muted text uses --ink2, not
+ * --ink3, which fails AA on white.
+ */
+.hm-hd,.hm{--hm-bg:#FFFFFF}
+:root[data-theme="dark"] .hm-hd,:root[data-theme="dark"] .hm{--hm-bg:var(--panel)}
+.content:has(> .hm){background:var(--hm-bg,#FFFFFF)}
+:root[data-theme="dark"] .content:has(> .hm){background:var(--panel)}
+.hm-hd{background:var(--hm-bg);backdrop-filter:none;padding:0 32px}
+.hm-hd .hdt{font-size:15px;font-weight:500;margin:0;display:flex;align-items:center;gap:10px;min-width:0}
+.hm-hd .hdt>svg.i{color:var(--ink2);width:18px;height:18px}
+.hm-hand{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 10px;border-radius:8px;color:var(--ink);font-weight:500}
+.hm-hand:hover{background:var(--hover)}
+.hm-hd :is(a,button):focus-visible,.hm :is(a,button):focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.hm-card,.hm-pill{position:relative}
+.hm .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.hm{flex:1 0 auto;background:var(--hm-bg);display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;padding:32px;font-size:14px;color:var(--ink)}
+.hm-main{flex:999 1 560px;min-width:0;display:grid;gap:20px}
+.hm-side{flex:1 1 300px;min-width:0;display:grid;gap:20px}
+.hm-h1{margin:0 0 4px;font-size:30px;font-weight:600;line-height:1.15;letter-spacing:-.02em}
+
+/* due-date cards */
+.hm-due{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.hm-dc{display:flex;gap:14px;padding:18px 20px;background:var(--hm-bg);border:1px solid var(--line);border-radius:12px;color:var(--ink);min-width:0}
+.hm-dc:hover{border-color:var(--line2);background:var(--hover)}
+.hm-dc .hm-cal{width:22px;height:22px;color:var(--ink2)}
+.hm-dt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.hm-dt .k{font-size:13px;color:var(--ink2)}
+.hm-dt .v{font-size:26px;font-weight:600;line-height:1.2;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.hm-dt .m{font-size:13px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* cards */
+.hm-card{background:var(--hm-bg);border:1px solid var(--line);border-radius:12px;padding:20px 24px 8px;min-width:0}
+.hm-ch{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.hm-ch h2{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
+.hm-pill{display:inline-flex;align-items:center;font-size:12.5px;font-weight:600;padding:2px 10px;border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hm-pill.warn{background:var(--warn-soft);color:var(--warn)}
+.hm-pill.good{background:var(--good-soft);color:var(--good)}
+.hm-pill.neutral{background:var(--panel2);color:var(--ink2)}
+.hm-empty{margin:0;padding:8px 0 16px;color:var(--ink2)}
+
+/* tables */
+.hm-tr{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.5fr) 128px;gap:16px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.hm-th{padding:6px 0 8px;border-top:0;font-size:12.5px;color:var(--ink2)}
+.hm-th+.hm-tr{border-top:1px solid var(--line)}
+.hm-tr .r{text-align:right;justify-self:end}
+.c-who{display:flex;align-items:center;gap:14px;min-width:0}
+.c-who>svg.i,.hm-list li>svg.i{width:22px;height:22px;color:var(--ink2)}
+svg.i.hm-ci{width:22px;height:22px;stroke-width:1.6;color:var(--ink2)}
+.hm-nm{display:flex;flex-direction:column;min-width:0}
+.hm-nm b,.hm-link{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm-link{display:inline-flex;align-items:center;min-height:44px;margin:-12px 0}
+.hm-link:hover{color:var(--accent);text-decoration:underline}
+.hm-nm small,.hm-sch small{font-size:12.5px;color:var(--ink2)}
+.hm-sch{display:flex;flex-direction:column}
+.hm-go{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-weight:600;color:var(--accent)}
+.hm-go:hover{text-decoration:underline}
+.hm-go svg.i{width:16px;height:16px;stroke-width:2}
+
+/* to invoice (finance) */
+.hm-list{list-style:none;margin:0;padding:0}
+.hm-list li{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+.hm-list li:first-child{border-top:0}
+.hm-list .hm-nm{flex:1}
+.hm-amt{font-variant-numeric:tabular-nums;color:var(--ink2)}
+
+/* next actions */
+.hm-acts{list-style:none;margin:0;padding:0}
+.hm-acts li+li{border-top:1px solid var(--line)}
+.hm-acts a{display:flex;align-items:center;gap:14px;min-height:56px;color:var(--ink)}
+.hm-acts a:hover .t{color:var(--accent)}
+.hm-acts a>svg.i:first-child{width:20px;height:20px;color:var(--ink2)}
+.hm-acts .t{flex:1;font-weight:500}
+.hm-acts a>svg.i:last-child{color:var(--ink2)}
+
+/* recent activity: icons joined by a thin line that stops at the last entry */
+.hm-tl{list-style:none;margin:0;padding:0}
+.hm-tl li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:14px;position:relative;padding-bottom:16px}
+.hm-tl li:not(:last-child)::before{content:"";position:absolute;left:9.5px;top:26px;bottom:2px;width:1px;background:var(--line2)}
+.hm-tl li:last-child{padding-bottom:4px}
+.hm-tl .ic{display:grid;place-items:center;width:20px;height:20px;margin-top:1px;color:var(--ink2)}
+.hm-tl .ic svg.i{width:18px;height:18px}
+.hm-tl .tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.hm-tl small{font-size:12.5px;color:var(--ink2)}
+.hm-more{margin:4px 0 8px}
+
+@media (max-width:760px){
+  .hm-hd{padding:0 4px}
+  .hm-hd .ib.menu{width:44px;height:44px}
+  .hm-hd .hdt>svg.i{display:none}
+  .hm-hand span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .hm-hand{width:44px;justify-content:center;padding:0}
+  .hm{padding:20px 16px 32px;gap:16px}
+  .hm-main,.hm-side{gap:16px;flex-basis:100%}
+  .hm-h1{font-size:26px}
+  .hm-due{grid-template-columns:minmax(0,1fr);gap:8px}
+  .hm-dc{padding:14px 16px}
+  .hm-card{padding:16px 16px 4px}
+  .hm-th{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .hm-th+.hm-tr{border-top:0}
+  .hm-tr{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"who act" "det act";gap:2px 12px}
+  .c-who{grid-area:who}
+  .c-det{grid-area:det;padding-left:36px;font-size:13.5px}
+  .c-act{grid-area:act}
+  .hm-sch{flex-direction:row;gap:0;color:var(--ink2)}
+  .hm-sch small{font-size:13.5px}
+  .hm-sch small::before{content:"\00a0· "}
+}

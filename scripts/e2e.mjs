@@ -65,15 +65,15 @@ async function switchTo(page, name, pin) {
   await shot(page, "01-gate");
   await page.click('.whogrid button:has-text("Eunice")');
   await page.waitForURL(/\/home$/);
-  await page.waitForSelector(".hd h1");
-  ok((await text(page)).includes("Hi Eunice"), "Home greets the coordinator");
+  await page.waitForSelector(".hm-h1");
+  ok((await text(page)).includes("Welcome back, Eunice"), "Home greets the coordinator");
   await shot(page, "02-home");
 
   // Add orders is gone: the rail has no link to it, and its old address draws Home.
   ok((await page.locator('#nav a[href="/add"]').count()) === 0, "the rail has no Add orders");
   await page.goto(`${APP}/add`);
-  await page.waitForSelector(".home .lead");
-  ok((await text(page)).includes("Hi Eunice"), "the old Add orders address draws Home");
+  await page.waitForSelector(".hm-h1");
+  ok((await text(page)).includes("Welcome back, Eunice"), "the old Add orders address draws Home");
 
   // Open a confirmed order from the seed: lines, Source card, timeline.
   const pdfOrder = { id: "o1", po: "HH-2231", cust: "C10243", customer: "Harbour Hotel", file: "PO_HH-2231.pdf", hash: "3fa1c09e", lines: 6 };
@@ -236,12 +236,12 @@ async function switchTo(page, name, pin) {
   await page.goto(`${APP}/who`);
   await page.click('.whogrid button:has-text("Eunice")');
   await page.waitForURL(/\/home$/);
-  await page.waitForSelector(".home .lead");
+  await page.waitForSelector(".hm-h1");
   await page.waitForTimeout(300);
   await page.click(".mebtn");
   await page.click('.pop.up button:has-text("Mei")');
   await page.waitForTimeout(500);
-  ok((await page.getAttribute(".home .lead", "class")).includes("greet") && (await text(page, ".home .lead")).includes("Hi Mei"), "picking a person while on Home greets them again");
+  ok((await text(page, ".hm-h1")).includes("Welcome back, Mei"), "picking a person while on Home greets them");
   await page.click(".mebtn");
   await page.click('.pop.up button:has-text("Eunice")');
   await page.waitForTimeout(400);

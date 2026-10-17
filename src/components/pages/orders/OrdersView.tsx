@@ -21,7 +21,7 @@ import {
   run,
 } from "@/state/actions/orders";
 import { meOf, useDemo } from "@/state/demo-store";
-import { custOf, fmtDay, money, orderTotal, outlets, ref, relDay, slotText, STATE } from "@/lib/format";
+import { custOf, DUE, dueOf, fmtDay, parseDue, money, orderTotal, outlets, ref, relDay, slotText, STATE } from "@/lib/format";
 import { filterCustomers, groupOrders, mineOf, orderText, searchKey, TABIC, tabsFor, whyText, type Sort } from "./logic";
 
 // The prototype keeps the customer filter and grouping on its in-memory state (S._fc, S._sort):
@@ -56,8 +56,11 @@ export function OrdersView() {
   const u = meOf(s);
   const shell = useShell();
   const router = useRouter();
-  const f = useSearchParams().get("state") || "all";
-  const [mode, setMode] = useState<DutyMode>("ledger");
+  const params = useSearchParams();
+  const f = params.get("state") || "all";
+  // Home's due-date cards open the list at ?due=…; its Review orders opens ?mode=exceptions.
+  const due = parseDue(params.get("due"));
+  const [mode, setMode] = useState<DutyMode>(() => (params.get("mode") === "exceptions" ? "exceptions" : "ledger"));
   const [fc, setFcState] = useState(keptFc);
   const [sort, setSortState] = useState<Sort>(keptSort);
   const [q, setQ] = useState("");
@@ -100,8 +103,9 @@ export function OrdersView() {
   };
 
   const mine = mineOf(s, u);
-  const { tabs, counts } = tabsFor(mine);
-  const groups = groupOrders(mine, s.customers, f, fc, sort, q);
+  const listed = due ? mine.filter((o) => dueOf(o) === due) : mine;
+  const { tabs, counts } = tabsFor(listed);
+  const groups = groupOrders(listed, s.customers, f, fc, sort, q);
   const dispatchGroups = groupOrders(mine, s.customers, "confirmed", fc, "date", "");
   const custs = filterCustomers(s, u);
   const cust = (o: Order) => custOf(s.customers, o.cust);
@@ -169,7 +173,13 @@ export function OrdersView() {
     .map((id) => dispatchOrders.find((o) => o.id === id))
     .filter((o): o is Order => !!o);
 
-  const tabHref = (k: string) => (k === "all" ? "/orders" : `/orders?state=${k}`);
+  const tabHref = (k: string, d: string | null = due) => {
+    const qs = new URLSearchParams();
+    if (k !== "all") qs.set("state", k);
+    if (d) qs.set("due", d);
+    const str = qs.toString();
+    return str ? `/orders?${str}` : "/orders";
+  };
   const ledgerColSpan = showPrice ? 7 : 6;
 
   return (
@@ -312,6 +322,12 @@ export function OrdersView() {
                 {k === "needs_check" && counts[k] ? <span className="d" /> : null}
               </Link>
             ))}
+            {due ? (
+              <Link className="tab on" href={tabHref(f, null)} aria-label={`Clear filter: ${DUE[due]}`}>
+                {DUE[due]}
+                <Icon name="x" />
+              </Link>
+            ) : null}
             <span className="sp" />
             <label className="search">
               <Icon name="search" />

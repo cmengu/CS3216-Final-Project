@@ -472,30 +472,6 @@ table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 #olist .row .who{min-width:190px;padding-right:12px}
 #olist .row .when{min-width:74px;text-align:right}
 @media (max-width:760px){#olist .gh{padding:16px 16px 6px}#olist .row .who{min-width:0;padding-right:0}#olist .row+.row::after{left:16px;right:16px}}
-.home{display:flex;flex-wrap:wrap;gap:36px 64px;align-items:flex-start;padding-top:36px}
-.hmain{flex:1 1 440px;max-width:720px;min-width:0;display:grid;gap:30px}
-.hside{flex:0 1 300px;min-width:240px;display:grid;gap:30px;padding-top:4px}
-.hside .log .ev{grid-template-columns:20px minmax(0,1fr);font-size:12.5px}
-.hside .log .ev small{display:block;color:var(--ink3);font-size:11.5px;margin-top:1px}
-.hside .more{justify-self:start;margin:6px 0 0 30px}
-.home .lead>span{grid-area:1/1}
-.home .lead .hi{opacity:0;pointer-events:none;font-size:24px;font-weight:600;letter-spacing:-.02em;color:var(--ink)}
-.home .lead .fm{font-size:24px;font-weight:600;letter-spacing:-.02em;color:var(--ink)}
-.home .lead.greet .hi{animation:hiOut 5.4s ease both}
-.home .lead.greet .fm{animation:fmIn .7s ease 5s backwards}
-@keyframes hiOut{0%{opacity:0;transform:translateY(6px)}9%,90%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-6px)}}
-@keyframes fmIn{from{opacity:0;transform:translateY(6px)}}
-.mods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.mod{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;min-width:0}
-.mod:hover{background:var(--hover)}
-.mod .k{font-size:12px;color:var(--ink3)} .mod .v{font-size:20px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.mod .m{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.home .lead{margin:0;line-height:1.25;display:grid}
-.home section{display:grid;gap:6px;min-width:0}
-.home h3{margin:0;font-size:12px;font-weight:500;color:var(--ink3);display:flex;align-items:center}
-.home h3 a{margin-left:auto;color:var(--ink3)} .home h3 a:hover{color:var(--ink)}
-.home .day{font-size:12px;color:var(--ink3);padding:10px 0 0;display:flex;gap:8px} .home .day b{color:var(--ink2);font-weight:500}
-@media (max-width:760px){.mods{grid-template-columns:1fr 1fr 1fr;gap:8px}.mod{padding:10px}}
 .gate{position:fixed;inset:0;z-index:90;background:var(--bg);display:grid;place-items:center;padding:24px}
 .gate[hidden]{display:none}
 .whobox{width:min(560px,100%);text-align:center;display:grid;gap:8px}
