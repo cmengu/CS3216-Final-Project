@@ -6,6 +6,7 @@ import { canEdit, canInvoice, seesCustomer } from "@/platform/access";
 import { TODAY } from "@/sample";
 import type { DemoState, Order, OrderEvent, OrderState, Person } from "@/sample";
 import { custOf, DUE, dueOf, fmtDay, isOverdue, relDay, type Due } from "@/lib/format";
+import { cellText, overdueText, revisionText } from "@/lib/issues";
 
 export interface DueCard {
   key: Due;
@@ -29,27 +30,20 @@ export interface ReviewItem {
   action: "Review" | "Resolve";
 }
 
-const FIELD: Record<string, string> = { Qty: "Quantity" };
-
 /**
  * Orders waiting on a person: overdue orders, then the review items (changed POs, cells with no SKU).
  * Review items only reach people who may review changes.
  */
 export function reviewItems(s: DemoState, u: Person, mine: Order[]): ReviewItem[] {
-  const out: ReviewItem[] = mine.filter(isOverdue).map((o) => ({ key: "od" + o.id, order: o, issue: `Overdue, was due ${fmtDay(o.date)}`, action: "Review" }));
+  const out: ReviewItem[] = mine.filter(isOverdue).map((o) => ({ key: "od" + o.id, order: o, issue: overdueText(o), action: "Review" }));
   if (!canEdit(u)) return out;
   for (const t of s.toCheck) {
     const o = mine.find((x) => x.id === t.order);
     if (!o) continue;
     if (t.kind === "revision") {
-      const d = t.diff[0];
-      if (!d) continue;
-      const more = t.diff.length > 1 ? `, and ${t.diff.length - 1} more change${t.diff.length > 2 ? "s" : ""}` : "";
-      out.push({ key: t.id, order: o, issue: `${FIELD[d.field] ?? d.field} changed from ${d.old} to ${d.new}${more}`, action: "Review" });
-    } else {
-      const line = /^Line (\d+)/.exec(t.text)?.[1];
-      out.push({ key: t.id, order: o, issue: line ? `Missing SKU on line ${line}` : "Missing SKU", action: "Resolve" });
-    }
+      const issue = revisionText(t);
+      if (issue) out.push({ key: t.id, order: o, issue, action: "Review" });
+    } else out.push({ key: t.id, order: o, issue: cellText(t), action: "Resolve" });
   }
   return out;
 }
