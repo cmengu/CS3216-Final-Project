@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { CustomerIcon } from "@/components/bits";
 import { Icon, type IconName } from "@/components/icons";
 import { Header } from "@/components/shell/Header";
 import { useShell } from "@/components/shell/context";
 import { canPrice, visibleOrders } from "@/platform/access";
 import { TODAY } from "@/sample";
-import type { Customer, DemoState, Order, Person } from "@/sample";
+import type { DemoState, Order, Person } from "@/sample";
 import { meOf, useDemo, useShownEvents } from "@/state/demo-store";
 import { addDays, custOf, evIcon, fmtDay, isOverdue, lc, money, orderTotal, ref, STATE } from "@/lib/format";
 import { dueCards, eventTime, goingOut, nextActions, recentEvents, relLabel, reviewItems, toneOf, type NextAction } from "./home/home";
@@ -36,12 +37,6 @@ export function digestLines(s: DemoState, u: Person, mine: Order[]): string[] {
   const dr = s.drafts.length;
   if (dr) out.push(`Unsent ${dr} acknowledgement draft${dr > 1 ? "s" : ""}.`);
   return out;
-}
-
-/** The customer's own line icon from the data, drawn as a plain grey stroke; a building when it has none. */
-function CustIcon({ c }: { c: Customer }) {
-  if (!c.logo) return <Icon name="building" style={{ width: 22, height: 22 }} />;
-  return <svg className="i hm-ci" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: c.logo }} />;
 }
 
 function Pill({ n, tone, noun }: { n: number; tone: "warn" | "neutral"; noun: string }) {
@@ -143,7 +138,7 @@ export function HomeView() {
                 {review.map((r) => (
                   <div className="hm-tr" role="row" key={r.key}>
                     <div className="c-who" role="cell">
-                      <CustIcon c={cust(r.order)} />
+                      <CustomerIcon c={cust(r.order)} />
                       <span className="hm-nm">
                         <b>{cust(r.order).name}</b>
                         <small>{ref(r.order)}</small>
@@ -179,7 +174,7 @@ export function HomeView() {
                 {out.map((o) => (
                   <div className="hm-tr" role="row" key={o.id}>
                     <div className="c-who" role="cell">
-                      <CustIcon c={cust(o)} />
+                      <CustomerIcon c={cust(o)} />
                       <span className="hm-nm">
                         <Link href={`/orders/${o.id}`} className="hm-link">
                           {cust(o).name}
@@ -207,7 +202,7 @@ export function HomeView() {
                 <ul className="hm-list">
                   {toInv.slice(0, 5).map((o) => (
                     <li key={o.id}>
-                      <CustIcon c={cust(o)} />
+                      <CustomerIcon c={cust(o)} />
                       <span className="hm-nm">
                         <Link href={`/orders/${o.id}`} className="hm-link">
                           {cust(o).name}

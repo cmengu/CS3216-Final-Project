@@ -103,7 +103,7 @@ async function switchTo(page, name, pin) {
 
   // Customer page and History.
   await page.goto(`${APP}/customers/${pdfOrder.cust}`);
-  await page.waitForSelector(".two");
+  await page.waitForSelector(".cu-detail");
   ok((await text(page)).includes(pdfOrder.po), "the order is on its customer page");
   await page.goto(`${APP}/history`);
   await page.waitForSelector(".ht");

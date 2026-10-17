@@ -49,7 +49,7 @@
 .hm-tr .r{text-align:right;justify-self:end}
 .c-who{display:flex;align-items:center;gap:14px;min-width:0}
 .c-who>svg.i,.hm-list li>svg.i{width:22px;height:22px;color:var(--ink2)}
-svg.i.hm-ci{width:22px;height:22px;stroke-width:1.6;color:var(--ink2)}
+svg.i.cust-ic{width:22px;height:22px;stroke-width:1.6;color:var(--ink2)}
 .hm-nm{display:flex;flex-direction:column;min-width:0}
 .hm-nm b,.hm-link{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hm-link{display:inline-flex;align-items:center;min-height:44px;margin:-12px 0}

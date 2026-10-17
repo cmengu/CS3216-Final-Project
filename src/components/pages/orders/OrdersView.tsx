@@ -61,7 +61,8 @@ export function OrdersView() {
   // Home's due-date cards open the list at ?due=…; its Review orders opens ?mode=exceptions.
   const due = parseDue(params.get("due"));
   const [mode, setMode] = useState<DutyMode>(() => (params.get("mode") === "exceptions" ? "exceptions" : "ledger"));
-  const [fc, setFcState] = useState(keptFc);
+  // A customer page's "All <n> orders" opens the list at ?customer=<id>.
+  const [fc, setFcState] = useState(() => params.get("customer") ?? keptFc);
   const [sort, setSortState] = useState<Sort>(keptSort);
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<string[]>([]);

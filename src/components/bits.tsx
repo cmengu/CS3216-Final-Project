@@ -39,3 +39,9 @@ export function CustomerMark({ c }: { c: Customer }) {
     </span>
   );
 }
+
+/** The customer's own line icon from the data, as a plain grey stroke (no tint); a building when it has none. */
+export function CustomerIcon({ c }: { c: Customer }) {
+  if (!c.logo) return <Icon name="building" style={{ width: 22, height: 22 }} />;
+  return <svg className="i cust-ic" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: c.logo }} />;
+}

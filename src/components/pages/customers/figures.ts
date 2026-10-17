@@ -6,6 +6,7 @@ import { PRODUCTS, TODAY } from "@/sample";
 import type { Customer, DemoState, Order, OrderEvent, Person } from "@/sample";
 import { seesCustomer } from "@/platform/access";
 import { addDays, fmtShort, orderTotal } from "@/lib/format";
+import { orderIssues } from "@/lib/issues";
 
 /** The customers this person looks after, in the list's order. */
 export const visibleCustomers = (s: Pick<DemoState, "customers">, u: Person): Customer[] =>
@@ -131,3 +132,52 @@ export function activity(s: Pick<DemoState, "orders" | "events">, id: string, fl
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 14);
 }
+
+/* ------------------------------------------------------- redesigned directory and page ---- */
+
+/** One row of the Customers directory: open orders, the next delivery, the contact, and any issue. */
+export interface DirectoryRow {
+  c: Customer;
+  open: number;
+  next: Order | null;
+  contact: string;
+  issue: string | null;
+}
+
+/** Open orders: everything not yet delivered (drafts included, so no order falls between Open and Past). */
+export const openOrders = (mine: Order[]) => mine.filter((o) => o.state !== "delivered");
+/** Past orders: delivered ones, newest first. */
+export const pastOrders = (mine: Order[]) => mine.filter((o) => o.state === "delivered");
+
+export function directoryRows(s: Pick<DemoState, "customers" | "orders" | "toCheck">, u: Person): DirectoryRow[] {
+  return visibleCustomers(s, u).map((c) => {
+    const open = openOrders(customerOrders(s, c.id));
+    const next = [...open].sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+    const issues = open.flatMap((o) => orderIssues(o, s.toCheck));
+    const issue = issues.length ? issues[0].text + (issues.length > 1 ? ` (+${issues.length - 1} more)` : "") : null;
+    return { c, open: open.length, next, contact: c.sender, issue };
+  });
+}
+
+export type DirectorySort = "name" | "open" | "next";
+
+/** Sort the directory; customers with no open order always go last when sorting by next delivery. */
+export function sortRows(rows: DirectoryRow[], by: DirectorySort, desc: boolean): DirectoryRow[] {
+  const dir = desc ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    if (by === "next" && !a.next !== !b.next) return a.next ? -1 : 1;
+    const n =
+      by === "name" ? a.c.name.localeCompare(b.c.name) : by === "open" ? a.open - b.open : (a.next?.date ?? "").localeCompare(b.next?.date ?? "");
+    return dir * n || a.c.name.localeCompare(b.c.name);
+  });
+}
+
+/** Search by name, customer ID, type or contact. */
+export const matches = (r: DirectoryRow, q: string) => {
+  const ql = q.trim().toLowerCase();
+  return !ql || [r.c.name, r.c.id, r.c.kind, r.contact].join(" ").toLowerCase().includes(ql);
+};
+
+/** The weekly bars as one sentence, for people who cannot see the chart. */
+export const weeksText = (weeks: { n: number; label: string }[]) =>
+  "Orders per week: " + weeks.map((w) => `week of ${w.label}, ${w.n}`).join("; ") + ".";
