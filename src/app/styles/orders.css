@@ -145,3 +145,10 @@
   .o-notice-acts{margin-left:0;width:100%}
   .o-ledger tr.orow{display:table-row;padding:0}
 }
+
+.o-status-filter{position:relative;display:inline-flex;align-items:center;margin:8px 0}
+.o-status-filter select{width:100%;min-width:180px;appearance:none;padding:7px 32px 7px 12px;border-radius:8px;background:var(--panel2)}
+.o-status-filter svg{position:absolute;right:10px;top:50%;transform:translateY(-50%);width:12px;height:12px;color:var(--ink3);pointer-events:none}
+
+.o-ledger-filters{flex-wrap:wrap;gap:10px}
+.o-ledger-filters .o-status-filter select{font-size:12.5px}
