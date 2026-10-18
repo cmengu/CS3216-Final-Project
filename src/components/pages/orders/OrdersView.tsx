@@ -22,7 +22,7 @@ import {
 } from "@/state/actions/orders";
 import { meOf, useDemo } from "@/state/demo-store";
 import { custOf, DUE, dueOf, fmtDay, parseDue, money, orderTotal, outlets, ref, relDay, slotText, STATE } from "@/lib/format";
-import { filterCustomers, groupOrders, mineOf, orderText, searchKey, TABIC, tabsFor, whyText, type Sort } from "./logic";
+import { filterCustomers, groupOrders, mineOf, orderText, searchKey, tabsFor, whyText, type Sort } from "./logic";
 
 // The prototype keeps the customer filter and grouping on its in-memory state (S._fc, S._sort):
 // they survive moving between pages until a reload.
@@ -190,29 +190,7 @@ export function OrdersView() {
         acts={
           <div className="filt">
             <span className="o-role-hint">{MODE_CAPTIONS[activeMode]}</span>
-            {activeMode === "ledger" ? (
-              <>
-                <span className="fw">
-                  <select value={fc} onChange={(e) => setFc(e.target.value)} aria-label="Customer">
-                    <option value="">All customers</option>
-                    {custs.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Icon name="chevDown" />
-                </span>
-                <span className="fw">
-                  <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Group by">
-                    <option value="date">By date</option>
-                    <option value="customer">By customer</option>
-                    <option value="state">By status</option>
-                  </select>
-                  <Icon name="chevDown" />
-                </span>
-              </>
-            ) : null}
+
           </div>
         }
       >
@@ -291,38 +269,38 @@ export function OrdersView() {
                   </span>
                 </>
               )}
-              <div className="o-notice-acts">
-                {editor && exceptionOrders.length > 0 ? (
-                  <button
-                    type="button"
-                    className="o-link-btn primary"
-                    onClick={() => switchMode("exceptions")}
-                  >
-                    Enter Exception Review ({exceptionOrders.length}) →
-                  </button>
-                ) : null}
-                {deliverer && dispatchOrders.length > 0 ? (
-                  <button
-                    type="button"
-                    className={`o-link-btn${!editor || exceptionOrders.length === 0 ? " primary" : ""}`}
-                    onClick={() => switchMode("dispatch")}
-                  >
-                    Open Dispatch Queue ({dispatchOrders.length}) →
-                  </button>
-                ) : null}
-              </div>
+
             </div>
           ) : null}
 
-          <div className="tabs">
-            {tabs.map(([k, l]) => (
-              <Link key={k} className={`tab ${f === k ? "on" : ""}`} href={tabHref(k)}>
-                <Icon name={TABIC[k]} />
-                {l}
-                <span className="n">{counts[k]}</span>
-                {k === "needs_check" && counts[k] ? <span className="d" /> : null}
-              </Link>
-            ))}
+          <div className="tabs o-ledger-filters">
+            <span className="o-status-filter">
+              <select aria-label="Filter by order status" value={f} onChange={(event) => router.push(tabHref(event.target.value))}>
+                {tabs.map(([key, label]) => (
+                  <option key={key} value={key}>{label} ({counts[key]})</option>
+                ))}
+              </select>
+              <Icon name="chevDown" />
+            </span>
+                <span className="o-status-filter">
+                  <select value={fc} onChange={(e) => setFc(e.target.value)} aria-label="Customer">
+                    <option value="">All customers</option>
+                    {custs.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon name="chevDown" />
+                </span>
+                <span className="o-status-filter">
+                  <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Group by">
+                    <option value="date">By date</option>
+                    <option value="customer">By customer</option>
+                    <option value="state">By status</option>
+                  </select>
+                  <Icon name="chevDown" />
+                </span>
             {due ? (
               <Link className="tab on" href={tabHref(f, null)} aria-label={`Clear filter: ${DUE[due]}`}>
                 {DUE[due]}
