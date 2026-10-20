@@ -20,6 +20,8 @@ export interface InvoiceLine {
   difference: number | null;
   /** Why the line is not a match, in plain words; empty for a match. */
   reason: string;
+  /** The unit as printed (LG, PC, M3); null when the invoice did not say. */
+  unit?: string | null;
   /**
    * The service's overcharge on this line. Null means it could not price the line.
    * Absent only on sample invoices, which work it out from the difference.
@@ -66,10 +68,30 @@ export interface SupplierInvoice {
   warnings?: string[];
   /** The step that failed and why, in the service's words. Null unless the check failed. */
   error?: string | null;
+  /** The purchase order the invoice names, when it names one. */
+  purchaseOrder?: string | null;
+  /** The tax rate printed on the invoice, as the service sent it (0.09 or 9). */
+  taxRate?: number | null;
+  /** How many pages the PDF has, once it was read. */
+  pageCount?: number | null;
+  /** Where each piece of text sits on the PDF, for highlighting a line. */
+  blocks?: SourceBlock[];
   /** The clerk's decision, saved in the service. Null until someone decides. */
   outcome?: Outcome | null;
   /** Why it can be paid anyway, in the clerk's words. */
   outcomeReason?: string | null;
   /** When the service saved the decision, as an ISO time. */
   decidedAt?: string | null;
+}
+
+/** A piece of the PDF's text and where it sits, from the reader. */
+export interface SourceBlock {
+  text: string;
+  locations: {
+    page: number;
+    /** l, t, r, b in PDF points; coord_origin says which corner y is measured from. */
+    bbox: { l: number; t: number; r: number; b: number; coord_origin?: string } | null;
+    pageWidth: number | null;
+    pageHeight: number | null;
+  }[];
 }

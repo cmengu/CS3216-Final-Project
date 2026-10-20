@@ -77,6 +77,19 @@ export function uploadFailure(status: number, detail?: unknown): string | null {
   return broken;
 }
 
+/** An upload the service refused. Carries the status so the screen can say why, and wait on 429. */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly detail: string | null = null,
+    readonly retryAfter: number | null = null,
+  ) {
+    super(message);
+    this.name = "UploadError";
+  }
+}
+
 /**
  * Send one PDF. A 201 is the checked invoice. A 422 that carries a saved record is an invoice
  * the service kept but could not check; it is returned too, so its page can say why.
@@ -88,13 +101,19 @@ export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   try {
     response = await fetch(`${SERVICE_URL}/invoices`, { method: "POST", body });
   } catch {
-    throw new Error(unreachable);
+    throw new UploadError(unreachable, null);
   }
   const answer = (await response.json().catch(() => null)) as (Partial<ServiceInvoice> & { detail?: unknown }) | null;
   if (response.status === 201 || (response.status === 422 && typeof answer?.id === "string")) {
     return toSupplierInvoice(answer as ServiceInvoice);
   }
-  throw new Error(uploadFailure(response.status, answer?.detail) ?? broken);
+  const retry = Number(response.headers.get("Retry-After"));
+  throw new UploadError(
+    uploadFailure(response.status, answer?.detail) ?? broken,
+    response.status,
+    typeof answer?.detail === "string" ? answer.detail : null,
+    Number.isFinite(retry) && retry > 0 ? retry : null,
+  );
 }
 
 /** Where the service keeps the PDF exactly as it was uploaded. */

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>C · Guided setup</title>
+<link rel="stylesheet" href="assets/ic.css">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#b84a27}a:hover{color:#8f3a1e}
+</style>
+</head>
+<body>
+<div class="ic" style="min-height: 100vh; background: var(--surface)">
+  <header class="ic-top"><div class="ic-brand"><span class="ic-mark"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>Invoice Checker</div><nav class="ic-steps" aria-label="Setup"><button class="ic-step done" type="button"><span class="num"><svg class="i " viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2.4"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>Master list</button><span class="ic-step-sep" aria-hidden="true"></span><button class="ic-step" type="button" aria-current="step"><span class="num">2</span>Upload invoices</button><span class="ic-step-sep" aria-hidden="true"></span><button class="ic-step" type="button" aria-disabled="true"><span class="num">3</span>Check</button></nav><button class="ic-acct" type="button" aria-label="Account"><span class="ic-av">A</span><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button></header>
+  <main class="ic-page" style="padding-top: 56px">
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <div style="flex: 999 1 560px; display: flex; flex-direction: column; gap: 20px">
+        <h1 class="ic-h1">Upload your first invoice</h1>
+        <label class="ic-drop" style="padding: 72px 24px; cursor: pointer"><svg class="i row" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M4 15v5h16v-5"></path></svg><span style="font-size: 18px; font-weight: 600">Drop invoice PDFs here</span><span class="muted">Up to 20 MB each. <span style="color: var(--accent); font-weight: 600">Choose files</span></span><input type="file" accept=".pdf" multiple="" class="sr"></label>
+      </div>
+      <aside class="ic-panel" aria-label="Master list" style="flex: 1 1 300px; margin-top: 54px">
+        <div class="ic-grp"><h3>Master list</h3>
+          <div class="ic-fact"><svg class="i row" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path></svg><div class="v"><span>master_prices.csv</span><span class="muted">Uploaded 20 Oct, 10:42</span></div></div>
+          <div class="ic-fact"><svg class="i row" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg><div class="v"><span>24 items</span><span class="muted">7 suppliers</span></div></div>
+          <a class="ic-link" href="#" style="margin-left: 32px">View master list<svg class="i arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+</body>
+</html>

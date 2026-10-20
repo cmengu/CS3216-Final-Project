@@ -65,15 +65,39 @@ const P: Record<string, ReactNode> = {
     </>
   ),
   arrowUp: <path d="M12 19V5M5 12l7-7 7 7" />,
+  /* Added for the redesign, path for path from docs/design. */
+  tick: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  upload: <path d="M12 15V4M7 9l5-5 5 5M4 15v5h16v-5" />,
+  sheet: (
+    <>
+      <path d="M6 3h9l3 3v15H6z" />
+      <path d="M9 9h6M9 13h6M9 17h4" />
+    </>
+  ),
+  compare: <path d="M7 4v16M17 4v16M3 8h8M13 16h8" />,
+  arrowR: <path d="M5 12h14M13 6l6 6-6 6" />,
+  chevL: <path d="M15 6l-6 6 6 6" />,
+  minus: <path d="M5 12h14" />,
+  external: <path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" />,
+  signout: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />,
+  envelope: (
+    <>
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+      <path d="M4 7l8 6 8-6" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof P;
 
-export function Icon({ name, style }: { name: IconName; style?: CSSProperties }) {
-  // The prototype's chevron is drawn at 10px wherever it appears.
-  const s = name === "chev" ? { width: 10, height: 10, ...style } : style;
+/**
+ * size: "row" 20px (list rows), "ui" 18px (top bar, inputs, buttons), default 16px (arrows,
+ * chevrons). "arrow" draws the heavier stroke the text actions use.
+ */
+export function Icon({ name, size, arrow, style }: { name: IconName; size?: "row" | "ui"; arrow?: boolean; style?: CSSProperties }) {
+  const cls = ["i", size, arrow ? "arrow" : null].filter(Boolean).join(" ");
   return (
-    <svg className="i" viewBox="0 0 24 24" style={s} aria-hidden="true">
+    <svg className={cls} viewBox="0 0 24 24" style={style} aria-hidden="true">
       {P[name]}
     </svg>
   );

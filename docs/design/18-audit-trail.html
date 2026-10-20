@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Audit trail</title>
+<link rel="stylesheet" href="assets/ic.css">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#b84a27}a:hover{color:#8f3a1e}
+</style>
+</head>
+<body>
+<div class="ic" style="min-height: 100vh; background: var(--surface)">
+  <header class="ic-top"><div class="ic-brand"><span class="ic-mark"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>Invoice Checker</div><nav class="ic-seg" aria-label="Workspace"><button type="button"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path></svg>Master list <span class="ok"><svg class="i " viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg><span class="sr">ready</span></span></button><button type="button"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg>Invoices <span class="ic-pill ic-pill--warn">10</span><span class="sr"> to decide</span></button><button type="button" aria-current="page"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7v5l3 2"></path></svg>Audit trail</button></nav><button class="ic-acct" type="button" aria-label="Account"><span class="ic-av">A</span><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button></header>
+  <main class="ic-page">
+    <div class="ic-headrow"><h1 class="ic-h1">Audit trail</h1><button class="ic-btn ic-btn--secondary" type="button">Export ready to pay</button></div>
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+      <label class="ic-search" style="flex: 1 1 320px"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg><span class="sr">Search audit trail</span><input type="search" placeholder="Search supplier or invoice number"></label>
+      <div class="ic-seg" role="group" aria-label="Show"><button type="button" aria-pressed="true">All</button><button type="button" aria-pressed="false">Ready to pay</button><button type="button" aria-pressed="false">Raised</button><button type="button" aria-pressed="false">Paid anyway</button><button type="button" aria-pressed="false">Master list</button></div>
+    </div>
+    <section class="ic-card" style="padding: 0" aria-label="Audit trail"><div class="ic-scroll"><table class="ic-grid"><thead><tr><th>When</th><th>Invoice</th><th>Decision</th><th>Details</th><th>By</th></tr></thead><tbody><tr><td style="white-space: nowrap">Today, 11:20</td><td><span style="display: flex; flex-direction: column"><b style="font-weight: 600">MOCK-F02-002</b><span class="muted">DEF Hose Company Pte Ltd</span></span></td><td><span class="ic-pill ic-pill--warn">Raise with supplier</span></td><td>SGD 159.60 over</td><td>You</td></tr><tr><td style="white-space: nowrap">20 Oct, 10:42</td><td><span style="display: flex; flex-direction: column"><b style="font-weight: 600">Master list</b><span class="muted">master_prices.csv</span></span></td><td><span class="ic-pill">Uploaded</span></td><td>24 items · 7 suppliers</td><td>You</td></tr><tr><td style="white-space: nowrap">19 Oct, 16:40</td><td><span style="display: flex; flex-direction: column"><b style="font-weight: 600">MOCK-F04-002</b><span class="muted">JKL Machine Services Pte Ltd</span></span></td><td><span class="ic-pill">Paid anyway</span></td><td>“Undercharged by SGD 21.00. Paying as billed.”</td><td>You</td></tr><tr><td style="white-space: nowrap">6 Oct, 09:15</td><td><span style="display: flex; flex-direction: column"><b style="font-weight: 600">MOCK-F03-001</b><span class="muted">GHI Tools Pte Ltd</span></span></td><td><span class="ic-pill ic-pill--good">Ready to pay</span></td><td><span class="muted">—</span></td><td>You</td></tr><tr><td style="white-space: nowrap">6 Oct, 09:14</td><td><span style="display: flex; flex-direction: column"><b style="font-weight: 600">MOCK-F02-001</b><span class="muted">DEF Hose Company Pte Ltd</span></span></td><td><span class="ic-pill ic-pill--good">Ready to pay</span></td><td><span class="muted">—</span></td><td>You</td></tr><tr><td style="white-space: nowrap">6 Oct, 09:12</td><td><span style="display: flex; flex-direction: column"><b style="font-weight: 600">MOCK-F01-001</b><span class="muted">ABC Logistics Pte Ltd</span></span></td><td><span class="ic-pill ic-pill--good">Ready to pay</span></td><td><span class="muted">—</span></td><td>You</td></tr></tbody></table></div></section>
+  </main>
+</div>
+</body>
+</html>

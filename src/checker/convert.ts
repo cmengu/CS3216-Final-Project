@@ -2,7 +2,7 @@
  * Turn one saved invoice from the checking service into the shape the screens use.
  * No other file needs the service's names.
  */
-import type { CheckState, InvoiceLine, LineResult, Outcome, SupplierInvoice } from "./types";
+import type { CheckState, InvoiceLine, LineResult, Outcome, SourceBlock, SupplierInvoice } from "./types";
 
 export interface ServiceLine {
   part_number: string | null;
@@ -10,6 +10,14 @@ export interface ServiceLine {
   quantity: string | null;
   unit_price: string | null;
   line_total: string | null;
+  unit?: string | null;
+}
+
+interface ServiceLocation {
+  page: number;
+  bbox?: { l: number; t: number; r: number; b: number; coord_origin?: string } | null;
+  page_width?: number | null;
+  page_height?: number | null;
 }
 
 export interface ServiceCheckLine {
@@ -43,7 +51,13 @@ export interface ServiceInvoice {
     subtotal: string | null;
     tax: string | null;
     invoice_total: string | null;
+    purchase_order?: string | null;
+    tax_rate?: string | null;
     lines: ServiceLine[];
+  } | null;
+  document?: {
+    page_count?: number;
+    blocks?: { text: string; locations?: ServiceLocation[] }[];
   } | null;
   check: {
     overcharge_total: string | null;
@@ -97,6 +111,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
         ? "Not exist in Master Sheet"
         : check?.reason ?? "The check gave no result for this line.",
       overcharge: numberOf(check?.overcharge),
+      unit: line.unit ?? null,
     };
   });
   return {
@@ -121,5 +136,22 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     outcome: outcomeOf(saved.outcome),
     outcomeReason: outcomeOf(saved.outcome) ? (saved.outcome_reason ?? null) : null,
     decidedAt: outcomeOf(saved.outcome) ? (saved.decided_at ?? null) : null,
+    purchaseOrder: invoice?.purchase_order ?? null,
+    taxRate: numberOf(invoice?.tax_rate),
+    pageCount: saved.document?.page_count ?? null,
+    blocks: blocksOf(saved),
   };
+}
+
+/** Only the text and positions; the reader's full document is not kept. */
+function blocksOf(saved: ServiceInvoice): SourceBlock[] {
+  return (saved.document?.blocks ?? []).map((b) => ({
+    text: b.text,
+    locations: (b.locations ?? []).map((l) => ({
+      page: l.page,
+      bbox: l.bbox ?? null,
+      pageWidth: l.page_width ?? null,
+      pageHeight: l.page_height ?? null,
+    })),
+  }));
 }
