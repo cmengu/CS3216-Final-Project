@@ -5,112 +5,33 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
-import { Dialog, Dropzone, Notice, Search, type DropState } from "@/components/ui";
+import { Dialog, Notice, Search } from "@/components/ui";
 import { money, whenLabel } from "@/checker/present";
-import { replaceMasterList, uploadMasterList, type MasterItem } from "@/masterList";
+import type { MasterItem } from "@/masterList";
+import { MasterImport } from "@/components/MasterImport";
 
-const ACCEPT = ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
-
-const day = (iso: string) => {
+const day = (iso: string | null) => {
+  if (!iso) return "—";
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return iso;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 };
 const valid = (i: MasterItem) => (i.validFrom || i.validTo ? `${day(i.validFrom)} – ${day(i.validTo)}` : "");
-const pct = (d: number) => (d ? `${Number((d * 100).toFixed(2))}%` : "");
+const pct = (d: number | null) => (d ? `${Number((d * 100).toFixed(2))}%` : "");
 
 function FirstRun() {
   const router = useRouter();
-  const [state, setState] = useState<DropState>({ kind: "idle" });
-  const [busy, setBusy] = useState(false);
-  return (
-    <div className="ic-page ic-page--narrow" style={{ paddingTop: 56 }}>
-      <div className="ic-titleblock">
-        <h1 className="ic-h1">Upload your master list</h1>
-        <p className="muted" style={{ fontSize: 14 }}>
-          Every invoice is checked against it.
-        </p>
-      </div>
-      <Dropzone
-        title={busy ? "Reading the file…" : "Drop your master list here"}
-        hint="CSV or Excel."
-        accept={ACCEPT}
-        state={state}
-        inputLabel="Master list file"
-        onFiles={async ([file]) => {
-          setBusy(true);
-          const r = await uploadMasterList(file);
-          setBusy(false);
-          if (r.ok) router.replace("/master-list?uploaded=1");
-          else setState({ kind: "error", title: `Couldn’t use ${file.name}`, reason: r.reason });
-        }}
-      />
-      <p className="muted" style={{ margin: 0 }}>
-        Needs supplier, item, unit and price columns.
-      </p>
-    </div>
-  );
+  return <div className="ic-page ic-page--narrow" style={{ paddingTop: 56 }}>
+    <h1 className="ic-h1">Upload your master list</h1>
+    <MasterImport onSaved={() => router.replace("/master-list?uploaded=1")} />
+  </div>;
 }
 
 function ReplaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [state, setState] = useState<DropState>({ kind: "idle" });
-  const [busy, setBusy] = useState(false);
-  const close = () => {
-    setFile(null);
-    setState({ kind: "idle" });
-    onClose();
-  };
-  return (
-    <Dialog
-      open={open}
-      title="Replace master list"
-      onClose={close}
-      footer={
-        <>
-          <button type="button" className="ic-btn ic-btn--secondary" onClick={close}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="ic-btn ic-btn--primary"
-            disabled={!file || busy}
-            onClick={async () => {
-              if (!file) return;
-              setBusy(true);
-              const r = await replaceMasterList(file);
-              setBusy(false);
-              if (r.ok) close();
-              else setState({ kind: "error", title: `Couldn’t use ${file.name}`, reason: r.reason });
-            }}
-          >
-            Replace
-          </button>
-        </>
-      }
-    >
-      <Dropzone
-        size="md"
-        title={file ? file.name : "Drop your master list here"}
-        hint={file ? "Ready to replace." : "CSV or Excel."}
-        accept={ACCEPT}
-        state={state}
-        inputLabel="New master list file"
-        onFiles={([f]) => {
-          setFile(f);
-          setState({ kind: "idle" });
-        }}
-      />
-      <p className="muted" style={{ margin: 0 }}>
-        Invoices already checked keep their result.
-      </p>
-      {!file ? (
-        <p className="muted" style={{ margin: 0 }}>
-          Choose a file to replace the master list.
-        </p>
-      ) : null}
-    </Dialog>
-  );
+  return <Dialog open={open} title="Replace master list" onClose={onClose}>
+    <p className="muted">Choose a file and review the column mapping. The current list is replaced only after all rows pass validation.</p>
+    {open ? <MasterImport replace onSaved={onClose} /> : null}
+  </Dialog>;
 }
 
 function MasterListView() {
@@ -124,11 +45,11 @@ function MasterListView() {
   const uploaded = params.get("uploaded") === "1";
 
   const items = useMemo(() => masterList?.items ?? [], [masterList]);
-  const suppliers = useMemo(() => [...new Set(items.map((i) => i.supplier).filter(Boolean))].sort(), [items]);
+  const suppliers = useMemo(() => [...new Set(items.map((i) => i.supplier).filter((value): value is string => Boolean(value)))].sort(), [items]);
   const shown = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return items.filter(
-      (i) => (!supplier || i.supplier === supplier) && (!ql || [i.supplier, i.po, i.item, i.description].join(" ").toLowerCase().includes(ql)),
+      (i) => (!supplier || i.supplier === supplier) && (!ql || [i.name, i.supplier, i.po, i.item, i.description].join(" ").toLowerCase().includes(ql)),
     );
   }, [items, q, supplier]);
 
@@ -181,9 +102,11 @@ function MasterListView() {
                 <th>Supplier</th>
                 <th>PO</th>
                 <th>Item</th>
-                <th>Description</th>
+                <th>Name</th>
+                <th className="r">Quantity</th>
                 <th>Unit</th>
-                <th className="r">Price</th>
+                <th className="r">Unit price</th>
+                <th className="r">Total price</th>
                 <th className="r">Discount</th>
                 <th>Valid</th>
               </tr>
@@ -197,12 +120,16 @@ function MasterListView() {
                     <td className="mono" style={{ whiteSpace: "nowrap", fontSize: 13 }}>
                       {i.item}
                     </td>
-                    <td className="trunc" title={i.description}>
-                      {i.description}
+                    <td className="trunc" title={i.name}>
+                      {i.name}
                     </td>
+                    <td className="r">{i.quantity ?? "—"}</td>
                     <td>{i.unit}</td>
                     <td className="r" style={{ whiteSpace: "nowrap" }}>
-                      {money(Number(i.price), i.currency)}
+                      {i.currency ? money(Number(i.price), i.currency) : i.price}
+                    </td>
+                    <td className="r" style={{ whiteSpace: "nowrap" }}>
+                      {i.totalPrice !== undefined ? (i.currency ? money(Number(i.totalPrice), i.currency) : i.totalPrice) : i.quantity === null ? (i.currency ? money(Number(i.price), i.currency) : i.price) : "—"}
                     </td>
                     <td className="r">{pct(i.discount)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{valid(i)}</td>
@@ -210,7 +137,7 @@ function MasterListView() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="muted">
+                  <td colSpan={10} className="muted">
                     {q || supplier ? "No items match." : "The master list has no items."}
                   </td>
                 </tr>
