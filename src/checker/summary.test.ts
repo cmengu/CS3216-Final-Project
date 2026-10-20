@@ -52,7 +52,7 @@ describe("one invoice", () => {
   });
   it("labels the row by its worst problem", () => {
     expect(invoiceLabel(byId("acme-0412"))).toEqual(["l-bad", "SGD 52.00 over"]);
-    expect(invoiceLabel(byId("kp-0931"))).toEqual(["l-warn", "Needs a person"]);
+    expect(invoiceLabel(byId("kp-0931"))).toEqual(["l-warn", "Pending"]);
     expect(invoiceLabel(byId("bv-77810"))).toEqual(["l-good", "All match"]);
     expect(invoiceLabel(byId("tk-2210"))).toEqual(["l-info", "Checking…"]);
   });
@@ -70,7 +70,7 @@ describe("one invoice", () => {
   it("never calls an invoice a match when the service would not stand behind its total", () => {
     const uncertain: SupplierInvoice = { ...byId("bv-77810"), overchargeTotal: null, warnings: ["Invoice arithmetic does not reconcile"] };
     expect(pileOf(uncertain)).toBe("look");
-    expect(invoiceLabel(uncertain)).toEqual(["l-warn", "Needs a person"]);
+    expect(invoiceLabel(uncertain)).toEqual(["l-warn", "Pending"]);
     expect(invoiceMeta(uncertain)).toBe("Invoice arithmetic does not reconcile");
   });
 });

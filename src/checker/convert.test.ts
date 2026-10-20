@@ -74,7 +74,7 @@ describe("toSupplierInvoice", () => {
     const invoice = toSupplierInvoice({ ...invoice02, check: { overcharge_total: "0.00", lines, warnings: ["1 line not priced"] } });
     expect(lineOver(invoice.lines[0])).toBe(0);
     expect(invoice.warnings).toEqual(["1 line not priced"]);
-    expect(invoiceLabel(invoice)[1]).toBe("Needs a person");
+    expect(invoiceLabel(invoice)[1]).toBe("Pending");
   });
 
   it("pairs each result with its line by the service's line number, not by position", () => {
