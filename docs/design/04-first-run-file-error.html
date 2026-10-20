@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>First run · File error</title>
+<link rel="stylesheet" href="assets/ic.css">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#b84a27}a:hover{color:#8f3a1e}
+</style>
+</head>
+<body>
+<div class="ic" style="min-height: 100vh; background: var(--surface)">
+  <header class="ic-top"><div class="ic-brand"><span class="ic-mark"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>Invoice Checker</div><nav class="ic-seg" aria-label="Workspace"><button type="button" aria-current="page"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path></svg>Master list</button><button type="button" aria-disabled="true"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg>Invoices</button><button type="button" aria-disabled="true"><svg class="i ui" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7v5l3 2"></path></svg>Audit trail</button></nav><button class="ic-acct" type="button" aria-label="Account"><span class="ic-av">A</span><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button></header>
+  <main class="ic-page" style="max-width: 760px; padding-top: 72px; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 6px"><h1 class="ic-h1">Upload your master list</h1></div>
+    <div class="ic-drop ic-drop--error" style="padding: 56px 24px" role="alert">
+      <svg class="i row" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--warn)"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17h.01"></path></svg>
+      <span style="font-size: 18px; font-weight: 600">Couldn’t use prices_oct.xlsx</span>
+      <span class="muted">It has no unit price column.</span>
+      <label class="ic-btn ic-btn--secondary" style="margin-top: 8px; cursor: pointer">Choose another file<input type="file" accept=".csv,.xlsx" class="sr"></label>
+    </div>
+    
+  </main>
+</div>
+</body>
+</html>
