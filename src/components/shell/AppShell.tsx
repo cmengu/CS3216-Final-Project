@@ -1,59 +1,36 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { isQuietUpdate, subscribe } from "@/state/demo-store";
-import { isPicked, useMounted } from "@/state/session";
-import { Agent } from "./Agent";
-import { RouteGuard } from "./Guard";
-import { ShellContext, type AssistantRequest, type PaneState, type ShellApi } from "./context";
-import { Kbar } from "./Kbar";
-import { Palette } from "./Palette";
-import { Rail } from "./Rail";
-
-const AGENT_W = "pot-agentw";
-const LIST_ROUTES = ["/orders", "/customers"];
-
-/** Which keyboard hints the bar shows, so it never lists a key the page does not answer. */
-const kbarKind = (pathname: string) =>
-  pathname === "/invoices" ? "invoices" : pathname.startsWith("/invoices/") ? "invoice" : LIST_ROUTES.includes(pathname) ? "list" : "page";
-
-/**
- * The app frame: rail · assistant column · main (page + keyboard bar), plus the ⌘K palette and toasts.
+/*
+ * The core app frame while InvoiceTracker is cut back to master list, invoices and the check:
+ * no sidebar, no assistant, no ⌘K palette. It keeps the ShellApi contract (toasts, copy, Esc,
+ * the side-pane host) so the core pages and the parked ones both compile against it.
+ * The full frame with the rail, assistant and palette is parked at
+ * src/_parked/components/shell/AppShell.tsx (see src/_parked/README.md).
  * Sends anyone who has not picked a person this session to /who.
  */
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { isQuietUpdate, subscribe } from "@/state/demo-store";
+import { isPicked, useMounted } from "@/state/session";
+import { RouteGuard } from "./Guard";
+import { ShellContext, type PaneState, type ShellApi } from "./context";
+
+/** The parked features answer with this, so a stray call is visible rather than silent. */
+const PARKED = "Not available in this version";
+
 export function AppShell({ children }: { children: ReactNode }) {
   const mounted = useMounted();
   const router = useRouter();
   const pathname = usePathname();
   const picked = mounted && isPicked();
 
-  const [agentOpen, setAgentOpen] = useState(false);
-  const [agentReq, setAgentReq] = useState<AssistantRequest & { n: number }>({ n: 0 });
-  const [pal, setPal] = useState(false);
-  const [railOpen, setRailOpen] = useState(false);
   const [toastText, setToastText] = useState("");
   const [toastOn, setToastOn] = useState(false);
-  const [agentW, setAgentW] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      return localStorage.getItem(AGENT_W);
-    } catch {
-      return null;
-    }
-  });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mainRef = useRef<HTMLElement>(null);
   const escRef = useRef<(() => boolean) | null>(null);
-  const [lastPath, setLastPath] = useState(pathname);
   const [pane, setPane] = useState<PaneState>("off");
   const [paneHost, setPaneHost] = useState<HTMLElement | null>(null);
-
-  // A new page: close the mobile rail (state adjusted during render, as React recommends).
-  if (lastPath !== pathname) {
-    setLastPath(pathname);
-    setRailOpen(false);
-  }
 
   useEffect(() => {
     if (mounted && !isPicked()) router.replace("/who");
@@ -63,7 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     mainRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
 
-  // The prototype draws the page afresh after every change, which puts the page back at the top.
+  // A change that redraws the page puts it back at the top, as the full frame does.
   useEffect(
     () =>
       subscribe(() => {
@@ -92,80 +69,41 @@ export function AppShell({ children }: { children: ReactNode }) {
           toast(msg || "Copied");
         }
       },
-      openAgent: (open, text) => {
-        setAgentOpen(open);
-        if (text) setAgentReq((r) => ({ n: r.n + 1, prompt: text }));
-      },
-      openAssistant: (req = {}) => {
-        setAgentOpen(true);
-        setAgentReq((r) => ({ ...req, n: r.n + 1 }));
-      },
-      agentOpen,
-      openPalette: setPal,
-      toggleRail: () => setRailOpen((v) => !v),
+      openAgent: () => toast(PARKED),
+      openAssistant: () => toast(PARKED),
+      agentOpen: false,
+      openPalette: () => toast(PARKED),
+      toggleRail: () => {},
       paneHost,
       setPane,
       setEscape: (fn) => {
         escRef.current = fn;
       },
     }),
-    [toast, agentOpen, paneHost],
+    [toast, paneHost],
   );
 
+  // Esc goes to the page's own handler (an invoice page goes back to the list).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if ((e.metaKey || e.ctrlKey) && k === "i") {
-        e.preventDefault();
-        setAgentOpen((v) => !v);
-      }
-      if ((e.metaKey || e.ctrlKey) && k === "k") {
-        e.preventDefault();
-        setPal((v) => !v);
-      }
-      // As the prototype: close ⌘K; else close the assistant when typing in it; else clear the
-      // Orders selection; else close the assistant.
-      if (e.key === "Escape") {
-        if (pal) setPal(false);
-        else if (document.activeElement?.id === "agentQ") setAgentOpen(false);
-        else if (escRef.current?.()) return;
-        else setAgentOpen(false);
-      }
+      if (e.key === "Escape") escRef.current?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pal]);
+  }, []);
 
   if (!picked) return null;
 
-  const style = agentW ? ({ "--agentw": agentW } as CSSProperties) : undefined;
-
   return (
     <ShellContext.Provider value={api}>
-      <div className={`app${agentOpen ? " agent-open" : ""}`} id="app" style={style}>
-        <Rail open={railOpen} />
+      <div className="app norail" id="app">
         <main className={`main${pane === "on" ? " withpane" : ""}`} id="main" ref={mainRef}>
           <div className="content">
             <RouteGuard>{children}</RouteGuard>
-            <Kbar kind={kbarKind(pathname)} />
           </div>
           {pane !== "off" ? <aside className="pane" ref={setPaneHost} /> : null}
         </main>
-        <Agent
-          req={agentReq}
-          onResize={(w, done) => {
-            setAgentW(w + "px");
-            if (done) {
-              try {
-                localStorage.setItem(AGENT_W, w + "px");
-              } catch {
-                /* ignore */
-              }
-            }
-          }}
-        />
       </div>
-      <Palette open={pal} />
       <div className={`toast${toastOn ? " on" : ""}`} role="status" aria-live="polite">
         {toastText}
       </div>

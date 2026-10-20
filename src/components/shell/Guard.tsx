@@ -1,14 +1,14 @@
 "use client";
 
 /*
- * One rule for pages a person may not open, as the prototype's router has it: the route draws
- * Home instead (the address stays as it is). The shell wraps every route in RouteGuard. Pages
+ * One rule for pages a person may not open: the route draws the workspace instead (the address
+ * stays as it is). While the order demo is parked, the workspace stands in for Home. The shell wraps every route in RouteGuard. Pages
  * for one record (an order, a customer) show the prototype's Not found when the record is
  * missing or outside this person's view.
  */
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { HomeView } from "@/components/pages/HomeView";
+import { WorkspaceView } from "@/components/pages/WorkspaceView";
 import { navAllowed } from "@/platform/access";
 import { navKeyOf } from "@/platform/nav";
 import { useMe } from "@/state/demo-store";
@@ -35,7 +35,7 @@ export function useRouteAllowed(): boolean {
   return !key || navAllowed(key, u);
 }
 
-/** Renders the route when this person's role may open it; otherwise Home, as the prototype does. */
+/** Renders the route when this person's role may open it; otherwise the workspace. */
 export function RouteGuard({ children }: { children: ReactNode }) {
-  return useRouteAllowed() ? children : <HomeView />;
+  return useRouteAllowed() ? children : <WorkspaceView />;
 }

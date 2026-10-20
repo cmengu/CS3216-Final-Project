@@ -28,7 +28,7 @@ export function WhoGate({ pinFor }: { pinFor?: string }) {
   const setWho = (id: string) => {
     const x = s.people.find((y) => y.id === id);
     pick(id);
-    router.push(x ? landingFor(x) : "/home");
+    router.push(x ? landingFor(x) : "/workspace");
   };
 
   const askWho = (id: string) => {

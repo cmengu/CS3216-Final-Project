@@ -4,13 +4,13 @@
  * rules through the running app.
  */
 import { describe, expect, it } from "vitest";
-import { digestLines } from "@/components/pages/HomeView";
-import { historyRows } from "@/components/pages/history/rows";
+import { digestLines } from "@/_parked/components/pages/HomeView";
+import { historyRows } from "@/_parked/components/pages/history/rows";
 import { invoiceCsv } from "@/components/pages/invoices/invoices";
-import { visibleCustomers } from "@/components/pages/customers/figures";
-import { mineOf, orderText } from "@/components/pages/orders/logic";
+import { visibleCustomers } from "@/_parked/components/pages/customers/figures";
+import { mineOf, orderText } from "@/_parked/components/pages/orders/logic";
 import { ackTextFor } from "@/lib/ack-text";
-import { ask, paletteHits, suggestions, summarisePrompt } from "@/platform/assistant";
+import { ask, paletteHits, suggestions, summarisePrompt } from "@/_parked/platform/assistant";
 import { seed } from "@/sample";
 import type { DemoState, Person } from "@/sample";
 import { canInvoice, canPrice, lines, navAllowed, needsPin, pinOk, visibleOrders, type NavKey } from "./access";
