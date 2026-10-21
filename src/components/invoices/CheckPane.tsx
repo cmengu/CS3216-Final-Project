@@ -14,7 +14,6 @@ import {
   OUTCOME_PILL,
   orderedLines,
   raiseEmail,
-  shortDescription,
   statusPill,
   taxLabel,
   unit,
@@ -210,7 +209,12 @@ export function CheckPane({
                   {orderedLines(inv).map(({ line, n }) => {
                     const flagged = line.result !== "match";
                     const delta = lineDelta(line, cur);
-                    const qty = line.quantity === null ? null : `${line.quantity.toLocaleString("en-SG")}${line.unit ? " " + line.unit : ""}`;
+                    const quantityUnit = line.unit?.toUpperCase() === "M3" ? "m³" : line.unit;
+                    const qty = line.quantity === null ? null : `${line.quantity.toLocaleString("en-SG")}${quantityUnit ? " " + quantityUnit : ""}`;
+                    const priceUnit = quantityUnit ? ` / ${quantityUnit}` : "";
+                    const comparedCurrency = line.result === "match" || line.result === "price_mismatch" ? cur : null;
+                    const price = line.unitPrice === null ? "—" : `${comparedCurrency ? comparedCurrency + " " : ""}${unit(line.unitPrice)}${priceUnit}`;
+                    const total = line.lineTotal === null ? "—" : money(line.lineTotal, cur);
                     return (
                       <div className="ic-line" role="listitem" key={n} aria-current={activeLine === n ? "true" : undefined}>
                         {flagged ? (
@@ -222,33 +226,44 @@ export function CheckPane({
                             <Icon name="tick" size="row" style={{ color: "var(--good)", strokeWidth: 2 }} />
                           </span>
                         )}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                          <span style={flagged ? { fontWeight: 600 } : undefined}>
-                            Line {n} · {shortDescription(line)}
+                        <div className="ic-line-content">
+                          <span className="ic-line-title">
+                            {n}. {line.description.trim() || line.part || "No description"}
                           </span>
                           {flagged && line.part ? (
-                            <span className="muted mono" style={{ overflowWrap: "anywhere" }}>
+                            <span className="ic-line-code">
                               {line.part}
                             </span>
                           ) : null}
                           {flagged ? <span className="ic-attn">{lineAttention(line, cur)}</span> : null}
                           <div className="cmp">
-                            {line.unitPrice !== null ? (
-                              <span>
-                                Invoice <b>{unit(line.unitPrice)}</b>
-                              </span>
-                            ) : null}
-                            {line.sheetPrice !== null ? (
-                              <span>
-                                Master list <b>{unit(line.sheetPrice)}</b>
-                              </span>
-                            ) : null}
-                            {qty ? <span>{qty}</span> : null}
-                            {delta ? (
-                              <span>
-                                <b style={{ color: "var(--warn)" }}>{delta}</b>
-                              </span>
-                            ) : null}
+                            {flagged ? (
+                              <>
+                                {line.unitPrice !== null ? (
+                                  <span>
+                                    Invoice unit price: <b>{price}</b>
+                                  </span>
+                                ) : null}
+                                {line.sheetPrice !== null ? (
+                                  <span>
+                                    Master unit price: <b>{cur ? cur + " " : ""}{unit(line.sheetPrice)}{priceUnit}</b>
+                                  </span>
+                                ) : null}
+                                {qty ? <span>Qty: <b>{qty}</b></span> : null}
+                                <span>Total: <b>{total}</b></span>
+                                {delta ? (
+                                  <span>
+                                    <b style={{ color: "var(--warn)" }}>{delta}</b>
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              <>
+                                {qty ? <span>Qty: <b>{qty}</b></span> : null}
+                                <span>Unit price: <b>{price}</b></span>
+                                <span>Total: <b>{total}</b></span>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="end">
