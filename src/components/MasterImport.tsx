@@ -16,7 +16,7 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
   const rows = preview?.sheets.find((s) => s.name === sheet)?.rows ?? [];
   const columns = rows[header] ?? [];
   return <div style={{ display: "grid", gap: 16 }}>
-    <Dropzone title={busy ? "Reading the file and identifying columns…" : file?.name ?? "Drop your master list here"} hint="CSV or Excel (.xlsx or .xls), up to 5 MB." accept={ACCEPT} inputLabel="Master list file" state={error ? { kind: "error", title: "Couldn’t import the file", reason: error } : { kind: "idle" }} onFiles={async ([chosen]) => {
+    <Dropzone title={busy ? "Reading the file and identifying columns…" : file?.name ?? "Drop your master list here"} formats="CSV or Excel" accept={ACCEPT} inputLabel="Master list file" state={error ? { kind: "error", title: "Couldn’t import the file", reason: error } : { kind: "idle" }} onFiles={async ([chosen]) => {
       if (busy || !chosen) return;
       setBusy(true); setError(""); setPreview(null); setFile(chosen);
       try {

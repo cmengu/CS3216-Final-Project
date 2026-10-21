@@ -134,7 +134,8 @@ export type DropState = { kind: "idle" } | { kind: "error"; title: string; reaso
  */
 export function Dropzone({
   title,
-  hint,
+  hint = "",
+  formats,
   accept,
   multiple,
   size = "lg",
@@ -143,7 +144,9 @@ export function Dropzone({
   inputLabel,
 }: {
   title: string;
-  hint: string;
+  hint?: string;
+  /** When set, the idle line reads "Choose a file (formats)" instead of "hint Choose a file". */
+  formats?: string;
   accept?: string;
   multiple?: boolean;
   size?: "lg" | "md" | "sm";
@@ -194,7 +197,15 @@ export function Dropzone({
         <>
           <h3>{title}</h3>
           <p className="muted">
-            {hint} {choose}
+            {formats ? (
+              <>
+                {choose} ({formats})
+              </>
+            ) : (
+              <>
+                {hint} {choose}
+              </>
+            )}
           </p>
         </>
       )}
