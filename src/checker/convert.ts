@@ -100,7 +100,9 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
       part: line.part_number,
       description: line.description ?? "",
       quantity: numberOf(line.quantity),
-      unitPrice: numberOf(line.unit_price),
+      // The price the service compared with the master list, after any printed exchange rate, so it
+      // is in the same currency as sheetPrice. The printed price only when the service compared none.
+      unitPrice: numberOf(check?.invoice_price ?? line.unit_price),
       lineTotal: numberOf(line.line_total),
       // The service gives one result per line. A line without one is never shown as passed.
       result: check?.status ?? "needs_person",
