@@ -1,4 +1,4 @@
-"""Persistent master-list import; invoice matching is a separate integration."""
+"""Persistent master-list import and immutable versions used by live invoice checking."""
 
 import hashlib
 import json

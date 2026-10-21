@@ -57,7 +57,7 @@ def create_app(
         app.state.store = Store(store_dir)
         app.state.store.recover()
         initialize_master_list(app.state.store)
-        app.state.stages = stages if stages is not None else _stages_from_environment()
+        app.state.stages = stages if stages is not None else _stages_from_environment(app.state.store)
         app.state.slot = BoundedSemaphore(1)
         yield
 
@@ -99,7 +99,7 @@ def create_app(
             raise HTTPException(
                 503,
                 "Extraction/check adapters are unconfigured. Set INVOICE_MODE=fixture for known "
-                "dummy PDFs, or INVOICE_MODE=live with INVOICE_PRICE_SHEET for the real steps.",
+                "dummy PDFs, or INVOICE_MODE=live for uploaded master-list checks.",
             )
         if not app.state.slot.acquire(blocking=False):
             file.file.close()
@@ -113,6 +113,12 @@ def create_app(
         path = store.path(invoice_id)
         inserted = False
         try:
+            from .uploaded_master import UploadedMasterStages
+            if isinstance(selected, UploadedMasterStages):
+                try:
+                    selected = selected.snapshot()
+                except ValueError as exc:
+                    raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
             if not filename.lower().endswith(".pdf"):
                 raise HTTPException(415, "Upload a PDF")
@@ -246,29 +252,18 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     return None
 
 
-def _stages_from_environment() -> Stages | None:
+def _stages_from_environment(store) -> Stages | None:
     mode = os.environ.get("INVOICE_MODE")
     if not mode:
         return None
     if mode == "fixture":
         return FixtureStages(Path(os.environ.get("INVOICE_DUMMY_DIR", ROOT / "data/dummy")))
     if mode == "live":
-        sheet = os.environ.get("INVOICE_PRICE_SHEET")
-        if not sheet:
-            raise ValueError("Set INVOICE_PRICE_SHEET to the price sheet .xlsx for live mode")
-        sheet_path = _resolve_path(sheet)
-        checker = os.environ.get("INVOICE_CHECKER", "standard")
-        if checker == "csv_context":
-            from .csv_live import LiveStages as CsvLiveStages
+        from .uploaded_master import UploadedMasterStages
 
-            if not os.environ.get("OPENAI_API_KEY", "").strip():
-                raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
-            return CsvLiveStages(sheet_path, model=os.environ.get("OPENAI_MODEL", ""))
-        if checker != "standard":
-            raise ValueError("INVOICE_CHECKER must be standard or csv_context")
-        from .live import LiveStages
-
-        return LiveStages(sheet_path)
+        if not os.environ.get("OPENAI_API_KEY", "").strip():
+            raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
+        return UploadedMasterStages(store, os.environ.get("OPENAI_MODEL", ""))
     raise ValueError("INVOICE_MODE must be fixture or live")
 
 
