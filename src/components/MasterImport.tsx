@@ -21,6 +21,19 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
       setBusy(true); setError(""); setPreview(null); setFile(chosen);
       try {
         const result = await previewMasterList(chosen);
+        // Temporary demo shortcut: use explicit source columns without a mapping review.
+        const demoLayouts = result.sheets.flatMap((candidate) => candidate.rows.flatMap((row, index) => {
+          const names = row.map((cell) => cell.trim().toLowerCase());
+          if (names.filter((name) => name === "key").length !== 1 || names.filter((name) => name === "unit_price").length !== 1) return [];
+          const demoMapping = { ...(candidate.header === index ? candidate.mapping : {}), name: names.indexOf("key"), price: names.indexOf("unit_price") } as Record<string, number>;
+          delete demoMapping.quantity;
+          return [{ sheet: candidate.name, header: index, mapping: demoMapping }];
+        }));
+        if (demoLayouts.length === 1) {
+          const saved = await (replace ? replaceMasterList : uploadMasterList)(chosen, demoLayouts[0]);
+          if (saved.ok) { onSaved(); return; }
+          setError(saved.reason);
+        }
         const first = result.sheets[0];
         setPreview(result); setSheet(first.name); setHeader(first.header); setMapping(first.mapping);
       } catch (err) { setError(err instanceof Error ? err.message : "Could not read file"); }
