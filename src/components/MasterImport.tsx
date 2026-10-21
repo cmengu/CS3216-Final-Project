@@ -24,8 +24,8 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
         // Temporary demo shortcut: use explicit source columns without a mapping review.
         const demoLayouts = result.sheets.flatMap((candidate) => candidate.rows.flatMap((row, index) => {
           const names = row.map((cell) => cell.trim().toLowerCase());
-          if (names.filter((name) => name === "key").length !== 1 || names.filter((name) => name === "unit_price").length !== 1) return [];
-          const demoMapping = { ...(candidate.header === index ? candidate.mapping : {}), name: names.indexOf("key"), price: names.indexOf("unit_price") } as Record<string, number>;
+          if (names.filter((name) => name === "item").length !== 1 || names.filter((name) => name === "unit_price").length !== 1) return [];
+          const demoMapping = { ...(candidate.header === index ? candidate.mapping : {}), name: names.indexOf("item"), price: names.indexOf("unit_price") } as Record<string, number>;
           delete demoMapping.quantity;
           return [{ sheet: candidate.name, header: index, mapping: demoMapping }];
         }));
