@@ -30,6 +30,13 @@ GitHub. Everything in them is on `main`; their owners can delete them.
   tested with a stand-in for the model step only, so there are no accuracy numbers yet.
 - **The upload step of `scripts/e2e.mjs` was not run in a browser** after the last changes.
 - **The mock invoice set is not handled yet.** See "Next" below.
+- **The checker does not use the uploaded master list.** Invoices are checked against the file in
+  `INVOICE_PRICE_SHEET`, loaded at start-up; the list saved by `POST /master-list` is only shown.
+  The uploaded list needs only name and price, but the checker matches on supplier, PO, unit,
+  currency and valid dates, so the import's columns must be decided first. `csv_live.py` also
+  falls back to `data/dummy/price-sheet.xlsx` for an invoice with no PO and an unknown supplier,
+  and stamps the result with the main sheet's version. Both change the API, so they wait for
+  the team.
 
 ## Next, in order
 
