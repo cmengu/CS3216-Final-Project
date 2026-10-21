@@ -6,7 +6,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 
 | Where | What it shows or decides | File |
 |---|---|---|
-| Service → screen | Maps each `LineResult` onto its line; a line with no result becomes `needs_person` | `src/checker/convert.ts` `toSupplierInvoice` |
+| Service → screen | Maps each `LineResult` onto its line; a line with no result becomes `needs_person`; the line's invoice price is the service's `invoice_price` | `src/checker/convert.ts` `toSupplierInvoice` |
 | Queue card | Result pill (Matches / Price differs / Not on master list / Needs you) and the attention line ("SGD 159.60 over") | `src/components/invoices/Queue.tsx` `Card` ← `src/checker/present.ts` `statusPill`, `checkPill`, `queueAttention` |
 | Lines card | Pill on the card header ("1 of 2 differ"), flagged lines first, each line's pill, attention line and comparison row | `src/components/invoices/CheckPane.tsx` `CheckPane` ← `present.ts` `linesPill`, `orderedLines`, `LINE_PILL`, `lineAttention`, `lineDelta`, `unit` |
 | Decision bar | Which actions are offered. Every line `match` → Ready to pay. An overcharge → Raise with supplier. Otherwise Pay anyway only. | `CheckPane.tsx` `DecisionBar` ← `present.ts` `decision` ← `src/checker/review.ts` `choices`, `overSheet` |

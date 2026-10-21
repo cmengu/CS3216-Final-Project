@@ -35,7 +35,58 @@ const invoice02: ServiceInvoice = {
   },
 };
 
+/** Lines 1, 4 and 5 of the live check of data/mock_invoice_dataset/invoices/F01_freight_tax_01.pdf, as the service returned them. */
+const freight01: ServiceInvoice = {
+  id: "22222222-2222-2222-2222-222222222222",
+  filename: "F01_freight_tax_01.pdf",
+  status: "completed",
+  mode: "live",
+  created_at: "2026-10-21T12:40:00+00:00",
+  price_sheet_version: "4bf0172b6038979be94a475804dd17ebc001c0e6efe0b8aa1a05b8a55714f05e",
+  error: null,
+  invoice: {
+    supplier_name: "ABC Logistics Pte Ltd",
+    invoice_number: "MOCK-F01-001",
+    invoice_date: "2026-10-05",
+    currency: "SGD",
+    subtotal: "642.75",
+    tax: "0.00",
+    invoice_total: "642.75",
+    lines: [
+      // Printed as "2.40 M3 @ USD 85.00 ... @ 1.310000"; the master list holds the SGD price.
+      { part_number: null, description: "Freight", quantity: "2.40", unit_price: "85.00", line_total: "267.24", unit: "M3" },
+      // A flat charge printed as "CNY 1,230.00 @ 0.180000": no unit price on the page.
+      { part_number: null, description: "Origin Local Fee", quantity: null, unit_price: null, line_total: "221.40", unit: null },
+      { part_number: null, description: "Destination Delivery Inland Fuel Surcharge", quantity: null, unit_price: null, line_total: "17.25", unit: null },
+    ],
+  },
+  check: {
+    overcharge_total: "0.00",
+    lines: [
+      { line_index: 0, status: "match", reason: "Unit price matches agreement", invoice_price: "111.35000000", agreed_price: "111.35", difference: "0.00000000", overcharge: "0.00" },
+      { line_index: 1, status: "match", reason: "Unit price matches agreement", invoice_price: "221.40", agreed_price: "221.4", difference: "0.00", overcharge: "0.00" },
+      { line_index: 2, status: "match", reason: "Unit price matches agreement", invoice_price: "17.25", agreed_price: "17.25", difference: "0.00", overcharge: "0.00" },
+    ],
+    warnings: [],
+  },
+};
+
 describe("toSupplierInvoice", () => {
+  it("shows the invoice price the service compared, in the invoice's currency, not the printed foreign price", () => {
+    const invoice = toSupplierInvoice(freight01);
+    expect(invoice.lines.map((line) => [line.unitPrice, line.sheetPrice])).toEqual([
+      [111.35, 111.35],
+      [221.4, 221.4],
+      [17.25, 17.25],
+    ]);
+  });
+
+  it("falls back to the printed price when the service compared none", () => {
+    const lines = freight01.check!.lines.map((line, index) => (index === 0 ? { ...line, status: "needs_person" as const, invoice_price: null } : line));
+    const invoice = toSupplierInvoice({ ...freight01, check: { ...freight01.check!, lines, overcharge_total: null } });
+    expect(invoice.lines[0].unitPrice).toBe(85);
+  });
+
   it("shows dummy invoice 02 as one price mismatch of 15.00", () => {
     const invoice = toSupplierInvoice(invoice02);
     expect(invoice.state).toBe("checked");
