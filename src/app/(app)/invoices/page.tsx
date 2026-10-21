@@ -172,7 +172,7 @@ function Workspace() {
       )}
       <div className="ic-docpane">
         {inv ? (
-          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} blocks={blocks} focus={focus} />
+          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} rotations={inv.pageRotations} blocks={blocks} focus={focus} />
         ) : (
           <div className="ic-check-center">
             <p className="muted">No invoice selected</p>

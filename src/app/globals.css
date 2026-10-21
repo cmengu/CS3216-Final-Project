@@ -283,9 +283,9 @@ a { color: var(--accent); }
 .ic-doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 20px 0; }
 .ic-pdfpage { position: relative; margin: 0 auto 20px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
 .ic-pdfpage canvas { display: block; }
-.ic-hl { position: absolute; border: 2px solid var(--warn); border-radius: var(--radius-bar); background: rgba(249, 235, 210, 0.45); pointer-events: none; }
+.ic-hl { position: absolute; border: 2px solid #dc2626; border-radius: var(--radius-bar); background: transparent; pointer-events: none; }
 .ic-hl-tag { position: absolute; top: -12px; left: 8px; }
-.ic-hl--focus { outline: 3px solid rgba(154, 91, 10, 0.35); outline-offset: 2px; }
+.ic-hl--focus { outline: 3px solid rgba(220, 38, 38, 0.35); outline-offset: 2px; }
 
 /* Keep invoice details and the original PDF reachable on smaller screens. */
 @media (max-width: 1200px) {

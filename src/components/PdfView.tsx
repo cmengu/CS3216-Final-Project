@@ -8,8 +8,10 @@
  * the block. When nothing matches, "Show" just scrolls to the line's page.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { SourceBlock } from "@/checker/types";
+import { wholeItemRow } from "./pdfRow";
+import { projectBox, textRotation } from "./pdfRotation";
 import { Icon } from "./icons";
 
 export interface Mark {
@@ -26,6 +28,12 @@ interface Box {
   y1: number;
   x2: number;
   y2: number;
+}
+
+type PageSize = { w: number; h: number; viewport: ReturnType<PDFPageProxy["getViewport"]> };
+
+function screenBox(s: PageSize, b: Box) {
+  return projectBox(s.viewport.transform, b);
 }
 
 const ZOOMS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
@@ -54,14 +62,14 @@ function toBottomLeft(loc: SourceBlock["locations"][number]) {
 async function placeMarks(doc: PDFDocumentProxy, marks: Mark[], blocks: SourceBlock[]): Promise<{ boxes: Box[]; pages: Record<number, number> }> {
   const boxes: Box[] = [];
   const pages: Record<number, number> = {};
-  const text = new Map<number, { str: string; x: number; y: number; w: number; h: number }[]>();
+  const text = new Map<number, { str: string; x: number; y: number; w: number; h: number; angle: number }[]>();
   const items = async (p: number) => {
     if (!text.has(p)) {
       const page = await doc.getPage(p);
       const tc = await page.getTextContent();
       text.set(
         p,
-        tc.items.flatMap((it) => ("str" in it ? [{ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h: it.height || Math.abs(it.transform[3]) }] : [])),
+        tc.items.flatMap((it) => ("str" in it ? [{ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h: it.height || Math.hypot(it.transform[2], it.transform[3]), angle: Math.atan2(it.transform[1], it.transform[0]) }] : [])),
       );
     }
     return text.get(p)!;
@@ -71,17 +79,31 @@ async function placeMarks(doc: PDFDocumentProxy, marks: Mark[], blocks: SourceBl
     if (!found) continue;
     const loc = found.block.locations.find((l) => l.bbox)!;
     pages[m.n] = loc.page;
-    const b = toBottomLeft(loc);
+    const matched = { ...toBottomLeft(loc), text: found.block.text };
+    const row = wholeItemRow(blocks.flatMap((block) => block.locations
+      .filter((location) => location.page === loc.page && location.bbox)
+      .map((location) => ({ ...toBottomLeft(location), text: block.text }))), matched, m.n);
+    const b = row ?? matched;
+    let x1 = b.l - 4;
+    let x2 = b.r + 4;
     let y1 = b.bottom;
     let y2 = b.top;
-    if (m.part && loc.page <= doc.numPages) {
-      const hit = (await items(loc.page)).find((it) => it.str.includes(m.part!) && it.y >= b.bottom - 2 && it.y <= b.top + 2);
+    if (!row && m.part && loc.page <= doc.numPages) {
+      const hit = (await items(loc.page)).find((it) => it.str.includes(m.part!) && it.y >= b.bottom - 2 && it.y <= b.top + 2 && it.x >= b.l - 2 && it.x <= b.r + 2);
       if (hit) {
-        y1 = hit.y - 4;
-        y2 = hit.y + hit.h + 4;
+        // Narrow across the text baseline, including sideways/upside-down text.
+        const dx = -Math.sin(hit.angle) * hit.h;
+        const dy = Math.cos(hit.angle) * hit.h;
+        if (Math.abs(Math.sin(hit.angle)) > 0.9) {
+          x1 = Math.min(hit.x, hit.x + dx) - 4;
+          x2 = Math.max(hit.x, hit.x + dx) + 4;
+        } else if (Math.abs(Math.cos(hit.angle)) > 0.9) {
+          y1 = Math.min(hit.y, hit.y + dy) - 4;
+          y2 = Math.max(hit.y, hit.y + dy) + 4;
+        }
       }
     }
-    boxes.push({ n: m.n, page: loc.page, x1: b.l - 4, y1, x2: b.r + 4, y2 });
+    boxes.push({ n: m.n, page: loc.page, x1, y1, x2, y2 });
   }
   return { boxes, pages };
 }
@@ -92,7 +114,9 @@ export function PdfView({
   marks,
   blocks,
   focus,
+  rotations,
 }: {
+  rotations?: Record<number, number>;
   url: string;
   fileName: string;
   marks: Mark[];
@@ -106,7 +130,7 @@ export function PdfView({
   const [width, setWidth] = useState(0);
   const [page, setPage] = useState(1);
   const [placed, setPlaced] = useState<{ boxes: Box[]; pages: Record<number, number> }>({ boxes: [], pages: {} });
-  const [sizes, setSizes] = useState<{ w: number; h: number }[]>([]);
+  const [sizes, setSizes] = useState<PageSize[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const canvases = useRef<(HTMLCanvasElement | null)[]>([]);
 
@@ -122,10 +146,16 @@ export function PdfView({
         task = loading;
         const loaded = await loading.promise;
         if (!live) return;
-        const s: { w: number; h: number }[] = [];
+        const s: PageSize[] = [];
         for (let i = 1; i <= loaded.numPages; i++) {
-          const v = (await loaded.getPage(i)).getViewport({ scale: 1 });
-          s.push({ w: v.width, h: v.height });
+          const pg = await loaded.getPage(i);
+          let rotation = (pg.rotate + (rotations?.[i] ?? 0)) % 360;
+          try {
+            const content = await pg.getTextContent();
+            rotation = textRotation(content.items.flatMap((it) => "str" in it ? [it] : []), rotation);
+          } catch { /* Image-only or damaged text: keep OCR/page rotation. */ }
+          const v = pg.getViewport({ scale: 1, rotation });
+          s.push({ w: v.width, h: v.height, viewport: v });
         }
         if (!live) return;
         setSizes(s);
@@ -138,7 +168,7 @@ export function PdfView({
       live = false;
       void task?.destroy();
     };
-  }, [url]);
+  }, [url, rotations]);
 
   // Place highlights once the document is in.
   useEffect(() => {
@@ -173,7 +203,8 @@ export function PdfView({
         const canvas = canvases.current[i - 1];
         if (!canvas) continue;
         const pg = await doc.getPage(i);
-        const viewport = pg.getViewport({ scale: scaleFor(sizes[i - 1].w) * (window.devicePixelRatio || 1) });
+        const viewport = sizes[i - 1].viewport.clone({ scale: scaleFor(sizes[i - 1].w) * (window.devicePixelRatio || 1) });
+        if (!live) return;
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         const task = pg.render({ canvas, viewport });
@@ -199,7 +230,7 @@ export function PdfView({
     if (box) {
       const s = sizes[box.page - 1];
       const scale = scaleFor(s.w);
-      goTo(box.page, Math.max(0, (s.h - box.y2) * scale - 80));
+      goTo(box.page, Math.max(0, screenBox(s, box).top * scale - 80));
     } else if (placed.pages[focus.n]) goTo(placed.pages[focus.n]);
   }, [focus, doc, placed, sizes, goTo, scaleFor]);
 
@@ -236,6 +267,11 @@ export function PdfView({
         <button className="ic-icobtn" type="button" aria-label="Zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}>
           <Icon name="plus" />
         </button>
+        <button className="ic-icobtn" type="button" aria-label="Rotate current page clockwise" title="Rotate current page clockwise" disabled={!doc} onClick={() => setSizes((current) => current.map((s, i) => {
+          if (i !== page - 1) return s;
+          const viewport = s.viewport.clone({ rotation: (s.viewport.rotation + 90) % 360 });
+          return { w: viewport.width, h: viewport.height, viewport };
+        }))}>↻</button>
         <a className="ic-icobtn" href={url} target="_blank" rel="noreferrer" aria-label="Open PDF in a new tab">
           <Icon name="external" />
         </a>
@@ -262,7 +298,7 @@ export function PdfView({
                       <div
                         key={b.n}
                         className={`ic-hl${focus?.n === b.n ? " ic-hl--focus" : ""}`}
-                        style={{ left: b.x1 * scale, top: (s.h - b.y2) * scale, width: (b.x2 - b.x1) * scale, height: (b.y2 - b.y1) * scale }}
+                        style={{ left: screenBox(s, b).left * scale, top: screenBox(s, b).top * scale, width: screenBox(s, b).width * scale, height: screenBox(s, b).height * scale }}
                       >
                         <span className="ic-hl-tag">
                           <span className="ic-pill ic-pill--warn">Line {b.n}</span>
