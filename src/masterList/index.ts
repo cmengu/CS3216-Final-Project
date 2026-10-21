@@ -1,140 +1,65 @@
-/*
- * The master list (agreed supplier prices). No API exists for it yet, so this module keeps it in
- * the browser. Every screen reads and writes the master list only through these functions, so a
- * real backend can replace this file without touching the screens.
- *
- * NOTE: the checking service does not read this list. It checks invoices against the price sheet
- * it was started with (INVOICE_PRICE_SHEET on the server). See docs/API_MAP.md.
- */
 "use client";
 
-import { useSyncExternalStore } from "react";
-import { readMasterCsv, supplierCount, type MasterItem } from "./parse";
-import seed from "./seed.json";
-
+import { useEffect, useSyncExternalStore } from "react";
+import { SERVICE_URL } from "@/checker/api";
+import type { MasterItem } from "./parse";
 export type { MasterItem } from "./parse";
-
 export interface MasterList {
-  file: string;
-  /** ISO time of the upload. */
-  uploadedAt: string;
-  items: MasterItem[];
-  supplierCount: number;
+  id: string; version: string; file: string; uploadedAt: string;
+  items: MasterItem[]; supplierCount: number;
 }
-
 export interface MasterListEvent {
-  kind: "uploaded" | "replaced";
-  file: string;
-  at: string;
-  items: number;
-  suppliers: number;
+  kind: "uploaded" | "replaced"; file: string; at: string; items: number; suppliers: number;
 }
-
 export type UploadResult = { ok: true; list: MasterList } | { ok: false; reason: string };
-
-const LIST_KEY = "ic.masterList.v1";
-const EVENTS_KEY = "ic.masterList.events.v1";
+export type ImportOptions = { sheet: string; header: number; mapping: Record<string, number> };
+export type ImportPreview = { sheets: { name: string; rows: string[][]; header: number; mapping: Record<string, number>; mappingSource: "ai" | "manual"; note: string }[]; fields: string[]; required: string[] };
 const listeners = new Set<() => void>();
-let cached: { raw: string | null; list: MasterList | null } = { raw: null, list: null };
-
-function read<T>(key: string, fallback: T): T {
+let cached: MasterList | null | undefined;
+let events: MasterListEvent[] = [];
+let error: string | null = null;
+let loading: Promise<void> | null = null;
+function emit() { listeners.forEach((listener) => listener()); }
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${SERVICE_URL}/master-list${path}`, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Master list request failed.");
+  return data;
+}
+export function getMasterList() { return cached; }
+export function getMasterListEvents() { return events; }
+export function refreshMasterList(): Promise<void> {
+  if (loading) return loading;
+  loading = Promise.all([api<MasterList | null>(""), api<MasterListEvent[]>("/events")]).then(([list, history]) => {
+    events = history; cached = list; error = null;
+  }).catch(() => { error = "Could not load the master list. Check the backend connection and retry."; }).finally(() => { loading = null; emit(); });
+  return loading;
+}
+export async function previewMasterList(file: File): Promise<ImportPreview> {
+  const body = new FormData(); body.append("file", file);
+  return api<ImportPreview>("/preview", { method: "POST", body });
+}
+async function save(file: File, method: "POST" | "PUT", options?: ImportOptions): Promise<UploadResult> {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+    const body = new FormData(); body.append("file", file);
+    if (options) body.append("options", JSON.stringify(options));
+    const list = await api<MasterList>("", { method, body });
+    // Update the table immediately even if fetching the audit trail later fails.
+    cached = list; error = null;
+    try { events = await api<MasterListEvent[]>("/events"); } catch { /* saved list is authoritative */ }
+    emit();
+    return { ok: true, list };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Could not upload the master list." };
   }
 }
-
-function write(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage full or blocked: the list lives for this page only */
-  }
-}
-
-/** The saved master list, or null before the first upload. */
-// TODO(backend): replace with GET /master-list
-export function getMasterList(): MasterList | null {
-  if (typeof window === "undefined") return null;
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(LIST_KEY);
-  } catch {
-    raw = null;
-  }
-  if (raw !== cached.raw) {
-    try {
-      cached = { raw, list: raw ? (JSON.parse(raw) as MasterList) : null };
-    } catch {
-      cached = { raw, list: null };
-    }
-  }
-  return cached.list;
-}
-
-/** Master list uploads, newest first, for the audit trail. */
-// TODO(backend): replace with GET /master-list/events (or the audit endpoint that holds them)
-export function getMasterListEvents(): MasterListEvent[] {
-  if (typeof window === "undefined") return [];
-  return read<MasterListEvent[]>(EVENTS_KEY, []);
-}
-
-async function load(file: File): Promise<{ ok: true; items: MasterItem[] } | { ok: false; reason: string }> {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".csv")) {
-    const text = await file.text();
-    return readMasterCsv(text);
-  }
-  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-    // TODO(backend): parse Excel on the server (POST /master-list). No spreadsheet library is
-    // installed in the app, so an Excel file is accepted and the bundled sample rows are used.
-    return { ok: true, items: seed.items as MasterItem[] };
-  }
-  return { ok: false, reason: "It isn't a CSV or Excel file." };
-}
-
-async function save(file: File, kind: MasterListEvent["kind"]): Promise<UploadResult> {
-  const result = await load(file);
-  if (!result.ok) return result;
-  const list: MasterList = {
-    file: file.name,
-    uploadedAt: new Date().toISOString(),
-    items: result.items,
-    supplierCount: supplierCount(result.items),
-  };
-  write(LIST_KEY, list);
-  write(EVENTS_KEY, [{ kind, file: list.file, at: list.uploadedAt, items: list.items.length, suppliers: list.supplierCount }, ...getMasterListEvents()]);
-  listeners.forEach((l) => l());
-  return { ok: true, list };
-}
-
-/** Check a file has the columns the master list needs, then save it. */
-// TODO(backend): replace with POST /master-list
-export function uploadMasterList(file: File): Promise<UploadResult> {
-  return save(file, "uploaded");
-}
-
-/** Swap the master list for a new file. Invoices already checked keep their result. */
-// TODO(backend): replace with PUT /master-list (or POST /master-list with replace semantics)
-export function replaceMasterList(file: File): Promise<UploadResult> {
-  return save(file, "replaced");
-}
-
-function subscribe(l: () => void) {
-  listeners.add(l);
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === LIST_KEY || e.key === EVENTS_KEY) l();
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(l);
-    window.removeEventListener("storage", onStorage);
-  };
-}
-
-/** The master list, kept current as it is uploaded or replaced. Undefined until the browser has read it. */
-export function useMasterList(): MasterList | null | undefined {
+export const uploadMasterList = (file: File, options?: ImportOptions) => save(file, "POST", options);
+export const replaceMasterList = (file: File, options?: ImportOptions) => save(file, "PUT", options);
+function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+export function useMasterList() {
+  useEffect(() => { void refreshMasterList(); }, []);
   return useSyncExternalStore(subscribe, getMasterList, () => undefined);
+}
+export function useMasterListError() {
+  return useSyncExternalStore(subscribe, () => error, () => null);
 }

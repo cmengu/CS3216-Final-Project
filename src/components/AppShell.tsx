@@ -12,7 +12,7 @@ import { useInvoices } from "@/checker/api";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
 import { useUploads } from "@/checker/uploads";
-import { useMasterList, type MasterList } from "@/masterList";
+import { useMasterList, useMasterListError, refreshMasterList, type MasterList } from "@/masterList";
 import { Icon } from "./icons";
 
 /**
@@ -189,6 +189,7 @@ function Account({ user }: { user: User }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const user = useUser();
   const ml = useMasterList();
+  const masterError = useMasterListError();
   const router = useRouter();
   const { invoices, error } = useInvoices();
   const uploads = useUploads();
@@ -197,7 +198,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (user === null) router.replace("/sign-in");
   }, [user, router]);
 
-  if (!user || ml === undefined) return null;
+  if (!user) return null;
+  if (masterError) return <div className="ic-page"><p role="alert">{masterError}</p><button className="ic-btn" onClick={() => void refreshMasterList()}>Retry</button></div>;
+  if (ml === undefined) return <p className="ic-empty">Loading master list…</p>;
 
   const phase = phaseOf(ml, invoices, error);
   const toDecide = invoices ? summarize(invoices).piles.decide.length : 0;

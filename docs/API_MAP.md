@@ -20,7 +20,7 @@ The backend endpoints behind the three core features: master list, invoice uploa
 | Area | Endpoints | Status |
 |---|---|---|
 | Auth (email/password, OAuth) | **None** | Not built. The service says "No auth/connectors in release 1". |
-| Master list upload / import / read | **None** | Configured on the server at start-up; not exposed over HTTP. |
+| Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events` | Persisted CSV/XLSX/XLS import; invoice checker integration is a separate next step. |
 | Invoice upload | `POST /invoices` | Built |
 | Invoice read | `GET /invoices`, `GET /invoices/{invoice_id}`, `GET /invoices/{invoice_id}/file` | Built |
 | Discrepancy check | **No separate endpoint.** Runs inside `POST /invoices`. | Built |
@@ -44,50 +44,31 @@ The app's "sign-in" is a **client-side demo**, not authentication:
 
 ---
 
-## 2. Master list
+## 2. Master-list import
 
-**There are no upload, import or read endpoints.** The service loads one price sheet when it starts, from environment variables in `backend/.env`:
+The frontend master-list page uploads real CSV, XLSX and XLS files to the backend.
+It uses the configured OpenAI model to suggest header rows and column mappings, previews worksheet rows and lets the user map arbitrary headings to required
+`name` and `price` (unit price) fields, plus optional `quantity`. Optional metadata is null when
+unmapped or blank. No browser seed/localStorage data is used.
 
-| Variable | Meaning |
+| Endpoint | Purpose |
 |---|---|
-| `INVOICE_MODE` | `fixture` replays known answers for the dummy PDFs in `data/dummy`, using `data/dummy/price-sheet.xlsx`. `live` runs the real reader and checker. |
-| `INVOICE_PRICE_SHEET` | Path to the master list. Required in `live` mode. Currently `../data/mock_invoice_dataset/master_prices.csv`. |
-| `INVOICE_CHECKER` | `standard` (reads an Excel sheet) or `csv_context` (reads a CSV and uses a model). Currently `csv_context`. |
+| `POST /master-list/preview` | Multipart file; return worksheets, AI header/mapping suggestions and source preview |
+| `POST /master-list` | Initial import; multipart file and optional JSON `options` with sheet/header/mapping |
+| `PUT /master-list` | Replace only after all rows pass validation |
+| `GET /master-list` | Persisted current list or null |
+| `GET /master-list/events` | Upload/replacement history |
 
-Changing the master list means replacing the file and restarting the service.
+The response retains `file`, `uploadedAt`, `items`, `supplierCount`, and adds `id`
+and `version`. Each item contains required name/price, nullable quantity, computed totalPrice and nullable
+supplier, po, item, description, unit, currency, discount, validFrom, validTo.
+Prices and quantities are decimal strings. Validation failures return 422 with a
+row-specific message; unsupported formats return 415 and files over 5 MiB return
+413. Initial upload/replacement state conflicts return 409.
 
-**Exposed version.** Every invoice carries `price_sheet_version`, a hash of the sheet it was checked against. That is the only sign of the master list in the API.
-
-### Accepted formats
-
-**`standard` checker: Excel `.xlsx`** (loaded with openpyxl; `backend/check/sheet.py`)
-
-- The header row may be anywhere in the first 20 rows. Headers are compared in lower case, with punctuation read as spaces.
-- Required columns, and the header wordings each accepts:
-  - **part number:** "part number", "part no", "part code", "item code", "item part code", "stock code", "product code"
-  - **description:** "description"
-  - **currency:** "currency"
-  - **unit price:** "unit price", "agreed unit price", "agreed price", "price"
-- Other columns are ignored.
-- There is one price per part. A part listed twice with different prices is a **conflict**, and its lines go to a person (`needs_person`).
-
-**`csv_context` checker: CSV, UTF-8 with an optional BOM** (`backend/api/csv_live.py`)
-
-- Required columns: `key`, `supplier`, `po`, `item`, `description`, `uom`, `currency`, `unit_price`, `discount`, `tax`, `valid_from`, `valid_to`. An optional `supplier_id` is present in the sample.
-- Every required field must be filled, and `key` must be unique.
-  - `unit_price`, `discount` and `tax` are non-negative decimals.
-  - `discount` and `tax` are fractions from 0 to 1.
-  - `valid_from` is on or before `valid_to` (ISO dates).
-- If the sheet fails these rules, the service refuses to start.
-
-### One master list or one per supplier?
-
-**One per running service**, shared by every supplier. There are no accounts, so "per account" doesn't apply yet.
-
-- The `.xlsx` sheet keys prices by part number only.
-- The CSV sheet holds **many suppliers in one file**: each row names its `supplier` and `po`, and matching uses supplier, PO, item, unit, currency and validity dates.
-
-There is no per-supplier master-list entity.
+Original files and normalized snapshots are kept in the runtime SQLite database.
+The invoice checker **still reads its configured price sheet**; use of these
+uploaded name/price/quantity records for checking is the next integration step.
 
 ---
 

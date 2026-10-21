@@ -22,6 +22,8 @@ from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
+from .master_list import initialize as initialize_master_list
+from .master_list import router as master_list_router
 from .stages import FixtureStages, Stages
 from .storage import Store
 
@@ -54,11 +56,13 @@ def create_app(
     async def lifespan(app):
         app.state.store = Store(store_dir)
         app.state.store.recover()
+        initialize_master_list(app.state.store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
         app.state.slot = BoundedSemaphore(1)
         yield
 
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
+    app.include_router(master_list_router)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
