@@ -57,6 +57,7 @@ export interface ServiceInvoice {
   } | null;
   document?: {
     page_count?: number;
+    pages?: { page_number: number; display_rotation?: number }[];
     blocks?: { text: string; locations?: ServiceLocation[] }[];
   } | null;
   check: {
@@ -142,6 +143,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     taxRate: numberOf(invoice?.tax_rate),
     pageCount: saved.document?.page_count ?? null,
     blocks: blocksOf(saved),
+    pageRotations: Object.fromEntries((saved.document?.pages ?? []).map((p) => [p.page_number, p.display_rotation ?? 0])),
   };
 }
 

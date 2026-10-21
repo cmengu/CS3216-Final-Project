@@ -18,6 +18,7 @@ class SourceBlock(BaseModel):
 
 class PageRead(BaseModel):
     page_number: int
+    display_rotation: int = 0  # Clockwise correction relative to the original PDF display.
     extraction_method: Literal["embedded_text", "ocr", "mixed"]
     ocr_ran: bool
     embedded_characters: int

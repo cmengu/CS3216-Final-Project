@@ -74,6 +74,7 @@ export interface SupplierInvoice {
   taxRate?: number | null;
   /** How many pages the PDF has, once it was read. */
   pageCount?: number | null;
+  pageRotations?: Record<number, number>;
   /** Where each piece of text sits on the PDF, for highlighting a line. */
   blocks?: SourceBlock[];
   /** The clerk's decision, saved in the service. Null until someone decides. */

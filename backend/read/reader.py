@@ -133,7 +133,7 @@ def _render_page_pil(path: Path, page_number: int, *, scale: float = 2.0):
 
 def _recover_sideways_page(
     path: Path, page_number: int
-) -> tuple[str, list[SourceBlock], int, str] | None:
+) -> tuple[str, list[SourceBlock], int, str, int] | None:
     import numpy as np
     from PIL import Image
 
@@ -143,6 +143,7 @@ def _recover_sideways_page(
 
     best_out = None
     best_image = None
+    best_rotation = 0
     best_score = -1
     for transpose_op in (Image.Transpose.ROTATE_270, Image.Transpose.ROTATE_90):
         rotated = pil_image.transpose(transpose_op)
@@ -158,6 +159,7 @@ def _recover_sideways_page(
             best_score = score
             best_out = out
             best_image = rotated
+            best_rotation = 90 if transpose_op == Image.Transpose.ROTATE_270 else 270
         if kw_hits >= 4:
             break
 
@@ -219,7 +221,29 @@ def _recover_sideways_page(
                 ],
             )
         )
-    return "\n".join(lines_md), blocks, len(items), _encode_page_image(best_image)
+    # Convert upright OCR pixels back to original PDF coordinates for viewer highlights.
+    page = PdfReader(path).pages[page_number - 1]
+    W, H = float(page.mediabox.width), float(page.mediabox.height)
+    rotation = (int(page.rotation) + best_rotation) % 360
+    for block in blocks:
+        loc = block.locations[0]
+        box = loc.bbox
+        points = []
+        for x, y in ((box["l"], box["t"]), (box["r"], box["b"])):
+            u, v = x / width, y / height
+            if rotation == 90:
+                points.append((v * W, u * H))
+            elif rotation == 270:
+                points.append(((1 - v) * W, (1 - u) * H))
+            elif rotation == 180:
+                points.append(((1 - u) * W, v * H))
+            else:
+                points.append((u * W, (1 - v) * H))
+        loc.bbox = {"l": min(p[0] for p in points), "r": max(p[0] for p in points),
+                    "b": min(p[1] for p in points), "t": max(p[1] for p in points),
+                    "coord_origin": "BOTTOMLEFT"}
+        loc.page_width, loc.page_height = W, H
+    return "\n".join(lines_md), blocks, len(items), _encode_page_image(best_image), best_rotation
 
 
 def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
@@ -254,10 +278,11 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
                     location.page = index
             ocr_cells = sum(1 for p in result.pages for cell in p.cells if cell.from_ocr)
             markdown = result.document.export_to_markdown()
+            display_rotation = 0
             if use_ocr and _is_sideways_page(page_blocks):
                 recovered = _recover_sideways_page(path, index)
                 if recovered is not None:
-                    upright_md, upright_blocks, upright_cells, image_data_url = recovered
+                    upright_md, upright_blocks, upright_cells, image_data_url, display_rotation = recovered
                     markdown = upright_md
                     page_blocks = upright_blocks
                     ocr_cells = max(ocr_cells, upright_cells)
@@ -277,6 +302,7 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             pages.append(
                 PageRead(
                     page_number=index,
+                    display_rotation=display_rotation,
                     extraction_method="ocr" if use_ocr else "embedded_text",
                     ocr_ran=use_ocr,
                     embedded_characters=len(text.strip()),
