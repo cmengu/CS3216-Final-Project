@@ -72,10 +72,12 @@ In live `master_list` mode (also selected by the old `csv_context` alias), each 
 captures the current uploaded version before reading its PDF. Replacing the master
 changes subsequent checks without a restart; saved invoices retain their previous
 `price_sheet_version`, fields and results. No dummy price sheet is selected implicitly.
-The UI offers an explicit recheck that creates another invoice record. Currency and unit
-must be mapped to compare prices; absent values and ambiguous agreements require review.
-Supplier/PO/date constraints and discount/tax terms apply when mapped. Without a current
-master, invoice upload returns 503. Explicit legacy `standard` mode still reads its named
+The UI offers an explicit recheck that creates another invoice record. Name and unit price
+are required. Optional currency/unit/supplier/PO/date constraints and discount/tax terms
+apply when mapped; a mapped master quantity must equal the invoice quantity. Without master
+currency, the agreed price uses the invoice unit-price currency. Printed exchange rates
+are required for conversion to invoice currency; ambiguous agreements require review.
+Without a current master, invoice upload returns 409. Explicit legacy `standard` mode still reads its named
 `INVOICE_PRICE_SHEET`. Master-list and invoice API responses use `Cache-Control: no-store`.
 
 ---

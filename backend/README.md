@@ -36,12 +36,14 @@ uv sync --locked --extra dev --extra docling --extra dummy
 ```
 
 Live startup fails clearly if the key or model is missing. Upload and confirm a master list
-before uploading invoices; without one, invoice upload returns 503. Restart after editing
+before uploading invoices; without one, invoice upload returns 409. Restart after editing
 `.env`. Provider access/quota errors can still occur on the first extraction. Extraction
 uses `store=False` and may make a correction request after its initial model request.
 
-Map arbitrary spreadsheet headings to the import fields described below. Currency and unit
-must be provided for a line to be compared. Supplier, PO and validity dates constrain the
+Map arbitrary spreadsheet headings to the import fields described below. Name and unit price
+are required; currency, unit and quantity constrain the comparison when mapped. Without a
+master currency, the agreed price is interpreted in the invoice unit-price currency.
+Supplier, PO and validity dates constrain the
 agreement when mapped; otherwise the row is unscoped. Discount and tax terms are checked
 when present. Numeric SKUs are supported. Ambiguous agreements require review. Code-free charges
 require an exact description match (ignoring case/whitespace). Codes ignore whitespace from
@@ -318,9 +320,12 @@ expanded XLSX content. The original upload and normalized snapshots are stored i
 SQLite alongside invoice data. Rejected imports leave the current list intact.
 
 The live invoice checker uses these confirmed imports. Each check stores the selected
-master version, and historical versions remain readable after replacements. Missing
-currency/unit information produces review results rather than guessed values. Master
-quantity is displayed as imported metadata; it is not a limit on invoice quantities.
+master version, and historical versions remain readable after replacements. Optional
+supplier, PO, unit, currency, discount, tax and date constraints apply when populated.
+A mapped master quantity must equal the invoice quantity; null skips that constraint.
+It does not supply missing product quantities. Prices can be compared in the printed
+unit-price currency or converted to the mapped invoice currency using an explicit printed
+exchange rate. Ambiguous rows and inconsistent arithmetic require review.
 Discount and tax rates are stored as decimal strings. Authentication remains the existing
 frontend stub; these local API routes do not enforce per-user ownership.
 

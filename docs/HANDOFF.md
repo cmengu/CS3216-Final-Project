@@ -5,6 +5,20 @@ stop, so the next reader starts from the truth.
 
 ## Implemented, 23 October 2026
 
+Merge follow-up: `main`'s uploaded-master checker is integrated with `fix-cache`'s
+version binding, historical snapshots, cache fixes and recheck behavior. Uploaded lists
+require name/price; mapped quantities must equal invoice quantities and other optional
+constraints apply when populated. Missing master currency uses the invoice unit-price
+currency. Printed conversion into an explicitly mapped invoice currency, normalized units,
+exact codes and foreign flat-fee handling remain supported. No uploaded master returns
+409 before OCR. The explicit legacy `standard` mode and `csv_context` alias remain supported.
+This supersedes the currency/unit and quantity policy in the earlier implementation notes.
+Merge validation: 198 backend tests passed, four optional OCR/model tests skipped; 106
+frontend tests, TypeScript, frontend lint (excluding the inaccessible Python test cache)
+and production build passed. Backend Ruff lint and formatting of the resolved Python files
+passed. Three existing files elsewhere still need formatting. See B-18 in
+`docs/review/2026-10-23-backend.md` for the resolution decisions and validation details.
+
 Follow-up: the recheck prompt now requires a differing master-list version saved after
 the invoice upload. Legacy file-based version differences alone no longer imply that
 the user replaced the master list. Chrome verified canceling both an empty replacement

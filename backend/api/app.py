@@ -126,7 +126,7 @@ def create_app(
                 try:
                     selected = selected.bind(store)
                 except ValueError as exc:
-                    raise HTTPException(503, str(exc)) from exc
+                    raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
             if not filename.lower().endswith(".pdf"):
                 raise HTTPException(415, "Upload a PDF")

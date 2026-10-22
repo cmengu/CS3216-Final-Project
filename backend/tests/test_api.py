@@ -349,3 +349,16 @@ def test_a_database_from_before_outcomes_gains_the_columns(tmp_path):
     assert store.list(10, 0)[0].outcome is None
     store.decide("a", "ready_to_pay_anyway", "Checked by hand")
     assert store.get("a").outcome_reason == "Checked by hand"
+
+
+def test_live_mode_uses_uploaded_list_not_env_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("INVOICE_MODE", "live")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setenv("OPENAI_MODEL", "test-model")
+    monkeypatch.setenv("INVOICE_PRICE_SHEET", "/missing/demo.csv")
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+        assert client.get("/health").json()["mode"] == "live"
+        response = client.post("/invoices", files={"file": ("x.pdf", b"%PDF-fake")})
+        assert response.status_code == 409
+        assert "Upload a master list" in response.json()["detail"]
+        assert client.get("/invoices").json() == []
