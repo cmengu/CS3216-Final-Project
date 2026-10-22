@@ -5,9 +5,13 @@ import { SERVICE_URL } from "@/checker/api";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
 import type { MasterItem } from "./parse";
 export type { MasterItem } from "./parse";
+export interface ColumnMapping {
+  sheet: string; header: number; columns: string[]; mapping: Record<string, number>;
+}
 export interface MasterList {
   id: string; version: string; file: string; uploadedAt: string;
   items: MasterItem[]; supplierCount: number;
+  columnMapping?: ColumnMapping;
 }
 export interface MasterListEvent {
   kind: "uploaded" | "replaced"; file: string; at: string; items: number; suppliers: number;

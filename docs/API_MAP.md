@@ -63,6 +63,9 @@ unmapped or blank. No browser seed/localStorage data is used.
 The response retains `file`, `uploadedAt`, `items`, `supplierCount`, and adds `id`
 and `version`. Each item contains required name/price, nullable quantity, computed totalPrice and nullable
 supplier, po, item, description, unit, currency, discount, tax, validFrom, validTo.
+When explicit sheet/header/mapping options are submitted, the response also includes
+optional `columnMapping` metadata with those options and the original header `columns`.
+It is retained with the saved version so the UI can explain the mappings after refresh.
 Prices, quantities, discount rates and tax rates are decimal strings. Validation failures return 422 with a
 row-specific message; unsupported formats return 415 and files over 5 MiB return
 413. Initial upload/replacement state conflicts return 409.

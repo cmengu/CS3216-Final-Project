@@ -187,6 +187,15 @@ def test_api_custom_columns(tmp_path):
         )
         assert result.status_code == 201
         assert result.json()["items"][0]["price"] == "1.00"
+        expected = {
+            "sheet": "CSV",
+            "header": 1,
+            "columns": ["Label", "Value", "Count"],
+            "mapping": {"name": 0, "price": 1, "quantity": 2},
+        }
+        assert result.json()["columnMapping"] == expected
+    with TestClient(create_app(storage_dir=tmp_path)) as restarted:
+        assert restarted.get("/master-list").json()["columnMapping"] == expected
 
 
 def test_omit_quantity_even_when_file_has_column():

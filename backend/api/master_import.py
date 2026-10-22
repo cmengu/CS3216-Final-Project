@@ -155,6 +155,19 @@ def preview(tables):
     except ValueError as exc:
         for target in result:
             target["note"] = str(exc)
+    for target in result:
+        if target["mappingSource"] != "ai":
+            continue
+        headings = [
+            re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+            for value in target["rows"][target["header"]]
+        ]
+        for field, aliases in FIELDS.items():
+            if field in target["mapping"]:
+                continue
+            matches = [index for index, heading in enumerate(headings) if heading in aliases]
+            if len(matches) == 1:
+                target["mapping"][field] = matches[0]
     return {"sheets": result, "fields": list(FIELDS), "required": list(REQUIRED)}
 
 

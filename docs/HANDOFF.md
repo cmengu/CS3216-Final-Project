@@ -5,6 +5,21 @@ stop, so the next reader starts from the truth.
 
 ## Implemented, 23 October 2026
 
+Master-list upload now imports an unambiguous detected first list automatically and shows
+the saved table with a Column mappings pop-up. The pop-up can be reopened after refresh.
+Incomplete/manual mappings or multiple possible tables need confirmation; replacement
+always needs confirmation. Exact known headings fill uniquely missing mapping fields,
+including Description -> Item name. Saved imports retain optional columnMapping metadata.
+Validation: 200 backend tests passed (four optional skips), 106 frontend tests, TypeScript,
+frontend lint, build, targeted Ruff checks and desktop/mobile Chrome checks passed.
+See S-39 in docs/review/2026-10-23-screens.md. These local changes need deployment to the
+server: rebuild the frontend and restart the backend. No hosted data was changed.
+
+Deployment follow-up: package-lock.json now includes the two missing @emnapi 1.11.3
+entries required by npm 12. Its Linux x64 clean-install dry run reproduces the failure
+before the fix and passes afterward; existing locked packages are unchanged. See S-38
+in docs/review/2026-10-23-screens.md. This follow-up remains uncommitted locally.
+
 Merge follow-up: `main`'s uploaded-master checker is integrated with `fix-cache`'s
 version binding, historical snapshots, cache fixes and recheck behavior. Uploaded lists
 require name/price; mapped quantities must equal invoice quantities and other optional
@@ -34,10 +49,10 @@ are now resolved. This section is the current status; earlier sections retain th
   within a tab, confirmed data is shown immediately, and focus/visibility/storage events
   refresh sibling tabs. Invoice reads also retain newer local mutations. API reads use
   no-store and bounded timeouts; AI preview has a separate 60-second client timeout.
-- Every import now requires mapping review, including files with `item`/`unit_price`.
-  Quantity is preserved, uncertainty notes are shown, and the first worksheet with a
-  complete proposed mapping is selected. Decimal discount/tax fields and validity
-  intervals are validated. Missing currency/unit information remains a review condition.
+- Initial imports with one complete detected table save automatically and explain the
+  mappings in a pop-up. Missing/manual mappings, multiple candidate tables and replacements
+  need confirmation. Quantity is preserved; notes and column controls stay in the pop-up.
+  Decimal discount/tax fields and validity intervals are validated before saving.
 - Live mode defaults to `INVOICE_CHECKER=master_list`; `csv_context` is a compatibility
   alias. These modes use the uploaded normalized list, without a CSV path or dummy
   fallback. Explicit `standard` mode retains its configured legacy file checker.

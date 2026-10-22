@@ -113,6 +113,11 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
             "items": items,
             "supplierCount": len({i["supplier"] for i in items if i["supplier"]}),
         }
+        if all(key in selection for key in ("sheet", "header", "mapping")):
+            document["columnMapping"] = {
+                **selection,
+                "columns": tables[selection["sheet"]][selection["header"]],
+            }
         with request.app.state.store.connect() as db:
             # Serialize replacement events and the active-version order in a single transaction.
             db.execute("BEGIN IMMEDIATE")
