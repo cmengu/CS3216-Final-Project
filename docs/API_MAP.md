@@ -20,7 +20,7 @@ The backend endpoints behind the three core features: master list, invoice uploa
 | Area | Endpoints | Status |
 |---|---|---|
 | Auth (email/password, OAuth) | **None** | Not built. The service says "No auth/connectors in release 1". |
-| Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events` | Persisted CSV/XLSX/XLS import; invoice checker integration is a separate next step. |
+| Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events`, `GET /master-list/versions/{version}` | Persisted CSV/XLSX/XLS imports; live checks use a fixed uploaded version. |
 | Invoice upload | `POST /invoices` | Built |
 | Invoice read | `GET /invoices`, `GET /invoices/{invoice_id}`, `GET /invoices/{invoice_id}/file` | Built |
 | Discrepancy check | **No separate endpoint.** Runs inside `POST /invoices`. | Built |
@@ -58,17 +58,25 @@ unmapped or blank. No browser seed/localStorage data is used.
 | `PUT /master-list` | Replace only after all rows pass validation |
 | `GET /master-list` | Persisted current list or null |
 | `GET /master-list/events` | Upload/replacement history |
+| `GET /master-list/versions/{version}` | Original immutable snapshot; 404 when unavailable |
 
 The response retains `file`, `uploadedAt`, `items`, `supplierCount`, and adds `id`
 and `version`. Each item contains required name/price, nullable quantity, computed totalPrice and nullable
-supplier, po, item, description, unit, currency, discount, validFrom, validTo.
-Prices and quantities are decimal strings. Validation failures return 422 with a
+supplier, po, item, description, unit, currency, discount, tax, validFrom, validTo.
+Prices, quantities, discount rates and tax rates are decimal strings. Validation failures return 422 with a
 row-specific message; unsupported formats return 415 and files over 5 MiB return
 413. Initial upload/replacement state conflicts return 409.
 
 Original files and normalized snapshots are kept in the runtime SQLite database.
-The invoice checker **still reads its configured price sheet**; use of these
-uploaded name/price/quantity records for checking is the next integration step.
+In live `master_list` mode (also selected by the old `csv_context` alias), each invoice
+captures the current uploaded version before reading its PDF. Replacing the master
+changes subsequent checks without a restart; saved invoices retain their previous
+`price_sheet_version`, fields and results. No dummy price sheet is selected implicitly.
+The UI offers an explicit recheck that creates another invoice record. Currency and unit
+must be mapped to compare prices; absent values and ambiguous agreements require review.
+Supplier/PO/date constraints and discount/tax terms apply when mapped. Without a current
+master, invoice upload returns 503. Explicit legacy `standard` mode still reads its named
+`INVOICE_PRICE_SHEET`. Master-list and invoice API responses use `Cache-Control: no-store`.
 
 ---
 
@@ -276,8 +284,6 @@ All fields are listed; `?` marks a field that may be `null`. "dec" is a decimal 
 | Needed for | Missing on the service |
 |---|---|
 | Sign-in | Any auth: users, email/password, OAuth, sessions. Requests are unauthenticated. |
-| Master list: upload | An upload/import endpoint, validation feedback, versions/history. Today it's a server file plus a restart. |
-| Master list: read | An endpoint that lists master-list rows. Only `price_sheet_version` is exposed. |
 | Master list per supplier | Any supplier entity. One list serves every supplier; the CSV format holds suppliers as rows. |
 | Check: re-run | A re-check endpoint. Re-checking means re-uploading, which creates a new invoice. |
 | Resolution per line | Line-level actions (accept a line, override a price, mark resolved). Only the whole-invoice outcome exists. |

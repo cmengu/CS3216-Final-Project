@@ -17,7 +17,7 @@ const day = (iso: string | null) => {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 };
 const valid = (i: MasterItem) => (i.validFrom || i.validTo ? `${day(i.validFrom)} – ${day(i.validTo)}` : "");
-const pct = (d: number | null) => (d ? `${Number((d * 100).toFixed(2))}%` : "");
+const pct = (d: string | number | null) => (d ? `${Number((Number(d) * 100).toFixed(2))}%` : "");
 
 function FirstRun() {
   const router = useRouter();

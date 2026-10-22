@@ -18,6 +18,7 @@ FieldName = Literal[
     "unit",
     "currency",
     "discount",
+    "tax",
     "validFrom",
     "validTo",
 ]
@@ -54,6 +55,7 @@ both unit price and total price. Do not invent quantity=1 or map an unrelated co
 quantity is optional and is the actual quantity column
 (never a row number, item code, package size or unit). Other fields are optional.
 item means SKU/part code; unit means UOM; supplier means supplier name; po means PO reference.
+tax means the agreed tax/GST rate, not a tax amount. discount means a rate, not an amount.
 Do not invent a column for a missing field or extract constants from title text.
 Omit mappings you cannot identify confidently; return header=null and no columns if there
 is no identifiable table. Never map name, price and quantity to the same column. A field

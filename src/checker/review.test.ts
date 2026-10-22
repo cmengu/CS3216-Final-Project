@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowed, choices, csvCell, csvName, CSV_COLUMNS, decidedLabel, disputeNote, invoiceDate, nextToDecide, readyToPay, readyToPayCsv } from "./review";
+import { allowed, choices, csvCell, csvName, CSV_COLUMNS, decidedLabel, disputeNote, hasNewerMasterList, invoiceDate, nextToDecide, readyToPay, readyToPayCsv } from "./review";
 import type { InvoiceLine, SupplierInvoice } from "./types";
 
 const line = (over: Partial<InvoiceLine> = {}): InvoiceLine => ({
@@ -44,6 +44,33 @@ const invoice = (over: Partial<SupplierInvoice> = {}): SupplierInvoice => ({
 const clean = invoice();
 const overcharged = invoice({ id: "b", number: "DEMO-002", supplier: "Invented Silicon Trading", lines: [overLine, line()], overchargeTotal: 15 });
 const failed = invoice({ id: "c", state: "failed", lines: [], overchargeTotal: null, error: "reading: No readable text or tables" });
+
+describe("hasNewerMasterList", () => {
+  const replacement = { version: "replacement", uploadedAt: "2026-10-11T10:00:00Z" };
+
+  it("offers rechecking after a different master list is saved after the invoice", () => {
+    expect(hasNewerMasterList(clean, replacement)).toBe(true);
+  });
+
+  it("does not treat legacy version differences as a new upload", () => {
+    expect(hasNewerMasterList(clean, { ...replacement, uploadedAt: "2026-10-11T08:00:00Z" })).toBe(false);
+    expect(hasNewerMasterList(clean, { ...replacement, uploadedAt: clean.uploadedAt })).toBe(false);
+  });
+
+  it("does not offer rechecking for the same version or missing version information", () => {
+    expect(hasNewerMasterList(clean, { ...replacement, version: clean.priceSheet! })).toBe(false);
+    expect(hasNewerMasterList(clean, null)).toBe(false);
+    expect(hasNewerMasterList(invoice({ priceSheet: null }), replacement)).toBe(false);
+    expect(hasNewerMasterList(clean, { ...replacement, uploadedAt: "invalid" })).toBe(false);
+    expect(hasNewerMasterList(invoice({ uploadedAt: "invalid" }), replacement)).toBe(false);
+  });
+
+  it("does not offer rechecking for fixture, failed or unfinished invoices", () => {
+    expect(hasNewerMasterList(invoice({ fixture: true }), replacement)).toBe(false);
+    expect(hasNewerMasterList(failed, replacement)).toBe(false);
+    expect(hasNewerMasterList(invoice({ state: "checking" }), replacement)).toBe(false);
+  });
+});
 
 describe("choices", () => {
   it("offers Ready to pay only for an invoice checked in full with every line matching", () => {

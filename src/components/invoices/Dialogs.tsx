@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { REASON_MAX } from "@/checker/review";
 import { mailto, payAnywayLine, raiseEmail, shortDescription, signed, unit, whenLabel } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
 import { Icon } from "@/components/icons";
 import { Dialog, Pill } from "@/components/ui";
-import type { MasterList } from "@/masterList";
+import { getMasterListVersion, type MasterList } from "@/masterList";
 
 export function PayAnywayDialog({
   inv,
@@ -171,6 +171,19 @@ export function RaiseDialog({
 }
 
 export function CompareDrawer({ inv, open, onClose, masterList }: { inv: SupplierInvoice; open: boolean; onClose: () => void; masterList: MasterList | null }) {
+  const [historical, setHistorical] = useState<MasterList | null>(null);
+  const [unavailableVersion, setUnavailableVersion] = useState<string | null>(null);
+  const version = inv.priceSheet;
+  const snapshot = masterList?.version === version ? masterList : historical?.version === version ? historical : null;
+  useEffect(() => {
+    if (!open || !version || masterList?.version === version) return;
+    let live = true;
+    getMasterListVersion(version).then(
+      (found) => { if (live) setHistorical(found); },
+      () => { if (live) setUnavailableVersion(version); },
+    );
+    return () => { live = false; };
+  }, [open, version, masterList?.version]);
   return (
     <Dialog
       open={open}
@@ -180,9 +193,9 @@ export function CompareDrawer({ inv, open, onClose, masterList }: { inv: Supplie
       onClose={onClose}
       footer={
         <>
-          <span className="muted">{masterList ? `${masterList.file} · ${whenLabel(masterList.uploadedAt)}` : "No master list"}</span>
+          <span className="muted">{snapshot ? `${snapshot.file} · ${whenLabel(snapshot.uploadedAt)} · Version ${snapshot.version.slice(0, 8)}` : unavailableVersion === version || !version ? "Original master list unavailable; showing saved comparison" : "Loading original master list…"}</span>
           <Link className="ic-link" href="/master-list">
-            Open master list
+            View current master list
             <Icon name="arrowR" arrow />
           </Link>
         </>

@@ -154,6 +154,7 @@ def test_live_mode_runs_the_real_check_on_a_file_it_has_never_seen(tmp_path):
 
 def test_live_mode_needs_a_named_price_sheet(tmp_path, monkeypatch):
     monkeypatch.setenv("INVOICE_MODE", "live")
+    monkeypatch.setenv("INVOICE_CHECKER", "standard")
     monkeypatch.delenv("INVOICE_PRICE_SHEET", raising=False)
     with pytest.raises(ValueError, match="INVOICE_PRICE_SHEET"):
         with TestClient(create_app(storage_dir=tmp_path)):

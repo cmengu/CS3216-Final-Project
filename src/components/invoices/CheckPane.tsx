@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { decideInvoice, rememberInvoice, retryInvoice } from "@/checker/api";
 import {
   checkPill,
@@ -19,7 +20,7 @@ import {
   unit,
   whenLabel,
 } from "@/checker/present";
-import { invoiceDate } from "@/checker/review";
+import { hasNewerMasterList, invoiceDate } from "@/checker/review";
 import type { Outcome, SupplierInvoice } from "@/checker/types";
 import { Icon } from "@/components/icons";
 import { Pill } from "@/components/ui";
@@ -165,6 +166,10 @@ export function CheckPane({
   onShow: (n: number) => void;
 }) {
   const [dialog, setDialog] = useState<"pay" | "raise" | "compare" | null>(null);
+  const [rechecking, setRechecking] = useState(false);
+  const [recheckError, setRecheckError] = useState<string | null>(null);
+  const router = useRouter();
+  const outdated = hasNewerMasterList(inv, masterList);
   const cur = inv.currency;
   const failed = inv.state === "failed";
   const pill = linesPill(inv);
@@ -184,6 +189,23 @@ export function CheckPane({
             {meta.filter(Boolean).join(" · ")}
           </span>
         </div>
+
+        {outdated ? (
+          <section className="ic-card ic-card--tight" aria-label="Master list updated">
+            <p className="ic-hint" style={{ marginBottom: 8 }}>The master list has changed. These results keep the prices used for the original check.</p>
+            <button className="ic-btn ic-btn--secondary" type="button" disabled={rechecking} onClick={async () => {
+              setRechecking(true); setRecheckError(null);
+              try {
+                const checked = await retryInvoice(inv);
+                rememberInvoice(checked);
+                router.replace(`/invoices?id=${encodeURIComponent(checked.id)}`, { scroll: false });
+              } catch (error) {
+                setRecheckError(error instanceof Error ? error.message : "The invoice couldn’t be checked again.");
+              } finally { setRechecking(false); }
+            }}>{rechecking ? "Checking…" : "Recheck with current master list"}</button>
+            {recheckError ? <p className="ic-hint ic-hint--error" role="alert">{recheckError}</p> : null}
+          </section>
+        ) : null}
 
         {failed ? (
           <Failed inv={inv} />

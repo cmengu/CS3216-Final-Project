@@ -5,8 +5,9 @@ Built for the 10 October build plan: upload → Docling → extraction adapter �
 is unchanged; Nam can build the new screens against this API.
 
 **Modes:** `live` reads PDFs with Docling and extracts printed fields using OpenAI.
-The default `INVOICE_CHECKER=standard` keeps the existing `check/` price-sheet workflow.
-Set `INVOICE_CHECKER=csv_context` for the extended PO/unit/discount-aware CSV adapter. `fixture` replays answers for the exact original
+The default `INVOICE_CHECKER=master_list` uses the versioned, uploaded master list.
+`csv_context` remains an alias for this mode. The explicit `standard` mode retains the legacy
+file-backed checker and requires `INVOICE_PRICE_SHEET`. `fixture` replays answers for the exact original
 dummy PDFs and refuses other hashes. Never use fixture mode to measure AI accuracy.
 
 ## Live setup and local environment template
@@ -19,8 +20,7 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-6-luna
 OPENAI_REASONING_EFFORT=none
 INVOICE_MODE=live
-INVOICE_CHECKER=csv_context
-INVOICE_PRICE_SHEET=../data/mock_invoice_dataset/master_prices.csv
+INVOICE_CHECKER=master_list
 INVOICE_DATA_DIR=runtime/live
 INVOICE_OCR_TIMEOUT=180
 ```
@@ -35,13 +35,15 @@ uv sync --locked --extra dev --extra docling --extra dummy
 .venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Live startup fails clearly if the key, model or price-sheet path is missing. Restart after
-editing `.env`. The service validates configuration, but provider access/quota errors can
-still occur on the first extraction. Each upload makes one model request with `store=False`.
+Live startup fails clearly if the key or model is missing. Upload and confirm a master list
+before uploading invoices; without one, invoice upload returns 503. Restart after editing
+`.env`. Provider access/quota errors can still occur on the first extraction. Extraction
+uses `store=False` and may make a correction request after its initial model request.
 
-The price CSV columns are `key`, `supplier`, `po`, `item`, `description`, `uom`, `currency`,
-`unit_price`, `discount`, `tax`, `valid_from`, `valid_to`. Rates are fractions, e.g. `0.05`.
-Matching requires supplier, PO, invoice date, currency, item and unit. Code-free charges
+Map arbitrary spreadsheet headings to the import fields described below. Currency and unit
+must be provided for a line to be compared. Supplier, PO and validity dates constrain the
+agreement when mapped; otherwise the row is unscoped. Discount and tax terms are checked
+when present. Numeric SKUs are supported. Ambiguous agreements require review. Code-free charges
 require an exact description match (ignoring case/whitespace). Codes ignore whitespace from
 OCR wrapping; differing characters are never guessed from descriptions. Printed discount
 amounts or rates and explicitly printed exchange rates are handled with Decimal
@@ -81,12 +83,15 @@ INVOICE_MODE=fixture .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 
 For the real steps, with the key and model in the environment:
 
 ```sh
-INVOICE_MODE=live INVOICE_PRICE_SHEET=../data/dummy/price-sheet.xlsx \
+INVOICE_MODE=live INVOICE_CHECKER=master_list \
   .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-The price sheet is read once at start; a missing column stops the service and names it. A
-changed sheet needs a restart.
+Upload the master list through the frontend, review its column mappings, then confirm the
+import. Each invoice captures the current immutable master version before OCR starts.
+Replacing the master affects subsequent uploads immediately, without a server restart.
+Old invoices retain their saved results; use Recheck with current master list to create a
+new check explicitly. `GET /master-list/versions/{version}` retrieves the original snapshot.
 
 Open <http://127.0.0.1:8000/docs> to upload a PDF through Swagger, or from the repository root:
 
@@ -235,7 +240,7 @@ the new manifest. Expected values come from the source records before rendering,
 OCR output. Chen Meng owns the final answer-file format/scorer; the manifest is a handoff,
 not the three-run evaluation or its five metrics.
 
-## The price check's rules
+## Legacy standard checker's rules
 
 Each line takes the first rule it fails: a missing quantity, unit price or line total; a
 quantity of zero or less; quantity times price not equal to the line total; no part number or
@@ -312,9 +317,11 @@ worksheet is imported. Limits: 20 worksheets, 100 columns, 10,000 data rows, 50 
 expanded XLSX content. The original upload and normalized snapshots are stored in
 SQLite alongside invoice data. Rejected imports leave the current list intact.
 
-This feature prepares master data for the later invoice-checking integration.
-The existing invoice checker still uses `INVOICE_PRICE_SHEET`; uploading this list
-does not yet change its price/quantity rules. Authentication remains the existing
+The live invoice checker uses these confirmed imports. Each check stores the selected
+master version, and historical versions remain readable after replacements. Missing
+currency/unit information produces review results rather than guessed values. Master
+quantity is displayed as imported metadata; it is not a limit on invoice quantities.
+Discount and tax rates are stored as decimal strings. Authentication remains the existing
 frontend stub; these local API routes do not enforce per-user ownership.
 
 

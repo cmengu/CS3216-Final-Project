@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 import type { Outcome, SupplierInvoice } from "./types";
+import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
 
 export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8000";
 
@@ -29,7 +30,7 @@ const RECHECK_MS = 3_000;
 
 async function read(path: string): Promise<Response> {
   try {
-    return await fetch(`${SERVICE_URL}${path}`, { signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+    return await fetch(`${SERVICE_URL}${path}`, { cache: "no-store", signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
   } catch {
     throw new Error(unreachable);
   }
@@ -163,20 +164,25 @@ export async function decideInvoice(id: string, outcome: Outcome | null, reason:
 }
 
 let cache: SupplierInvoice[] | null = null;
+let cacheRevision = 0;
+const SYNC_KEY = `ic.invoices.changed:${SERVICE_URL}`;
 /** Each open list. Null asks it to load again; a list is the new answer to show. */
 const listeners = new Set<(list: SupplierInvoice[] | null) => void>();
 
 /** Ask every open list to load again. Used after an upload. */
 export function reloadInvoices(): void {
+  ++cacheRevision;
   for (const listener of listeners) listener(null);
 }
 
 /** Put one invoice the service just answered into every open list, without loading them all again. */
 export function rememberInvoice(saved: SupplierInvoice): void {
+  ++cacheRevision;
   cache = cache?.some((inv) => inv.id === saved.id)
     ? cache.map((inv) => (inv.id === saved.id ? saved : inv))
     : [saved, ...(cache ?? [])];
   for (const listener of listeners) listener(cache);
+  broadcastServiceChange(SYNC_KEY, saved.id);
 }
 
 /** Every saved invoice, including failed processing attempts. */
@@ -194,21 +200,28 @@ export function useInvoices(): { invoices: SupplierInvoice[] | null; error: stri
       setRevision((n) => n + 1);
     };
     listeners.add(listener);
+    const stopSync = listenForServiceChanges(SYNC_KEY, reloadInvoices);
     return () => {
       listeners.delete(listener);
+      stopSync();
     };
   }, []);
   useEffect(() => {
     let live = true;
+    const startedAt = cacheRevision;
     listInvoices().then(
       (list) => {
-        cache = list;
         if (!live) return;
+        if (startedAt !== cacheRevision) {
+          setInvoices(cache);
+          return;
+        }
+        cache = list;
         setInvoices(list);
         setError(null);
       },
       (reason: unknown) => {
-        if (!live) return;
+        if (!live || startedAt !== cacheRevision) return;
         setError(reason instanceof Error ? reason.message : unreachable);
       },
     );

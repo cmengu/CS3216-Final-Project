@@ -15,31 +15,22 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
   const [error, setError] = useState("");
   const rows = preview?.sheets.find((s) => s.name === sheet)?.rows ?? [];
   const columns = rows[header] ?? [];
+  const selectedPreview = preview?.sheets.find((s) => s.name === sheet);
   return <div style={{ display: "grid", gap: 16 }}>
     <Dropzone title={busy ? "Reading the file and identifying columns…" : file?.name ?? "Drop your master list here"} formats="CSV or Excel" accept={ACCEPT} inputLabel="Master list file" state={error ? { kind: "error", title: "Couldn’t import the file", reason: error } : { kind: "idle" }} onFiles={async ([chosen]) => {
       if (busy || !chosen) return;
       setBusy(true); setError(""); setPreview(null); setFile(chosen);
       try {
         const result = await previewMasterList(chosen);
-        // Temporary demo shortcut: use explicit source columns without a mapping review.
-        const demoLayouts = result.sheets.flatMap((candidate) => candidate.rows.flatMap((row, index) => {
-          const names = row.map((cell) => cell.trim().toLowerCase());
-          if (names.filter((name) => name === "item").length !== 1 || names.filter((name) => name === "unit_price").length !== 1) return [];
-          const demoMapping = { ...(candidate.header === index ? candidate.mapping : {}), name: names.indexOf("item"), price: names.indexOf("unit_price") } as Record<string, number>;
-          delete demoMapping.quantity;
-          return [{ sheet: candidate.name, header: index, mapping: demoMapping }];
-        }));
-        if (demoLayouts.length === 1) {
-          const saved = await (replace ? replaceMasterList : uploadMasterList)(chosen, demoLayouts[0]);
-          if (saved.ok) { onSaved(); return; }
-          setError(saved.reason);
-        }
-        const first = result.sheets[0];
+        const first = result.sheets.find((candidate) => result.required.every((key) => candidate.mapping[key] !== undefined)) ?? result.sheets[0];
+        if (!first) throw new Error("No worksheets with data were found.");
         setPreview(result); setSheet(first.name); setHeader(first.header); setMapping(first.mapping);
       } catch (err) { setError(err instanceof Error ? err.message : "Could not read file"); }
       finally { setBusy(false); }
     }} />
     {preview ? <>
+      <p className="ic-hint">Review the name, unit price and other columns before {replace ? "replacing" : "importing"} your master list. Unit and currency are needed for invoice price comparisons.</p>
+      {selectedPreview?.note ? <p className="ic-hint" role="status">{selectedPreview.note}</p> : null}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <label>Worksheet <select className="ic-select" disabled={busy} value={sheet} onChange={(e) => {
           const selected = preview.sheets.find((s) => s.name === e.target.value)!;

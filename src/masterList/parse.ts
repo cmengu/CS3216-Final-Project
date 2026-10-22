@@ -11,7 +11,8 @@ export interface MasterItem {
   description: string | null;
   unit: string | null;
   currency: string | null;
-  discount: number | null;
+  discount: string | number | null;
+  tax?: string | null;
   validFrom: string | null;
   validTo: string | null;
 }
