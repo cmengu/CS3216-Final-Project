@@ -11,7 +11,6 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
-from check import check as check_standard, load_price_sheet
 from extract.context import CheckingInvoice, CheckingLine
 from extract.invoice import extract_with_usage, refine_with_usage
 from read.models import ParsedDocument
@@ -21,7 +20,6 @@ from .contracts import CheckResult, LineResult
 
 D = Decimal
 TOLERANCE = D("0.005")
-DUMMY_SHEET = Path(__file__).resolve().parents[2] / "data/dummy/price-sheet.xlsx"
 
 CONTEXT_PROMPT = """
 Also copy the purchase_order (PO/order reference), unit, tax_rate and discount_rate.
@@ -405,9 +403,8 @@ class LiveStages:
     def __init__(self, price_sheet: Path, *, model: str, client=None):
         if not model.strip():
             raise ValueError("Set OPENAI_MODEL for live extraction")
-        self.sheet = PriceSheet(price_sheet)
+        self.sheet = price_sheet if isinstance(price_sheet, PriceSheet) else PriceSheet(price_sheet)
         self.price_sheet_version = self.sheet.version
-        self._fallback_sheet = load_price_sheet(DUMMY_SHEET) if DUMMY_SHEET.is_file() else None
         self.model, self.client = model, client
 
     def extract(self, document: ParsedDocument) -> CheckingInvoice:
@@ -445,15 +442,5 @@ class LiveStages:
     def check(self, invoice: InvoiceRecord) -> CheckResult:
         if not isinstance(invoice, CheckingInvoice):
             raise ValueError("Live checking requires printed PO, unit and currency context")
-        if (
-            self._fallback_sheet is not None
-            and invoice.purchase_order is None
-            and not any(
-                normalized(r["supplier"]) == normalized(invoice.supplier_name)
-                for r in self.sheet.rows
-            )
-        ):
-            result = check_standard(invoice, self._fallback_sheet)
-            return result.model_copy(update={"price_sheet_version": self.price_sheet_version})
         return self.sheet.check(invoice)
 

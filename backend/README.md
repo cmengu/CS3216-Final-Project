@@ -5,8 +5,7 @@ Built for the 10 October build plan: upload → Docling → extraction adapter �
 is unchanged; Nam can build the new screens against this API.
 
 **Modes:** `live` reads PDFs with Docling and extracts printed fields using OpenAI.
-The default `INVOICE_CHECKER=standard` keeps the existing `check/` price-sheet workflow.
-Set `INVOICE_CHECKER=csv_context` for the extended PO/unit/discount-aware CSV adapter. `fixture` replays answers for the exact original
+Live checking uses the latest master list uploaded to SQLite. `fixture` replays answers for the exact original
 dummy PDFs and refuses other hashes. Never use fixture mode to measure AI accuracy.
 
 ## Live setup and local environment template
@@ -19,8 +18,6 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-6-luna
 OPENAI_REASONING_EFFORT=none
 INVOICE_MODE=live
-INVOICE_CHECKER=csv_context
-INVOICE_PRICE_SHEET=../data/mock_invoice_dataset/master_prices.csv
 INVOICE_DATA_DIR=runtime/live
 INVOICE_OCR_TIMEOUT=180
 ```
@@ -81,12 +78,13 @@ INVOICE_MODE=fixture .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 
 For the real steps, with the key and model in the environment:
 
 ```sh
-INVOICE_MODE=live INVOICE_PRICE_SHEET=../data/dummy/price-sheet.xlsx \
+INVOICE_MODE=live \
   .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-The price sheet is read once at start; a missing column stops the service and names it. A
-changed sheet needs a restart.
+Upload a master list before uploading invoices. Each invoice pins the latest uploaded version
+at the start of processing. Replacements apply to subsequent invoices without a restart.
+No uploaded list returns HTTP 409 before OCR or extraction.
 
 Open <http://127.0.0.1:8000/docs> to upload a PDF through Swagger, or from the repository root:
 
@@ -312,9 +310,15 @@ worksheet is imported. Limits: 20 worksheets, 100 columns, 10,000 data rows, 50 
 expanded XLSX content. The original upload and normalized snapshots are stored in
 SQLite alongside invoice data. Rejected imports leave the current list intact.
 
-This feature prepares master data for the later invoice-checking integration.
-The existing invoice checker still uses `INVOICE_PRICE_SHEET`; uploading this list
-does not yet change its price/quantity rules. Authentication remains the existing
+Live invoice checks use this uploaded master list exclusively; `INVOICE_PRICE_SHEET`
+and `INVOICE_CHECKER` no longer select a live API price source. Offline evaluation
+scripts may still load explicit files. Names match exact normalized item codes or
+descriptions, prices compare with a 0.005 tolerance, and a provided master quantity
+must equal the invoice quantity. Null master quantity skips quantity comparison;
+it does not invent an invoice quantity. Optional supplier, PO, currency, unit,
+discount and date constraints apply only when populated. Without master currency,
+the price is interpreted in the invoice unit-price currency. Ambiguous rows require
+manual review. Invoice arithmetic and totals are still validated. Authentication remains the existing
 frontend stub; these local API routes do not enforce per-user ownership.
 
 

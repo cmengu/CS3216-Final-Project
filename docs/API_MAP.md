@@ -20,7 +20,7 @@ The backend endpoints behind the three core features: master list, invoice uploa
 | Area | Endpoints | Status |
 |---|---|---|
 | Auth (email/password, OAuth) | **None** | Not built. The service says "No auth/connectors in release 1". |
-| Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events` | Persisted CSV/XLSX/XLS import; invoice checker integration is a separate next step. |
+| Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events` | Persisted CSV/XLSX/XLS import used by live invoice checks. |
 | Invoice upload | `POST /invoices` | Built |
 | Invoice read | `GET /invoices`, `GET /invoices/{invoice_id}`, `GET /invoices/{invoice_id}/file` | Built |
 | Discrepancy check | **No separate endpoint.** Runs inside `POST /invoices`. | Built |
@@ -67,8 +67,9 @@ row-specific message; unsupported formats return 415 and files over 5 MiB return
 413. Initial upload/replacement state conflicts return 409.
 
 Original files and normalized snapshots are kept in the runtime SQLite database.
-The invoice checker **still reads its configured price sheet**; use of these
-uploaded name/price/quantity records for checking is the next integration step.
+Live invoice checking pins the latest uploaded master-list snapshot before OCR.
+No master list returns HTTP 409. Replacements affect subsequent uploads without
+a restart; completed invoice results retain their original version.
 
 ---
 

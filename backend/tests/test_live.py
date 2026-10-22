@@ -287,8 +287,8 @@ def test_inch_quote_description_normalization_and_dummy_fallback(sheet, tmp_path
     stages = LiveStages(sheet, model="test-model", client=FakeClient(completed(dummy_record)))
     fallback_check = stages.check(dummy_record)
     assert fallback_check.price_sheet_version == stages.price_sheet_version
-    assert fallback_check.lines[0].status == "price_mismatch"
-    assert fallback_check.overcharge_total == "15.00"
+    assert fallback_check.lines[0].status == "needs_person"
+    assert fallback_check.overcharge_total is None
 
 
 def test_agentic_reflection_repairs_ocr_misread_and_never_leaks_prices(sheet):
