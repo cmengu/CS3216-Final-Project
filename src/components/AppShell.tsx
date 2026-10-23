@@ -162,6 +162,14 @@ function Account({ user }: { user: User }) {
           </div>
           <Link
             role="menuitem"
+            href="/invoices?outlook=1"
+            onClick={() => setOpen(false)}
+          >
+            <Icon name="mail" size="ui" />
+            Outlook inbox
+          </Link>
+          <Link
+            role="menuitem"
             href="/master-list?replace=1"
             onClick={() => setOpen(false)}
           >

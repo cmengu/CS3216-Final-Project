@@ -25,6 +25,8 @@ from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
 from .master_list import initialize as initialize_master_list
 from .master_list import router as master_list_router
+from .outlook import initialize as initialize_outlook
+from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
 from .storage import Store
 from .uploaded_master import UploadedMasterStages
@@ -59,12 +61,14 @@ def create_app(
         app.state.store = Store(store_dir)
         app.state.store.recover()
         initialize_master_list(app.state.store)
+        initialize_outlook(app.state.store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
         app.state.slot = BoundedSemaphore(1)
         yield
 
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
+    app.include_router(outlook_router)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -82,7 +86,7 @@ def create_app(
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         response = await call_next(request)
-        if request.url.path.startswith(("/master-list", "/invoices")):
+        if request.url.path.startswith(("/master-list", "/invoices", "/outlook", "/auth/outlook")):
             response.headers["Cache-Control"] = "no-store"
         return response
 

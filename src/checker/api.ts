@@ -8,7 +8,7 @@ import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 import type { Outcome, SupplierInvoice } from "./types";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
 
-export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8000";
+export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8001";
 
 const SERVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
