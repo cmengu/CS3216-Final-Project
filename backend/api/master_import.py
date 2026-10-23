@@ -127,6 +127,39 @@ def read_tables(filename, data):
     return tables
 
 
+def fallback_layout(rows):
+    """Suggest only a unique header with known name/price labels and numeric data below."""
+    candidates = []
+    header_count = 0
+    for header, row in enumerate(rows):
+        headings = [re.sub(r"[^a-z0-9]+", " ", value.lower()).strip() for value in row]
+        mapping = {}
+        for field, aliases in FIELDS.items():
+            matches = [i for i, heading in enumerate(headings) if heading in aliases]
+            if len(matches) == 1:
+                mapping[field] = matches[0]
+        if not all(field in mapping for field in REQUIRED):
+            continue
+        if len({mapping[field] for field in REQUIRED}) != len(REQUIRED):
+            continue
+        header_count += 1
+        data = [r for r in rows[header + 1 :] if any(r)][:3]
+        if not data:
+            continue
+        try:
+            for values in data:
+                if (
+                    len(values) <= max(mapping["name"], mapping["price"])
+                    or not values[mapping["name"]].strip()
+                ):
+                    raise ValueError("Missing value")
+                numeric(values[mapping["price"]], "Price")
+        except ValueError:
+            continue
+        candidates.append((header, mapping))
+    return candidates[0] if len(candidates) == 1 and header_count == 1 else None
+
+
 def preview(tables):
     result = [
         {
@@ -157,6 +190,12 @@ def preview(tables):
             target["note"] = str(exc)
     for target in result:
         if target["mappingSource"] != "ai":
+            fallback = fallback_layout(target["rows"])
+            if fallback:
+                target["header"], target["mapping"] = fallback
+                target["note"] += (
+                    " Header and columns suggested from spreadsheet labels; review before importing."
+                )
             continue
         headings = [
             re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
