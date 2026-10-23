@@ -189,14 +189,14 @@ To confirm a change: `npm test && npm run typecheck && npm run build`, then the 
 
 ## Deploy
 
-The app is two deployments. Both are deployed by hand from a checkout; no push to GitHub deploys anything.
+The app is two deployments. The Vercel project is connected to this GitHub repo: every push builds a preview, and a merge to `main` deploys the screens to production. The service is deployed by hand from a checkout.
 
 | Piece | Where | URL |
 |---|---|---|
 | Screens (Next.js) | Vercel, project `invoice-checker` | https://invoice-checker-cs3216.vercel.app (also `-wheat`) |
 | Service (FastAPI) | Railway, project `invoice-checker`, service `invoice-api` | https://invoice-api-production-1f3a.up.railway.app |
 
-**Screens.** `vercel.json` pins the framework to Next.js. The one build-time setting is `NEXT_PUBLIC_INVOICE_API`, the service's URL, set on the Vercel project. From the repo root:
+**Screens.** `vercel.json` pins the framework to Next.js. The one build-time setting is `NEXT_PUBLIC_INVOICE_API`, the service's URL, set on the Vercel project. To deploy a checkout without going through GitHub, from the repo root:
 
 ```
 vercel deploy --prod --yes
