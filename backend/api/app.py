@@ -65,7 +65,7 @@ def create_app(
     app.include_router(master_list_router)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=_allowed_origins(),
         allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type"],
     )
@@ -250,6 +250,13 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     if not checked or not _over_sheet_price(saved):
         return 409, "Raise with supplier needs a line priced over the sheet"
     return None
+
+
+def _allowed_origins() -> list[str]:
+    """The screens' origins, comma separated. The dev server is allowed when nothing is set."""
+    configured = os.environ.get("INVOICE_ALLOWED_ORIGINS", "")
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 def _stages_from_environment(store) -> Stages | None:
