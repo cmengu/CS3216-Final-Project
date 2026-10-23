@@ -47,6 +47,7 @@ FIELDS = {
     "unit": ["unit", "uom", "unit of measure"],
     "currency": ["currency", "ccy"],
     "discount": ["discount", "discount rate"],
+    "tax": ["tax", "tax rate", "gst", "gst rate"],
     "validFrom": ["valid from", "start date"],
     "validTo": ["valid to", "end date"],
 }
@@ -154,6 +155,19 @@ def preview(tables):
     except ValueError as exc:
         for target in result:
             target["note"] = str(exc)
+    for target in result:
+        if target["mappingSource"] != "ai":
+            continue
+        headings = [
+            re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+            for value in target["rows"][target["header"]]
+        ]
+        for field, aliases in FIELDS.items():
+            if field in target["mapping"]:
+                continue
+            matches = [index for index, heading in enumerate(headings) if heading in aliases]
+            if len(matches) == 1:
+                target["mapping"][field] = matches[0]
     return {"sheets": result, "fields": list(FIELDS), "required": list(REQUIRED)}
 
 
@@ -234,16 +248,17 @@ def normalize(tables, sheet=None, header=None, mapping=None):
             if item["quantity"] is None
             else format(Decimal(item["price"]) * Decimal(item["quantity"]), "f")
         )
-        if item["discount"] is not None:
-            item["discount"] = float(
-                numeric(item["discount"], f"Row {row_number}, discount", fraction=True)
-            )
+        for field in ("discount", "tax"):
+            if item[field] is not None:
+                item[field] = numeric(item[field], f"Row {row_number}, {field}", fraction=True)
         for field in ("validFrom", "validTo"):
             if item[field] is not None:
                 try:
                     item[field] = date.fromisoformat(item[field]).isoformat()
                 except ValueError as exc:
                     raise ValueError(f"Row {row_number}, {field}: use YYYY-MM-DD") from exc
+        if item["validFrom"] and item["validTo"] and item["validFrom"] > item["validTo"]:
+            raise ValueError(f"Row {row_number}: validFrom must not be after validTo")
         items.append(item)
         if len(items) > MAX_ROWS:
             raise ValueError(f"Maximum {MAX_ROWS} data rows")

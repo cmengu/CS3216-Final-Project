@@ -1,4 +1,4 @@
-"""Persistent master-list import and immutable versions used by live invoice checking."""
+"""Persistent, immutable master-list versions used by invoice checks."""
 
 import hashlib
 import json
@@ -42,9 +42,30 @@ def read_upload(file):
 
 @router.get("")
 def current(request: Request):
-    with request.app.state.store.connect() as db:
-        row = db.execute("SELECT document FROM master_lists ORDER BY rowid DESC LIMIT 1").fetchone()
+    return current_master(request.app.state.store)
+
+
+def current_master(store, version=None):
+    with store.connect() as db:
+        if version is None:
+            row = db.execute(
+                "SELECT document FROM master_lists ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+        else:
+            row = db.execute(
+                "SELECT document FROM master_lists WHERE json_extract(document, '$.version') = ? "
+                "ORDER BY rowid DESC LIMIT 1",
+                (version,),
+            ).fetchone()
     return json.loads(row["document"]) if row else None
+
+
+@router.get("/versions/{version}")
+def historical(version: str, request: Request):
+    document = current_master(request.app.state.store, version)
+    if document is None:
+        raise HTTPException(404, "The master list used for this check is unavailable.")
+    return document
 
 
 @router.get("/events")
@@ -85,13 +106,18 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
         document = {
             "id": str(uuid4()),
             "version": hashlib.sha256(
-                data + json.dumps(selection, sort_keys=True).encode()
+                data + json.dumps({"selection": selection, "items": items}, sort_keys=True).encode()
             ).hexdigest(),
             "file": filename,
             "uploadedAt": timestamp,
             "items": items,
             "supplierCount": len({i["supplier"] for i in items if i["supplier"]}),
         }
+        if all(key in selection for key in ("sheet", "header", "mapping")):
+            document["columnMapping"] = {
+                **selection,
+                "columns": tables[selection["sheet"]][selection["header"]],
+            }
         with request.app.state.store.connect() as db:
             # Serialize replacement events and the active-version order in a single transaction.
             db.execute("BEGIN IMMEDIATE")

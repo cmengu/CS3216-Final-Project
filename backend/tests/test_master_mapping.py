@@ -105,3 +105,24 @@ def test_no_api_key_keeps_manual_path(monkeypatch):
     result = preview({"Catalogue": SHEETS[0]["rows"]})["sheets"][0]
     assert result["mappingSource"] == "manual"
     assert "not configured" in result["note"]
+
+
+@pytest.mark.parametrize(
+    "names,expected", [(["Description"], 0), (["Description", "Item name"], None)]
+)
+def test_preview_fills_only_unambiguous_missing_name(monkeypatch, names, expected):
+    columns = names + ["Agreed unit price"]
+    layout = Layouts(
+        sheets=[
+            Layout(
+                sheet=0,
+                header=0,
+                columns=[Column(field="price", column=len(names))],
+                note="",
+            )
+        ]
+    )
+    monkeypatch.setattr("api.master_import.suggest_layouts", lambda sheets: layout)
+    result = preview({"Prices": [columns, ["Sample"] * len(names) + ["12.50"]]})["sheets"][0]
+    assert result["mapping"].get("name") == expected
+    assert result["mapping"]["price"] == len(names)

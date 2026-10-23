@@ -22,10 +22,12 @@ from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
+from .master_list import current_master
 from .master_list import initialize as initialize_master_list
 from .master_list import router as master_list_router
 from .stages import FixtureStages, Stages
 from .storage import Store
+from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,7 +59,7 @@ def create_app(
         app.state.store = Store(store_dir)
         app.state.store.recover()
         initialize_master_list(app.state.store)
-        app.state.stages = stages if stages is not None else _stages_from_environment(app.state.store)
+        app.state.stages = stages if stages is not None else _stages_from_environment()
         app.state.slot = BoundedSemaphore(1)
         yield
 
@@ -79,7 +81,10 @@ def create_app(
                     return JSONResponse({"detail": "Upload exceeds 20 MiB"}, status_code=413)
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path.startswith(("/master-list", "/invoices")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/health")
     def health():
@@ -87,7 +92,11 @@ def create_app(
         return {
             "status": "ok",
             "mode": selected.mode if selected else "unconfigured",
-            "processing_configured": selected is not None,
+            "processing_configured": selected is not None
+            and (
+                not isinstance(selected, UploadedMasterStages)
+                or current_master(app.state.store) is not None
+            ),
             "contract": "proposed-v1",
         }
 
@@ -99,7 +108,7 @@ def create_app(
             raise HTTPException(
                 503,
                 "Extraction/check adapters are unconfigured. Set INVOICE_MODE=fixture for known "
-                "dummy PDFs, or INVOICE_MODE=live for uploaded master-list checks.",
+                "dummy PDFs, or INVOICE_MODE=live with a model and uploaded master list.",
             )
         if not app.state.slot.acquire(blocking=False):
             file.file.close()
@@ -113,10 +122,9 @@ def create_app(
         path = store.path(invoice_id)
         inserted = False
         try:
-            from .uploaded_master import UploadedMasterStages
             if isinstance(selected, UploadedMasterStages):
                 try:
-                    selected = selected.snapshot()
+                    selected = selected.bind(store)
                 except ValueError as exc:
                     raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
@@ -252,18 +260,27 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     return None
 
 
-def _stages_from_environment(store) -> Stages | None:
+def _stages_from_environment() -> Stages | None:
     mode = os.environ.get("INVOICE_MODE")
     if not mode:
         return None
     if mode == "fixture":
         return FixtureStages(Path(os.environ.get("INVOICE_DUMMY_DIR", ROOT / "data/dummy")))
     if mode == "live":
-        from .uploaded_master import UploadedMasterStages
+        checker = os.environ.get("INVOICE_CHECKER", "master_list")
+        if checker in {"master_list", "csv_context"}:
+            if not os.environ.get("OPENAI_API_KEY", "").strip():
+                raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
+            return UploadedMasterStages(model=os.environ.get("OPENAI_MODEL", ""))
+        if checker != "standard":
+            raise ValueError("INVOICE_CHECKER must be master_list, csv_context or standard")
+        sheet = os.environ.get("INVOICE_PRICE_SHEET")
+        if not sheet:
+            raise ValueError("Set INVOICE_PRICE_SHEET to the price sheet .xlsx for live mode")
+        sheet_path = _resolve_path(sheet)
+        from .live import LiveStages
 
-        if not os.environ.get("OPENAI_API_KEY", "").strip():
-            raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
-        return UploadedMasterStages(store, os.environ.get("OPENAI_MODEL", ""))
+        return LiveStages(sheet_path)
     raise ValueError("INVOICE_MODE must be fixture or live")
 
 

@@ -9,6 +9,12 @@ import type { InvoiceLine, Outcome, SupplierInvoice } from "./types";
 /** The service's limit on a reason, in characters. */
 export const REASON_MAX = 500;
 
+/** A different version alone may be a legacy file-based check, rather than a later upload. */
+export function hasNewerMasterList(inv: SupplierInvoice, master: { version: string; uploadedAt: string } | null): boolean {
+  return !inv.fixture && inv.state === "checked" && !!inv.priceSheet && !!master?.version
+    && inv.priceSheet !== master.version && Date.parse(master.uploadedAt) > Date.parse(inv.uploadedAt);
+}
+
 /** A line the service priced above the sheet. Its own difference says so; nothing is worked out here. */
 export const overSheet = (l: InvoiceLine) => l.result === "price_mismatch" && l.difference !== null && l.difference > 0;
 

@@ -152,17 +152,21 @@ def test_live_mode_runs_the_real_check_on_a_file_it_has_never_seen(tmp_path):
         assert saved["price_sheet_version"] == stages.price_sheet_version
 
 
-def test_live_mode_uses_uploaded_list_not_env_path(tmp_path, monkeypatch):
+def test_live_mode_needs_a_named_price_sheet(tmp_path, monkeypatch):
     monkeypatch.setenv("INVOICE_MODE", "live")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
-    monkeypatch.setenv("OPENAI_MODEL", "test-model")
-    monkeypatch.setenv("INVOICE_PRICE_SHEET", "/missing/demo.csv")
+    monkeypatch.setenv("INVOICE_CHECKER", "standard")
+    monkeypatch.delenv("INVOICE_PRICE_SHEET", raising=False)
+    with pytest.raises(ValueError, match="INVOICE_PRICE_SHEET"):
+        with TestClient(create_app(storage_dir=tmp_path)):
+            pass
+    monkeypatch.setenv("INVOICE_PRICE_SHEET", str(DATA / "price-sheet.xlsx"))
     with TestClient(create_app(storage_dir=tmp_path)) as client:
-        assert client.get("/health").json()["mode"] == "live"
-        response = client.post("/invoices", files={"file": ("x.pdf", b"%PDF-fake")})
-        assert response.status_code == 409
-        assert "Upload a master list" in response.json()["detail"]
-        assert client.get("/invoices").json() == []
+        assert client.get("/health").json() == {
+            "status": "ok",
+            "mode": "live",
+            "processing_configured": True,
+            "contract": "proposed-v1",
+        }
 
 
 def test_an_unknown_mode_stops_the_service_from_starting(tmp_path, monkeypatch):
@@ -345,3 +349,16 @@ def test_a_database_from_before_outcomes_gains_the_columns(tmp_path):
     assert store.list(10, 0)[0].outcome is None
     store.decide("a", "ready_to_pay_anyway", "Checked by hand")
     assert store.get("a").outcome_reason == "Checked by hand"
+
+
+def test_live_mode_uses_uploaded_list_not_env_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("INVOICE_MODE", "live")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setenv("OPENAI_MODEL", "test-model")
+    monkeypatch.setenv("INVOICE_PRICE_SHEET", "/missing/demo.csv")
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+        assert client.get("/health").json()["mode"] == "live"
+        response = client.post("/invoices", files={"file": ("x.pdf", b"%PDF-fake")})
+        assert response.status_code == 409
+        assert "Upload a master list" in response.json()["detail"]
+        assert client.get("/invoices").json() == []

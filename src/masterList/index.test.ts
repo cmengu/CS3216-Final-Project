@@ -33,3 +33,86 @@ it("previews Excel through the backend instead of returning seed rows", async ()
   expect(await previewMasterList(new File(["xls"], "prices.xls"))).toEqual({ sheets: [] });
   expect(fetch.mock.calls[0][0]).toContain("/master-list/preview");
 });
+
+it("never lets an older read overwrite a successful replacement", async () => {
+  let finishOldRead!: (response: Response) => void;
+  const oldRead = new Promise<Response>((resolve) => { finishOldRead = resolve; });
+  const updated = { ...list, id: "new", version: "v2" };
+  vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
+    if (options?.method === "PUT") return Promise.resolve(Response.json(updated));
+    if (url.endsWith("/events")) return Promise.resolve(Response.json([]));
+    return oldRead;
+  }));
+  const pending = refreshMasterList(true);
+  expect((await replaceMasterList(new File(["new"], "prices.csv"))).ok).toBe(true);
+  expect(getMasterList()?.version).toBe("v2");
+  finishOldRead(Response.json(list));
+  await pending;
+  expect(getMasterList()?.version).toBe("v2");
+});
+
+it("keeps the latest refresh when reads finish in reverse order", async () => {
+  let finishOldRead!: (response: Response) => void;
+  const oldRead = new Promise<Response>((resolve) => { finishOldRead = resolve; });
+  const updated = { ...list, version: "v3" };
+  let reads = 0;
+  vi.stubGlobal("fetch", vi.fn((url: string) => {
+    if (url.endsWith("/events")) return Promise.resolve(Response.json([]));
+    return ++reads === 1 ? oldRead : Promise.resolve(Response.json(updated));
+  }));
+  const first = refreshMasterList(true);
+  await refreshMasterList(true);
+  finishOldRead(Response.json(list));
+  await first;
+  expect(getMasterList()?.version).toBe("v3");
+});
+
+it("loads fresh master data even if history is unavailable", async () => {
+  const updated = { ...list, version: "v4" };
+  vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
+    expect(options?.cache).toBe("no-store");
+    return Promise.resolve(url.endsWith("/events") ? new Response("{}", { status: 500 }) : Response.json(updated));
+  }));
+  await refreshMasterList(true);
+  expect(getMasterList()?.version).toBe("v4");
+});
+
+it("serializes replacements so the last submitted file is the last committed version", async () => {
+  let finishFirst!: (response: Response) => void;
+  const delayed = new Promise<Response>((resolve) => { finishFirst = resolve; });
+  const writes: string[] = [];
+  vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
+    if (options?.method === "PUT") {
+      writes.push(((options.body as FormData).get("file") as File).name);
+      return writes.length === 1 ? delayed : Promise.resolve(Response.json({ ...list, version: "last" }));
+    }
+    return Promise.resolve(Response.json([]));
+  }));
+  const first = replaceMasterList(new File(["first"], "first.csv"));
+  const last = replaceMasterList(new File(["last"], "last.csv"));
+  await vi.waitFor(() => expect(writes).toEqual(["first.csv"]));
+  finishFirst(Response.json({ ...list, version: "first" }));
+  await Promise.all([first, last]);
+  expect(writes).toEqual(["first.csv", "last.csv"]);
+  expect(getMasterList()?.version).toBe("last");
+});
+
+it("refreshes a sibling-tab change received while a save is in progress", async () => {
+  let finishSave!: (response: Response) => void;
+  const delayed = new Promise<Response>((resolve) => { finishSave = resolve; });
+  let started = false;
+  let reads = 0;
+  vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
+    if (options?.method === "PUT") { started = true; return delayed; }
+    if (url.endsWith("/events")) return Promise.resolve(Response.json([]));
+    ++reads;
+    return Promise.resolve(Response.json({ ...list, version: "other-tab" }));
+  }));
+  const pending = replaceMasterList(new File(["new"], "prices.csv"));
+  await vi.waitFor(() => expect(started).toBe(true));
+  await refreshMasterList(true);
+  expect(reads).toBe(0);
+  finishSave(Response.json({ ...list, version: "own-save" }));
+  await pending;
+  await vi.waitFor(() => expect(getMasterList()?.version).toBe("other-tab"));
+});

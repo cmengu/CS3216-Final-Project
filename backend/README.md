@@ -5,7 +5,9 @@ Built for the 10 October build plan: upload → Docling → extraction adapter �
 is unchanged; Nam can build the new screens against this API.
 
 **Modes:** `live` reads PDFs with Docling and extracts printed fields using OpenAI.
-Live checking uses the latest master list uploaded to SQLite. `fixture` replays answers for the exact original
+The default `INVOICE_CHECKER=master_list` uses the versioned, uploaded master list.
+`csv_context` remains an alias for this mode. The explicit `standard` mode retains the legacy
+file-backed checker and requires `INVOICE_PRICE_SHEET`. `fixture` replays answers for the exact original
 dummy PDFs and refuses other hashes. Never use fixture mode to measure AI accuracy.
 
 ## Live setup and local environment template
@@ -18,6 +20,7 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-6-luna
 OPENAI_REASONING_EFFORT=none
 INVOICE_MODE=live
+INVOICE_CHECKER=master_list
 INVOICE_DATA_DIR=runtime/live
 INVOICE_OCR_TIMEOUT=180
 ```
@@ -32,13 +35,17 @@ uv sync --locked --extra dev --extra docling --extra dummy
 .venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Live startup fails clearly if the key, model or price-sheet path is missing. Restart after
-editing `.env`. The service validates configuration, but provider access/quota errors can
-still occur on the first extraction. Each upload makes one model request with `store=False`.
+Live startup fails clearly if the key or model is missing. Upload and confirm a master list
+before uploading invoices; without one, invoice upload returns 409. Restart after editing
+`.env`. Provider access/quota errors can still occur on the first extraction. Extraction
+uses `store=False` and may make a correction request after its initial model request.
 
-The price CSV columns are `key`, `supplier`, `po`, `item`, `description`, `uom`, `currency`,
-`unit_price`, `discount`, `tax`, `valid_from`, `valid_to`. Rates are fractions, e.g. `0.05`.
-Matching requires supplier, PO, invoice date, currency, item and unit. Code-free charges
+Map arbitrary spreadsheet headings to the import fields described below. Name and unit price
+are required; currency, unit and quantity constrain the comparison when mapped. Without a
+master currency, the agreed price is interpreted in the invoice unit-price currency.
+Supplier, PO and validity dates constrain the
+agreement when mapped; otherwise the row is unscoped. Discount and tax terms are checked
+when present. Numeric SKUs are supported. Ambiguous agreements require review. Code-free charges
 require an exact description match (ignoring case/whitespace). Codes ignore whitespace from
 OCR wrapping; differing characters are never guessed from descriptions. Printed discount
 amounts or rates and explicitly printed exchange rates are handled with Decimal
@@ -78,13 +85,15 @@ INVOICE_MODE=fixture .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 
 For the real steps, with the key and model in the environment:
 
 ```sh
-INVOICE_MODE=live \
+INVOICE_MODE=live INVOICE_CHECKER=master_list \
   .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Upload a master list before uploading invoices. Each invoice pins the latest uploaded version
-at the start of processing. Replacements apply to subsequent invoices without a restart.
-No uploaded list returns HTTP 409 before OCR or extraction.
+Upload the master list through the frontend, review its column mappings, then confirm the
+import. Each invoice captures the current immutable master version before OCR starts.
+Replacing the master affects subsequent uploads immediately, without a server restart.
+Old invoices retain their saved results; use Recheck with current master list to create a
+new check explicitly. `GET /master-list/versions/{version}` retrieves the original snapshot.
 
 Open <http://127.0.0.1:8000/docs> to upload a PDF through Swagger, or from the repository root:
 
@@ -233,7 +242,7 @@ the new manifest. Expected values come from the source records before rendering,
 OCR output. Chen Meng owns the final answer-file format/scorer; the manifest is a handoff,
 not the three-run evaluation or its five metrics.
 
-## The price check's rules
+## Legacy standard checker's rules
 
 Each line takes the first rule it fails: a missing quantity, unit price or line total; a
 quantity of zero or less; quantity times price not equal to the line total; no part number or
@@ -310,15 +319,14 @@ worksheet is imported. Limits: 20 worksheets, 100 columns, 10,000 data rows, 50 
 expanded XLSX content. The original upload and normalized snapshots are stored in
 SQLite alongside invoice data. Rejected imports leave the current list intact.
 
-Live invoice checks use this uploaded master list exclusively; `INVOICE_PRICE_SHEET`
-and `INVOICE_CHECKER` no longer select a live API price source. Offline evaluation
-scripts may still load explicit files. Names match exact normalized item codes or
-descriptions, prices compare with a 0.005 tolerance, and a provided master quantity
-must equal the invoice quantity. Null master quantity skips quantity comparison;
-it does not invent an invoice quantity. Optional supplier, PO, currency, unit,
-discount and date constraints apply only when populated. Without master currency,
-the price is interpreted in the invoice unit-price currency. Ambiguous rows require
-manual review. Invoice arithmetic and totals are still validated. Authentication remains the existing
+The live invoice checker uses these confirmed imports. Each check stores the selected
+master version, and historical versions remain readable after replacements. Optional
+supplier, PO, unit, currency, discount, tax and date constraints apply when populated.
+A mapped master quantity must equal the invoice quantity; null skips that constraint.
+It does not supply missing product quantities. Prices can be compared in the printed
+unit-price currency or converted to the mapped invoice currency using an explicit printed
+exchange rate. Ambiguous rows and inconsistent arithmetic require review.
+Discount and tax rates are stored as decimal strings. Authentication remains the existing
 frontend stub; these local API routes do not enforce per-user ownership.
 
 
