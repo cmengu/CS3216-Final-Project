@@ -427,3 +427,60 @@ def test_uploaded_checker_preserves_code_unit_and_tax_constraints():
 def test_minimal_master_does_not_turn_missing_product_fields_into_a_flat_fee():
     record = invoice(quantity=None, unit=None, unit_price=None, line_total="10")
     assert sheet().check(record).lines[0].status == "needs_person"
+
+
+def test_master_prices_in_invoice_currency_use_printed_exchange_rate():
+    record = invoice(currency="USD", exchange_rate="1.3", line_total="29.64")
+    result = sheet(currency="SGD", price="13").check(record).lines[0]
+    assert result.status == "price_mismatch"
+    assert result.invoice_price == "15.6"
+    assert result.overcharge == "4.94"
+
+
+def test_flat_job_without_printed_unit_matches_job_master():
+    record = invoice(
+        part_number=None,
+        description="Freight",
+        quantity=None,
+        unit_price=None,
+        unit=None,
+        flat_charge=True,
+        line_total="10",
+        discount_rate=None,
+    )
+    assert (
+        sheet(name="Freight", unit="JOB", currency="SGD").check(record).lines[0].status == "match"
+    )
+
+
+def test_flat_foreign_price_without_quantity_and_decimal_zero():
+    record = invoice(
+        part_number=None,
+        description="Freight",
+        quantity=None,
+        unit_price="1230.00",
+        unit=None,
+        flat_charge=True,
+        currency="CNY",
+        exchange_rate="0.180000",
+        line_total="221.40",
+        discount_rate=None,
+    )
+    result = (
+        sheet(name="Freight", unit="JOB", currency="SGD", price="221.40").check(record).lines[0]
+    )
+    assert result.status == "match"
+    assert result.difference == "0.00000000"
+    record.lines[0].unit_price = None
+    assert (
+        sheet(name="Freight", unit="JOB", currency="SGD", price="221.40")
+        .check(record)
+        .lines[0]
+        .status
+        == "match"
+    )
+
+
+def test_piece_unit_spelling_variants_are_equivalent():
+    assert sheet(unit="PCS").check(invoice(unit="PC")).lines[0].status == "price_mismatch"
+    assert sheet(unit="PCS").check(invoice(unit="BOX")).lines[0].status == "needs_person"

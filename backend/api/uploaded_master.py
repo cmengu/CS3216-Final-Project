@@ -116,6 +116,8 @@ class UploadedPriceSheet(PriceSheet):
             price = D(line.line_total)
             quantity = D(1)
             currency = invoice.currency
+            if item.get("currency") not in (None, invoice.currency):
+                return review("Flat amount currency does not match master price currency")
         if price is None or price < 0:
             return review("Missing or invalid unit price")
         if quantity is None or quantity <= 0 or line.line_total is None:
@@ -184,9 +186,9 @@ class UploadedPriceSheet(PriceSheet):
             reason="Unit price differs from uploaded master list"
             if mismatch
             else "Matches uploaded master list",
-            invoice_price=str(comparison_price),
-            agreed_price=str(agreed),
-            difference=str(difference),
+            invoice_price=format(comparison_price, "f"),
+            agreed_price=format(agreed, "f"),
+            difference=format(difference, "f"),
             overcharge=str(money(overcharge)),
         )
 

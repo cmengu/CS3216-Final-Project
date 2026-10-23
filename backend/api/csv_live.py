@@ -60,7 +60,8 @@ def normalized_description(value: str | None) -> str:
 
 
 def normalized_unit(value: str | None) -> str:
-    return normalized(value).replace("³", "3").replace("²", "2")
+    unit = normalized(value).replace("³", "3").replace("²", "2")
+    return "piece" if unit in {"pc", "pcs", "piece", "pieces"} else unit
 
 
 def money(value: Decimal) -> Decimal:
