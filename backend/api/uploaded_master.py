@@ -1,6 +1,5 @@
 """Invoice checking against a single uploaded, immutable master-list snapshot."""
 
-import json
 from datetime import date
 from decimal import Decimal as D
 
@@ -160,10 +159,7 @@ class UploadedMasterStages:
         self.store, self.model = store, model
 
     def snapshot(self):
-        with self.store.connect() as db:
-            row = db.execute(
-                "SELECT document FROM master_lists ORDER BY rowid DESC LIMIT 1"
-            ).fetchone()
-        if row is None:
+        document = self.store.latest_master_list()
+        if document is None:
             raise ValueError("Upload a master list before processing invoices")
-        return LiveStages(UploadedPriceSheet(json.loads(row["document"])), model=self.model)
+        return LiveStages(UploadedPriceSheet(document), model=self.model)

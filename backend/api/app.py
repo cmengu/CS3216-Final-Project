@@ -22,10 +22,9 @@ from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
-from .master_list import initialize as initialize_master_list
 from .master_list import router as master_list_router
 from .stages import FixtureStages, Stages
-from .storage import Store
+from .storage import open_store
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,10 +53,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.store = Store(store_dir)
+        app.state.store = open_store(store_dir)
         app.state.store.recover()
-        initialize_master_list(app.state.store)
-        app.state.stages = stages if stages is not None else _stages_from_environment(app.state.store)
+        app.state.stages = (
+            stages if stages is not None else _stages_from_environment(app.state.store)
+        )
         app.state.slot = BoundedSemaphore(1)
         yield
 
@@ -114,6 +114,7 @@ def create_app(
         inserted = False
         try:
             from .uploaded_master import UploadedMasterStages
+
             if isinstance(selected, UploadedMasterStages):
                 try:
                     selected = selected.snapshot()

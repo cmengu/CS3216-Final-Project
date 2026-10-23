@@ -210,6 +210,8 @@ railway up --detach
 
 Check `https://invoice-api-production-1f3a.up.railway.app/health` for `"mode": "live"` once it is up. Changing a variable in Railway rebuilds and redeploys on its own.
 
+**Database.** The service keeps its data in SQLite under `INVOICE_DATA_DIR` unless `DATABASE_URL` is set, in which case it uses Postgres and creates its tables in a schema named `invoice_checker` (so it can share a Supabase project with other apps). Uploaded PDFs are stored in the database too; the local `files/` folder is only a cache. For Supabase use the pooler URI on port 6543, `postgresql://postgres.<ref>:<password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres`, copied from the project's Connect dialog (the host differs per project). Tests run against SQLite; `tests/test_postgres_store.py` runs only when `DATABASE_URL` is set.
+
 ## Help and maintainer
 
 - Questions and bugs: open an issue on this repo.
