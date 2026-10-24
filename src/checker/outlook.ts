@@ -35,6 +35,23 @@ export interface OutlookMessageDetail extends OutlookMessageSummary {
   attachments: OutlookAttachmentSummary[];
 }
 
+export interface OutlookScannedEmail {
+  message: OutlookMessageDetail;
+  isInvoiceEmail: boolean;
+  confidence: "high" | "medium" | "low";
+  supplierName: string | null;
+  reasoning: string;
+  invoiceAttachments: OutlookAttachmentSummary[];
+}
+
+export interface OutlookScanResponse {
+  scannedCount: number;
+  invoiceEmailCount: number;
+  invoiceAttachmentCount: number;
+  model: string;
+  items: OutlookScannedEmail[];
+}
+
 export type OutlookResult<T> =
   | { ok: true; value: T }
   | { ok: false; message: string };
@@ -97,6 +114,8 @@ export async function fetchOutlookMessages(options?: {
   limit?: number;
   onlyAttachments?: boolean;
   search?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }): Promise<OutlookResult<OutlookMessageSummary[]>> {
   const params = new URLSearchParams();
   params.set("limit", String(options?.limit ?? 20));
@@ -105,6 +124,12 @@ export async function fetchOutlookMessages(options?: {
   }
   if (options?.search?.trim()) {
     params.set("search", options.search.trim());
+  }
+  if (options?.dateFrom?.trim()) {
+    params.set("date_from", options.dateFrom.trim());
+  }
+  if (options?.dateTo?.trim()) {
+    params.set("date_to", options.dateTo.trim());
   }
 
   try {
@@ -119,6 +144,41 @@ export async function fetchOutlookMessages(options?: {
     }
     const body = (await res.json()) as { messages?: OutlookMessageSummary[] };
     return { ok: true, value: body.messages ?? [] };
+  } catch {
+    return { ok: false, message: UNREACHABLE_MSG };
+  }
+}
+
+export async function scanOutlookMessages(options?: {
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}): Promise<OutlookResult<OutlookScanResponse>> {
+  const payload: Record<string, unknown> = {
+    limit: options?.limit ?? 25,
+  };
+  if (options?.dateFrom?.trim()) {
+    payload.dateFrom = options.dateFrom.trim();
+  }
+  if (options?.dateTo?.trim()) {
+    payload.dateTo = options.dateTo.trim();
+  }
+
+  try {
+    const res = await fetch(`${SERVICE_URL}/outlook/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        message: await parseErrorDetail(res, "AI email scan could not be completed."),
+      };
+    }
+    const data = (await res.json()) as OutlookScanResponse;
+    return { ok: true, value: data };
   } catch {
     return { ok: false, message: UNREACHABLE_MSG };
   }

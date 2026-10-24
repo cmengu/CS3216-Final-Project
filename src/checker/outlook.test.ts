@@ -7,6 +7,7 @@ import {
   fetchOutlookMessages,
   fetchOutlookStatus,
   outlookLoginUrl,
+  scanOutlookMessages,
 } from "./outlook";
 
 afterEach(() => {
@@ -155,6 +156,93 @@ describe("outlook client", () => {
     expect(disc.ok).toBe(true);
     if (disc.ok) {
       expect(disc.value.connected).toBe(false);
+    }
+  });
+
+  it("filters messages by date range and runs AI email scan", async () => {
+    const seenUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        seenUrls.push(url);
+        if (url.includes("/outlook/messages?")) {
+          return new Response(JSON.stringify({ messages: [] }), { status: 200 });
+        }
+        if (url.endsWith("/outlook/scan") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body));
+          expect(body).toEqual({
+            dateFrom: "2026-10-01",
+            dateTo: "2026-10-24",
+            limit: 25,
+          });
+          return new Response(
+            JSON.stringify({
+              scannedCount: 2,
+              invoiceEmailCount: 1,
+              invoiceAttachmentCount: 1,
+              model: "gpt-5.4-mini",
+              items: [
+                {
+                  message: {
+                    id: "msg-201",
+                    subject: "Invoice #INV-201",
+                    senderName: "Fresh Produce Co",
+                    senderEmail: "billing@fresh.example",
+                    receivedAt: "2026-10-20T09:00:00Z",
+                    bodyPreview: "Attached invoice",
+                    bodyText: "Attached is Invoice #INV-201",
+                    hasAttachments: true,
+                    attachments: [
+                      {
+                        id: "att-201",
+                        name: "INV-201.pdf",
+                        contentType: "application/pdf",
+                        size: 4096,
+                        isPdf: true,
+                      },
+                    ],
+                  },
+                  isInvoiceEmail: true,
+                  confidence: "high",
+                  supplierName: "Fresh Produce Co",
+                  reasoning: "Email contains supplier invoice PDF.",
+                  invoiceAttachments: [
+                    {
+                      id: "att-201",
+                      name: "INV-201.pdf",
+                      contentType: "application/pdf",
+                      size: 4096,
+                      isPdf: true,
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 }
+          );
+        }
+        throw new Error(`Unexpected URL: ${url}`);
+      })
+    );
+
+    const listRes = await fetchOutlookMessages({
+      dateFrom: "2026-10-01",
+      dateTo: "2026-10-24",
+    });
+    expect(listRes.ok).toBe(true);
+    expect(seenUrls[0]).toContain("date_from=2026-10-01");
+    expect(seenUrls[0]).toContain("date_to=2026-10-24");
+
+    const scanRes = await scanOutlookMessages({
+      dateFrom: "2026-10-01",
+      dateTo: "2026-10-24",
+      limit: 25,
+    });
+    expect(scanRes.ok).toBe(true);
+    if (scanRes.ok) {
+      expect(scanRes.value.invoiceEmailCount).toBe(1);
+      expect(scanRes.value.invoiceAttachmentCount).toBe(1);
+      expect(scanRes.value.items[0].supplierName).toBe("Fresh Produce Co");
     }
   });
 });

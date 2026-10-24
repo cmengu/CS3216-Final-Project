@@ -8,9 +8,11 @@ import {
   fetchOutlookMessages,
   fetchOutlookStatus,
   outlookLoginUrl,
+  scanOutlookMessages,
   type OutlookAttachmentSummary,
   type OutlookMessageDetail,
   type OutlookMessageSummary,
+  type OutlookScannedEmail,
   type OutlookStatus,
 } from "@/checker/outlook";
 import { whenLabel } from "@/checker/present";
@@ -45,18 +47,35 @@ export function OutlookDialog({
   const [detail, setDetail] = useState<OutlookMessageDetail | null>(null);
   const [onlyAttachments, setOnlyAttachments] = useState(false);
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [scanning, setScanning] = useState<"idle" | "classifying" | "extracting">("idle");
+  const [scanSummary, setScanSummary] = useState<{
+    scannedCount: number;
+    invoiceEmailCount: number;
+    queuedFileCount: number;
+    model: string;
+  } | null>(null);
+  const [scannedById, setScannedById] = useState<Record<string, OutlookScannedEmail>>({});
   const [error, setError] = useState<string | null>(null);
   const [importedIds, setImportedIds] = useState<Record<string, boolean>>({});
   const [importingId, setImportingId] = useState<string | null>(null);
 
   const loadMessages = useCallback(
-    async (opts?: { onlyAtt?: boolean; q?: string }) => {
+    async (opts?: {
+      onlyAtt?: boolean;
+      q?: string;
+      from?: string;
+      to?: string;
+    }) => {
       setLoadingMessages(true);
       setError(null);
       const res = await fetchOutlookMessages({
         limit: 25,
         onlyAttachments: opts?.onlyAtt ?? onlyAttachments,
         search: opts?.q ?? search,
+        dateFrom: opts?.from ?? dateFrom,
+        dateTo: opts?.to ?? dateTo,
       });
       setLoadingMessages(false);
       if (!res.ok) {
@@ -69,7 +88,7 @@ export function OutlookDialog({
         return res.value[0]?.id ?? null;
       });
     },
-    [onlyAttachments, search]
+    [onlyAttachments, search, dateFrom, dateTo]
   );
 
   useEffect(() => {
@@ -92,6 +111,8 @@ export function OutlookDialog({
         limit: 25,
         onlyAttachments,
         search,
+        dateFrom,
+        dateTo,
       });
       if (cancelled) return;
       if (!res.ok) {
@@ -107,10 +128,14 @@ export function OutlookDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, onlyAttachments, search]);
+  }, [open, onlyAttachments, search, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!open || !status?.connected || !selectedId) return;
+    const cachedScan = scannedById[selectedId];
+    if (cachedScan) {
+      return;
+    }
     let cancelled = false;
     fetchOutlookMessageDetail(selectedId).then((res) => {
       if (cancelled) return;
@@ -123,11 +148,14 @@ export function OutlookDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, status?.connected, selectedId]);
+  }, [open, status?.connected, selectedId, scannedById]);
 
   const loadingStatus = open && status === null && error === null;
+  const activeScanItem = selectedId ? scannedById[selectedId] ?? null : null;
+  const resolvedDetail =
+    activeScanItem?.message ?? (detail && detail.id === selectedId ? detail : null);
   const loadingDetail = Boolean(
-    open && status?.connected && selectedId && (!detail || detail.id !== selectedId)
+    open && status?.connected && selectedId && !resolvedDetail
   );
 
   const handleDisconnect = async () => {
@@ -141,6 +169,8 @@ export function OutlookDialog({
     setMessages([]);
     setSelectedId(null);
     setDetail(null);
+    setScannedById({});
+    setScanSummary(null);
   };
 
   const handleImportAttachment = async (
@@ -159,9 +189,76 @@ export function OutlookDialog({
     setImportedIds((prev) => ({ ...prev, [att.id]: true }));
   };
 
+  const handleAiScanAndExtract = async () => {
+    setError(null);
+    setScanSummary(null);
+    setScanning("classifying");
+
+    const scanRes = await scanOutlookMessages({
+      dateFrom,
+      dateTo,
+      limit: 25,
+    });
+
+    if (!scanRes.ok) {
+      setScanning("idle");
+      setError(scanRes.message);
+      return;
+    }
+
+    const scanData = scanRes.value;
+    const nextScannedById: Record<string, OutlookScannedEmail> = {};
+    for (const item of scanData.items) {
+      nextScannedById[item.message.id] = item;
+    }
+    setScannedById(nextScannedById);
+    setMessages(scanData.items.map((item) => item.message));
+
+    const firstInvoiceMsg = scanData.items.find((item) => item.isInvoiceEmail)?.message;
+    const nextSelected = firstInvoiceMsg?.id ?? scanData.items[0]?.message.id ?? null;
+    setSelectedId(nextSelected);
+    if (nextSelected && nextScannedById[nextSelected]) {
+      setDetail(nextScannedById[nextSelected].message);
+    }
+
+    // Step 2: Download all AI-identified invoice PDF attachments and queue them for extraction
+    setScanning("extracting");
+    const downloadedFiles: File[] = [];
+    const newlyImported: Record<string, boolean> = {};
+
+    for (const item of scanData.items) {
+      if (!item.isInvoiceEmail || item.invoiceAttachments.length === 0) continue;
+      for (const att of item.invoiceAttachments) {
+        const dl = await downloadOutlookAttachmentFile(item.message.id, att);
+        if (dl.ok) {
+          downloadedFiles.push(dl.value);
+          newlyImported[att.id] = true;
+        } else {
+          setError(dl.message);
+        }
+      }
+    }
+
+    if (downloadedFiles.length > 0) {
+      onImportFiles(downloadedFiles);
+      setImportedIds((prev) => ({ ...prev, ...newlyImported }));
+    }
+
+    setScanSummary({
+      scannedCount: scanData.scannedCount,
+      invoiceEmailCount: scanData.invoiceEmailCount,
+      queuedFileCount: downloadedFiles.length,
+      model: scanData.model,
+    });
+    setScanning("idle");
+  };
+
   const selectedSummary = messages.find((m) => m.id === selectedId) ?? null;
-  const activeMessage = detail && detail.id === selectedId ? detail : selectedSummary;
-  const pdfAttachments = detail?.attachments.filter((a) => a.isPdf) ?? [];
+  const activeMessage = resolvedDetail ?? selectedSummary;
+  const pdfAttachments = resolvedDetail?.attachments.filter((a) => a.isPdf) ?? [];
+  const aiMatchedAttIds = new Set(
+    activeScanItem?.invoiceAttachments.map((a) => a.id) ?? []
+  );
 
   return (
     <Dialog
@@ -287,6 +384,111 @@ export function OutlookDialog({
             </div>
           </div>
 
+          <div
+            aria-label="Date range and AI invoice scan"
+            style={{
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+              padding: "10px 12px",
+              borderRadius: 8,
+              background: "var(--bg-subtle, rgba(0,0,0,0.03))",
+              border: "1px solid var(--line)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <label
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              >
+                <span className="muted">From date</span>
+                <input
+                  type="date"
+                  aria-label="From date"
+                  className="ic-input"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  style={{ height: 34, padding: "4px 8px", fontSize: 13 }}
+                />
+              </label>
+              <label
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              >
+                <span className="muted">To date</span>
+                <input
+                  type="date"
+                  aria-label="To date"
+                  className="ic-input"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  style={{ height: 34, padding: "4px 8px", fontSize: 13 }}
+                />
+              </label>
+              {(dateFrom || dateTo) ? (
+                <button
+                  type="button"
+                  className="ic-btn ic-btn--ghost ic-btn--sm"
+                  disabled={loadingMessages || scanning !== "idle"}
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                    setScannedById({});
+                    setScanSummary(null);
+                  }}
+                >
+                  Clear dates
+                </button>
+              ) : null}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                className="ic-btn ic-btn--primary"
+                disabled={scanning !== "idle" || loadingMessages}
+                onClick={() => void handleAiScanAndExtract()}
+              >
+                <Icon name="spark" size="ui" />
+                {scanning === "classifying"
+                  ? "AI reading & classifying emails…"
+                  : scanning === "extracting"
+                  ? "Fetching invoice PDFs & queuing extraction…"
+                  : "AI Scan & Extract Invoices"}
+              </button>
+            </div>
+          </div>
+
+          {scanSummary ? (
+            <Notice
+              tone={scanSummary.queuedFileCount > 0 ? undefined : "warn"}
+              onDismiss={() => setScanSummary(null)}
+            >
+              <span>
+                <b>AI Email Triage ({scanSummary.model}):</b> Read{" "}
+                <b>{scanSummary.scannedCount}</b> email(s)
+                {dateFrom || dateTo
+                  ? ` in range ${dateFrom || "any"} to ${dateTo || "any"}`
+                  : ""}
+                , classified <b>{scanSummary.invoiceEmailCount}</b> as supplier invoice email(s),
+                and automatically sent <b>{scanSummary.queuedFileCount}</b> invoice PDF(s) to the
+                extraction & price checking queue.
+              </span>
+            </Notice>
+          ) : null}
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -342,6 +544,7 @@ export function OutlookDialog({
               ) : (
                 messages.map((m) => {
                   const isCurrent = m.id === selectedId;
+                  const scanned = scannedById[m.id];
                   return (
                     <button
                       key={m.id}
@@ -377,8 +580,25 @@ export function OutlookDialog({
                       >
                         {m.subject}
                       </span>
-                      <span className="r3">
-                        {m.hasAttachments ? (
+                      <span
+                        className="r3"
+                        style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+                      >
+                        {scanned ? (
+                          scanned.isInvoiceEmail ? (
+                            <Pill
+                              pill={{
+                                tone: "good",
+                                text:
+                                  scanned.invoiceAttachments.length > 0
+                                    ? `Invoice (${scanned.invoiceAttachments.length} PDF)`
+                                    : "Invoice email",
+                              }}
+                            />
+                          ) : (
+                            <Pill pill={{ tone: "neutral", text: "Not an invoice" }} />
+                          )
+                        ) : m.hasAttachments ? (
                           <Pill pill={{ tone: "neutral", text: "Attachment" }} />
                         ) : (
                           <span className="muted" style={{ fontSize: 12 }}>
@@ -450,11 +670,59 @@ export function OutlookDialog({
                     </div>
                   </div>
 
+                  {activeScanItem ? (
+                    <div
+                      aria-label="AI classification"
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        background: "var(--bg-subtle, rgba(0,0,0,0.03))",
+                        border: "1px solid var(--line)",
+                        fontSize: 13,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Icon name="spark" size="ui" />
+                          <strong>AI Classification:</strong>
+                          <Pill
+                            pill={{
+                              tone: activeScanItem.isInvoiceEmail ? "good" : "neutral",
+                              text: activeScanItem.isInvoiceEmail
+                                ? "Invoice Email"
+                                : "Not an Invoice",
+                            }}
+                          />
+                          {activeScanItem.supplierName ? (
+                            <span className="muted">
+                              Supplier: <b>{activeScanItem.supplierName}</b>
+                            </span>
+                          ) : null}
+                        </div>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          Confidence: {activeScanItem.confidence}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, lineHeight: 1.45 }}>{activeScanItem.reasoning}</p>
+                    </div>
+                  ) : null}
+
                   {loadingDetail ? (
                     <p className="muted" style={{ margin: 0, fontSize: 13 }}>
                       Loading attachments…
                     </p>
-                  ) : detail && detail.attachments.length > 0 ? (
+                  ) : resolvedDetail && resolvedDetail.attachments.length > 0 ? (
                     <div
                       style={{
                         display: "flex",
@@ -475,7 +743,7 @@ export function OutlookDialog({
                         }}
                       >
                         <strong style={{ fontSize: 13 }}>
-                          Attachments ({detail.attachments.length})
+                          Attachments ({resolvedDetail.attachments.length})
                         </strong>
                         {pdfAttachments.length > 1 ? (
                           <button
@@ -484,7 +752,7 @@ export function OutlookDialog({
                             disabled={importingId !== null}
                             onClick={async () => {
                               for (const att of pdfAttachments) {
-                                await handleImportAttachment(detail.id, att);
+                                await handleImportAttachment(resolvedDetail.id, att);
                               }
                             }}
                           >
@@ -494,9 +762,10 @@ export function OutlookDialog({
                         ) : null}
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {detail.attachments.map((att) => {
+                        {resolvedDetail.attachments.map((att) => {
                           const imported = Boolean(importedIds[att.id]);
                           const busy = importingId === att.id;
+                          const isAiSelected = aiMatchedAttIds.has(att.id);
                           return (
                             <div
                               key={att.id}
@@ -534,6 +803,9 @@ export function OutlookDialog({
                                 <span className="muted" style={{ fontSize: 12 }}>
                                   {formatBytes(att.size)}
                                 </span>
+                                {isAiSelected ? (
+                                  <Pill pill={{ tone: "good", text: "AI: Invoice PDF" }} />
+                                ) : null}
                               </div>
                               {att.isPdf ? (
                                 <button
@@ -544,7 +816,9 @@ export function OutlookDialog({
                                       : "ic-btn ic-btn--primary ic-btn--sm"
                                   }
                                   disabled={busy}
-                                  onClick={() => void handleImportAttachment(detail.id, att)}
+                                  onClick={() =>
+                                    void handleImportAttachment(resolvedDetail.id, att)
+                                  }
                                 >
                                   <Icon name={imported ? "check" : "upload"} size="ui" />
                                   {busy
