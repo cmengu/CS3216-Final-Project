@@ -24,6 +24,8 @@ from read.models import ParsedDocument
 from schema import DecimalText, InvoiceLine, InvoiceRecord
 
 DEFAULT_OLLAMA_BASE_URL = "http://100.89.215.68:11434"
+DEFAULT_PRIMARY_LOCAL_MODEL = "gemma4:e4b"
+DEFAULT_CHALLENGER_LOCAL_MODEL = "qwen3.5:4b"
 CHUNK_SIZE = 6
 
 D = Decimal
@@ -190,6 +192,23 @@ def get_ollama_base_url() -> str:
     if openai_base:
         return re.sub(r"/v1/?$", "", openai_base.rstrip("/"))
     return DEFAULT_OLLAMA_BASE_URL
+
+
+def get_challenger_model(primary_model: str) -> str:
+    """Return the cross-model Challenger LLM used whenever a gatekeeper or catalog check flags an issue."""
+    configured = (
+        os.environ.get("OLLAMA_CHALLENGER_MODEL")
+        or os.environ.get("OLLAMA_SECONDARY_MODEL")
+        or ""
+    ).strip()
+    if configured and configured.lower() != primary_model.strip().lower():
+        return configured
+    primary_lower = primary_model.strip().lower()
+    if primary_lower.startswith("gemma"):
+        return DEFAULT_CHALLENGER_LOCAL_MODEL
+    if primary_lower.startswith("qwen"):
+        return DEFAULT_PRIMARY_LOCAL_MODEL
+    return DEFAULT_CHALLENGER_LOCAL_MODEL
 
 
 def _call_ollama_structured(
@@ -579,6 +598,96 @@ def _validate_header_gatekeeper(
     return issues
 
 
+def _number_appears_in_markdown(val: str | None, markdown: str) -> bool:
+    if not val:
+        return False
+    try:
+        target = D(val)
+    except InvalidOperation:
+        return False
+    for m in re.finditer(r"\b\d{1,3}(?:,\d{3})*(?:\.\d+)?\b|\b\d+(?:\.\d+)?\b", markdown):
+        try:
+            if D(m.group(0).replace(",", "")) == target:
+                return True
+        except InvalidOperation:
+            continue
+    return False
+
+
+def _score_header_candidate(
+    draft: HeaderDraft,
+    issues: list[str],
+    markdown: str,
+) -> int:
+    score = -10 * len(issues)
+    bill_to = _extract_bill_to_names(markdown)
+    sup = (draft.supplier_name or "").strip()
+    if sup and sup.casefold() not in FORBIDDEN_SUPPLIER_NAMES and sup.casefold() not in bill_to:
+        score += 5
+    if draft.invoice_number and draft.invoice_number.strip() in markdown:
+        score += 3
+    if draft.invoice_date and re.match(r"^\d{4}-\d{2}-\d{2}$", draft.invoice_date.strip()):
+        score += 3
+    if _number_appears_in_markdown(draft.subtotal, markdown):
+        score += 3
+    if _number_appears_in_markdown(draft.tax, markdown):
+        score += 3
+    if _number_appears_in_markdown(draft.invoice_total, markdown):
+        score += 3
+    if draft.subtotal is not None and draft.tax is not None and draft.invoice_total is not None:
+        try:
+            if abs((D(draft.subtotal) + D(draft.tax)) - D(draft.invoice_total)) <= D("0.02"):
+                score += 6
+        except InvalidOperation:
+            pass
+    return score
+
+
+def _select_best_header(
+    primary: HeaderDraft | CheckingHeaderDraft,
+    primary_issues: list[str],
+    challenger: HeaderDraft | CheckingHeaderDraft,
+    challenger_issues: list[str],
+    markdown: str,
+) -> HeaderDraft | CheckingHeaderDraft:
+    """Deterministic Judge for Step 1: compare Primary vs Challenger header drafts and merge missing fields."""
+    p_score = _score_header_candidate(primary, primary_issues, markdown)
+    c_score = _score_header_candidate(challenger, challenger_issues, markdown)
+
+    if c_score >= p_score:
+        winner = challenger.model_copy(deep=True)
+        runner_up = primary
+    else:
+        winner = primary.model_copy(deep=True)
+        runner_up = challenger
+
+    bill_to = _extract_bill_to_names(markdown)
+    w_sup = (winner.supplier_name or "").strip()
+    r_sup = (runner_up.supplier_name or "").strip()
+    if (not w_sup or w_sup.casefold() in FORBIDDEN_SUPPLIER_NAMES or w_sup.casefold() in bill_to) and (
+        r_sup and r_sup.casefold() not in FORBIDDEN_SUPPLIER_NAMES and r_sup.casefold() not in bill_to
+    ):
+        winner.supplier_name = runner_up.supplier_name
+
+    for str_field in ("invoice_number", "invoice_date", "currency"):
+        if getattr(winner, str_field, None) is None and getattr(runner_up, str_field, None) is not None:
+            setattr(winner, str_field, getattr(runner_up, str_field))
+
+    for num_field in ("subtotal", "tax", "invoice_total"):
+        w_val = getattr(winner, num_field, None)
+        r_val = getattr(runner_up, num_field, None)
+        if w_val is None and r_val is not None and _number_appears_in_markdown(r_val, markdown):
+            setattr(winner, num_field, r_val)
+
+    if isinstance(winner, CheckingHeaderDraft) and isinstance(runner_up, CheckingHeaderDraft):
+        if winner.purchase_order is None and runner_up.purchase_order is not None:
+            winner.purchase_order = runner_up.purchase_order
+        if winner.tax_rate is None and runner_up.tax_rate is not None:
+            winner.tax_rate = runner_up.tax_rate
+
+    return winner
+
+
 def _extract_header_step(
     markdown: str,
     *,
@@ -606,21 +715,24 @@ def _extract_header_step(
 
     issues = _validate_header_gatekeeper(draft, markdown, is_checking)
     if issues:
+        challenger_model = get_challenger_model(model)
         critique_text = "\n".join(f"- {issue}" for issue in issues)
         redo_user = (
             f"{header_view}\n\n"
             f"--- INITIAL HEADER DRAFT ---\n{draft.model_dump_json(indent=2)}\n\n"
             f"--- GATEKEEPER ISSUES TO FIX ---\n{critique_text}"
         )
-        draft = _call_ollama_structured(
+        challenger_draft = _call_ollama_structured(
             base_url=base_url,
-            model=model,
-            system_prompt= sys_prompt + "\n" + HEADER_REDO_SYSTEM_PROMPT,
+            model=challenger_model,
+            system_prompt=sys_prompt + "\n" + HEADER_REDO_SYSTEM_PROMPT,
             user_prompt=redo_user,
             schema_type=schema_cls,
             tracker=tracker,
         )
-        assert isinstance(draft, HeaderDraft)
+        assert isinstance(challenger_draft, HeaderDraft)
+        challenger_issues = _validate_header_gatekeeper(challenger_draft, markdown, is_checking)
+        draft = _select_best_header(draft, issues, challenger_draft, challenger_issues, markdown)
         _validate_header_gatekeeper(draft, markdown, is_checking)
 
     # Final deterministic safeguard for supplier_name if still missing or forbidden
@@ -692,6 +804,97 @@ def _group_rows_into_chunks(data_rows: list[str], chunk_size: int = CHUNK_SIZE) 
     return chunks
 
 
+def _score_chunk_candidate(
+    lines: list[InvoiceLine | CheckingLine],
+    chunk_rows: list[str],
+    expected_rows: int,
+) -> tuple[int, int, int, int]:
+    """Deterministic Judge score tuple for a chunk of extracted lines."""
+    printed_amounts = [a for r in chunk_rows if (a := _row_printed_amount(r)) is not None]
+    exact_row_count = int(len(lines) == expected_rows)
+    neg_row_diff = -abs(len(lines) - expected_rows)
+
+    extracted_amounts: list[Decimal] = []
+    complete_lines = 0
+    math_consistent = 0
+    for idx, line in enumerate(lines):
+        if line.description and line.line_total is not None:
+            complete_lines += 1
+        if line.line_total is not None:
+            try:
+                extracted_amounts.append(D(line.line_total))
+            except InvalidOperation:
+                pass
+        if line.quantity is not None and line.unit_price is not None and line.line_total is not None:
+            try:
+                if abs((D(line.quantity) * D(line.unit_price)).quantize(D("0.01")) - D(line.line_total)) <= D("0.01"):
+                    math_consistent += 1
+            except InvalidOperation:
+                pass
+
+    sum_matches = int(
+        len(printed_amounts) == expected_rows
+        and len(extracted_amounts) == expected_rows
+        and abs(sum(printed_amounts, D(0)) - sum(extracted_amounts, D(0))) <= D("0.01")
+    )
+    return (exact_row_count, sum_matches, neg_row_diff, complete_lines + math_consistent)
+
+
+def _select_best_chunk(
+    primary_lines: list[InvoiceLine | CheckingLine],
+    challenger_lines: list[InvoiceLine | CheckingLine],
+    chunk_rows: list[str],
+    expected_rows: int,
+) -> list[InvoiceLine | CheckingLine]:
+    """Deterministic Judge for Step 2: select the higher-scoring chunk between Primary and Challenger."""
+    p_score = _score_chunk_candidate(primary_lines, chunk_rows, expected_rows)
+    c_score = _score_chunk_candidate(challenger_lines, chunk_rows, expected_rows)
+    if c_score >= p_score:
+        return list(challenger_lines)
+    return list(primary_lines)
+
+
+def _score_single_line_candidate(
+    line: InvoiceLine | CheckingLine,
+    raw_row: str,
+) -> int:
+    """Deterministic Judge score for a single extracted invoice row against its raw markdown row."""
+    score = 0
+    if line.description and line.description.strip():
+        score += 1
+    raw_clean = raw_row.replace(",", "")
+    for num_val in (line.quantity, line.unit_price, line.line_total):
+        if num_val and num_val in raw_clean:
+            score += 2
+    printed_amt = _row_printed_amount(raw_row)
+    if printed_amt is not None and line.line_total is not None:
+        try:
+            if abs(D(line.line_total) - printed_amt) <= D("0.01"):
+                score += 3
+        except InvalidOperation:
+            pass
+    if line.quantity is not None and line.unit_price is not None and line.line_total is not None:
+        try:
+            if abs((D(line.quantity) * D(line.unit_price)).quantize(D("0.01")) - D(line.line_total)) <= D("0.01"):
+                score += 4
+        except InvalidOperation:
+            pass
+    return score
+
+
+def _select_best_line(
+    primary_line: InvoiceLine | CheckingLine,
+    challenger_line: InvoiceLine | CheckingLine,
+    raw_row: str,
+) -> InvoiceLine | CheckingLine:
+    """Deterministic Judge for Step 3: pick the higher-scoring line between Primary and Challenger."""
+    p_score = _score_single_line_candidate(primary_line, raw_row)
+    c_score = _score_single_line_candidate(challenger_line, raw_row)
+    if c_score >= p_score:
+        return challenger_line
+    return primary_line
+
+
 def _extract_chunk_with_gatekeeper(
     *,
     header_line: str,
@@ -747,6 +950,7 @@ def _extract_chunk_with_gatekeeper(
     )
 
     if row_count_mismatch or missing_fields or amount_sum_mismatch:
+        challenger_model = get_challenger_model(model)
         numbered_rows = "\n".join(f"Row {idx + 1}: {r}" for idx, r in enumerate(chunk_rows))
         redo_prompt = (
             f"GATEKEEPER CHECK FAILED ON TABLE CHUNK:\n"
@@ -759,16 +963,13 @@ def _extract_chunk_with_gatekeeper(
         )
         redone = _call_ollama_structured(
             base_url=base_url,
-            model=model,
+            model=challenger_model,
             system_prompt=sys_prompt,
             user_prompt=redo_prompt,
             schema_type=chunk_schema,
             tracker=tracker,
         )
-        if len(redone.lines) == expected_rows or abs(len(redone.lines) - expected_rows) < abs(
-            len(lines) - expected_rows
-        ):
-            lines = list(redone.lines)
+        lines = _select_best_chunk(lines, list(redone.lines), chunk_rows, expected_rows)
 
     return lines, chunk_rows
 
@@ -784,9 +985,10 @@ def _verify_and_repair_lines_step(
     model: str,
     tracker: UsageAccumulator,
 ) -> list[InvoiceLine | CheckingLine]:
-    """Step 3: Line-level gatekeeper checks and 1-line surgical repairs."""
+    """Step 3: Line-level gatekeeper checks and 1-line surgical repairs via Cross-Model Challenger."""
     has_other_part_numbers = any(bool(line.part_number) for line in lines)
     markdown_mentions_discount = bool(re.search(r"\b(?:discount|disc\.?)\b", markdown, re.I))
+    challenger_model = get_challenger_model(model)
 
     for idx, line in enumerate(lines):
         raw_row = raw_rows[idx] if idx < len(raw_rows) else ""
@@ -806,10 +1008,10 @@ def _verify_and_repair_lines_step(
             m_sku = re.match(r"^([A-Z]{2,}[A-Z0-9]*(?:-[A-Z0-9]+)+)\s+(.+)$", desc_clean)
             if m_sku and (has_other_part_numbers or raw_row.lstrip().startswith("| |") or raw_row.lstrip().startswith("||")):
                 candidate_sku, candidate_desc = m_sku.group(1), m_sku.group(2)
-                # Verify with a focused 1-line micro-call to the local LLM
+                # Verify with a focused 1-line micro-call to the Cross-Model Challenger
                 split_res = _call_ollama_structured(
                     base_url=base_url,
-                    model=model,
+                    model=challenger_model,
                     system_prompt=(
                         "An OCR scan merged the 'Part number' and 'Description' columns into one cell. "
                         "Split the text into `part_number` (the leading uppercase hyphenated product code) "
@@ -871,7 +1073,7 @@ def _verify_and_repair_lines_step(
                         )
                         repaired_chunk = _call_ollama_structured(
                             base_url=base_url,
-                            model=model,
+                            model=challenger_model,
                             system_prompt=sys_prompt,
                             user_prompt=(
                                 f"Re-read this single invoice table row carefully. Copy the exact "
@@ -881,7 +1083,7 @@ def _verify_and_repair_lines_step(
                             tracker=tracker,
                         )
                         if len(repaired_chunk.lines) == 1:
-                            lines[idx] = repaired_chunk.lines[0]
+                            lines[idx] = _select_best_line(line, repaired_chunk.lines[0], raw_row)
             except InvalidOperation:
                 pass
 
@@ -1035,11 +1237,13 @@ def refine_local_with_usage(
         elif item.startswith("Header "):
             header_flagged = True
 
+    challenger_model = get_challenger_model(model)
+
     if header_flagged:
         header_draft = _extract_header_step(
             markdown,
             base_url=base_url,
-            model=model,
+            model=challenger_model,
             is_checking=is_checking,
             extra_instructions=extra_instructions + "\n" + "\n".join(critique),
             tracker=tracker,
@@ -1089,7 +1293,7 @@ def refine_local_with_usage(
 
         repaired_chunk = _call_ollama_structured(
             base_url=base_url,
-            model=model,
+            model=challenger_model,
             system_prompt=sys_prompt,
             user_prompt=user_prompt,
             schema_type=single_schema,
@@ -1099,7 +1303,7 @@ def refine_local_with_usage(
             new_line = repaired_chunk.lines[0]
             if new_line.part_number and re.match(r"^\d{1,3}-\d{1,2}$", new_line.part_number.strip()):
                 new_line.part_number = None
-            refined.lines[idx] = new_line
+            refined.lines[idx] = _select_best_line(current_line, new_line, raw_row) if not catalog_hint_block else new_line
 
     if is_checking and isinstance(refined, CheckingInvoice):
         refined.warnings = []

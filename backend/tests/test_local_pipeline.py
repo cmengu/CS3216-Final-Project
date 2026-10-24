@@ -9,11 +9,15 @@ from extract.local_pipeline import (
     _extract_candidate_issuer_headings,
     _extract_markdown_tables,
     _group_rows_into_chunks,
+    _select_best_chunk,
+    _select_best_header,
+    _select_best_line,
     _validate_header_gatekeeper,
+    get_challenger_model,
     is_local_model,
 )
 from read.models import ParsedDocument
-from schema import InvoiceRecord
+from schema import InvoiceLine, InvoiceRecord
 
 
 def _doc(markdown: str, filename: str = "invoice.pdf") -> ParsedDocument:
@@ -332,4 +336,146 @@ def test_header_gatekeeper_flags_missing_printed_subtotal():
     )
     issues = _validate_header_gatekeeper(draft, md, is_checking=False)
     assert any("subtotal is null" in issue for issue in issues)
+
+
+def test_get_challenger_model_pairs_gemma_and_qwen(monkeypatch):
+    monkeypatch.delenv("OLLAMA_CHALLENGER_MODEL", raising=False)
+    monkeypatch.delenv("OLLAMA_SECONDARY_MODEL", raising=False)
+    assert get_challenger_model("gemma4:e4b") == "qwen3.5:4b"
+    assert get_challenger_model("qwen3.5:4b") == "gemma4:e4b"
+    monkeypatch.setenv("OLLAMA_CHALLENGER_MODEL", "qwen3.5:9b")
+    assert get_challenger_model("gemma4:e4b") == "qwen3.5:9b"
+
+
+def test_dual_model_challenger_invoked_and_judged_on_gatekeeper_failures(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://100.89.215.68:11434")
+    monkeypatch.setenv("OPENAI_MODEL", "gemma4:e4b")
+    monkeypatch.setenv("OLLAMA_CHALLENGER_MODEL", "qwen3.5:4b")
+
+    md = (
+        "## Sample Components Lab\n\n"
+        "Invoice number: DEMO-001\n"
+        "Invoice date: 2026-10-01\n"
+        "Currency: SGD\n\n"
+        "| Part number | Description | Quantity | Unit price | Line total |\n"
+        "|---|---|---|---|---|\n"
+        "| RES-0603-10K | Resistor 10k ohm 0603 | 5000 | 0.012 | 60.00 |\n"
+        "| CAP-0402-100N | Ceramic capacitor 100nF 0402 | 10000 | 0.0047 | 47.00 |\n\n"
+        "Subtotal: 107.00\n"
+        "Tax (9%): 9.63\n"
+        "Total SGD: 116.63\n"
+    )
+
+    called_models = []
+    responses = [
+        # Call 1 (Primary gemma4:e4b): Step 1 Header misses invoice_number -> triggers Gatekeeper 1
+        {
+            "supplier_name": "Sample Components Lab",
+            "invoice_number": None,
+            "invoice_date": "2026-10-01",
+            "currency": "SGD",
+            "subtotal": "107.00",
+            "tax": "9.63",
+            "invoice_total": "116.63",
+        },
+        # Call 2 (Challenger qwen3.5:4b): Step 1 Challenger gets invoice_number right
+        {
+            "supplier_name": "Sample Components Lab",
+            "invoice_number": "DEMO-001",
+            "invoice_date": "2026-10-01",
+            "currency": "SGD",
+            "subtotal": "107.00",
+            "tax": "9.63",
+            "invoice_total": "116.63",
+        },
+        # Call 3 (Primary gemma4:e4b): Step 2 Chunk drops row 2 -> triggers Gatekeeper 2
+        {
+            "lines": [
+                {
+                    "part_number": "RES-0603-10K",
+                    "description": "Resistor 10k ohm 0603",
+                    "quantity": "5000",
+                    "unit_price": "0.012",
+                    "line_total": "60.00",
+                }
+            ]
+        },
+        # Call 4 (Challenger qwen3.5:4b): Step 2 Challenger extracts both rows, but misreads qty on row 2 (1000 instead of 10000)
+        {
+            "lines": [
+                {
+                    "part_number": "RES-0603-10K",
+                    "description": "Resistor 10k ohm 0603",
+                    "quantity": "5000",
+                    "unit_price": "0.012",
+                    "line_total": "60.00",
+                },
+                {
+                    "part_number": "CAP-0402-100N",
+                    "description": "Ceramic capacitor 100nF 0402",
+                    "quantity": "999",
+                    "unit_price": "0.0047",
+                    "line_total": "47.00",
+                },
+            ]
+        },
+        # Call 5 (Challenger qwen3.5:4b): Step 3D Row arithmetic repair fixes row 2 quantity to 10000
+        {
+            "lines": [
+                {
+                    "part_number": "CAP-0402-100N",
+                    "description": "Ceramic capacitor 100nF 0402",
+                    "quantity": "10000",
+                    "unit_price": "0.0047",
+                    "line_total": "47.00",
+                }
+            ]
+        },
+    ]
+
+    class FakeResp:
+        def __init__(self, model_used, content_obj):
+            self._model = model_used
+            self._content_obj = content_obj
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "model": self._model,
+                "prompt_eval_count": 50,
+                "eval_count": 25,
+                "message": {"content": json.dumps(self._content_obj)},
+            }
+
+    class FakeHttpClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, url, json=None):
+            called_models.append(json["model"])
+            return FakeResp(json["model"], responses.pop(0))
+
+    monkeypatch.setattr("extract.local_pipeline.httpx.Client", FakeHttpClient)
+
+    result = extract_with_usage(_doc(md), model="gemma4:e4b", record_type=InvoiceRecord)
+    assert called_models == [
+        "gemma4:e4b",
+        "qwen3.5:4b",
+        "gemma4:e4b",
+        "qwen3.5:4b",
+        "qwen3.5:4b",
+    ]
+    assert result.record.invoice_number == "DEMO-001"
+    assert len(result.record.lines) == 2
+    assert result.record.lines[1].quantity == "10000"
+    assert result.record.lines[1].line_total == "47.00"
+
 

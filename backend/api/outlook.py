@@ -876,13 +876,16 @@ def classify_emails_with_ai(
         model_name = (os.environ.get("OPENAI_MODEL") or "gpt-5.4-mini").strip()
         return model_name, {}
 
-    model_name = (os.environ.get("OPENAI_MODEL") or "qwen3.5:4b").strip()
     from extract.local_pipeline import (
+        DEFAULT_PRIMARY_LOCAL_MODEL,
         UsageAccumulator,
         _call_ollama_structured,
+        get_challenger_model,
         get_ollama_base_url,
         is_local_model,
     )
+
+    model_name = (os.environ.get("OPENAI_MODEL") or DEFAULT_PRIMARY_LOCAL_MODEL).strip()
 
     use_local = client is None and is_local_model(model_name)
     api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
@@ -916,22 +919,43 @@ def classify_emails_with_ai(
 
     if use_local:
         base_url = get_ollama_base_url()
+        challenger_model = get_challenger_model(model_name)
         tracker = UsageAccumulator(model=model_name)
         by_id: dict[str, AIEmailDecision] = {}
         batch_size = 5
         try:
             for start in range(0, len(email_payload), batch_size):
                 sub_payload = email_payload[start : start + batch_size]
-                batch_res = _call_ollama_structured(
-                    base_url=base_url,
-                    model=model_name,
-                    system_prompt=EMAIL_TRIAGE_SYSTEM_PROMPT,
-                    user_prompt=json.dumps(sub_payload, ensure_ascii=False),
-                    schema_type=AIEmailBatchClassification,
-                    tracker=tracker,
-                )
-                assert isinstance(batch_res, AIEmailBatchClassification)
-                for d in batch_res.decisions:
+                expected_ids = {item["message_id"] for item in sub_payload}
+                try:
+                    batch_res = _call_ollama_structured(
+                        base_url=base_url,
+                        model=model_name,
+                        system_prompt=EMAIL_TRIAGE_SYSTEM_PROMPT,
+                        user_prompt=json.dumps(sub_payload, ensure_ascii=False),
+                        schema_type=AIEmailBatchClassification,
+                        tracker=tracker,
+                    )
+                    assert isinstance(batch_res, AIEmailBatchClassification)
+                    decisions = list(batch_res.decisions)
+                except (ValidationError, ValueError):
+                    decisions = []
+
+                returned_ids = {d.message_id for d in decisions}
+                if not expected_ids.issubset(returned_ids):
+                    challenger_res = _call_ollama_structured(
+                        base_url=base_url,
+                        model=challenger_model,
+                        system_prompt=EMAIL_TRIAGE_SYSTEM_PROMPT,
+                        user_prompt=json.dumps(sub_payload, ensure_ascii=False),
+                        schema_type=AIEmailBatchClassification,
+                        tracker=tracker,
+                    )
+                    assert isinstance(challenger_res, AIEmailBatchClassification)
+                    if len(challenger_res.decisions) >= len(decisions):
+                        decisions = list(challenger_res.decisions)
+
+                for d in decisions:
                     by_id[d.message_id] = d
         except (ValidationError, ValueError) as exc:
             raise HTTPException(
