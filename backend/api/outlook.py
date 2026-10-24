@@ -876,21 +876,21 @@ def classify_emails_with_ai(
         model_name = (os.environ.get("OPENAI_MODEL") or "gpt-5.4-mini").strip()
         return model_name, {}
 
+    model_name = (os.environ.get("OPENAI_MODEL") or "qwen3.5:4b").strip()
+    from extract.local_pipeline import (
+        UsageAccumulator,
+        _call_ollama_structured,
+        get_ollama_base_url,
+        is_local_model,
+    )
+
+    use_local = client is None and is_local_model(model_name)
     api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     extract_mode = (os.environ.get("EXTRACT_MODE") or "live").strip().lower()
-    if client is None and (not api_key or extract_mode == "fixture"):
+    if client is None and not use_local and (not api_key or extract_mode == "fixture"):
         return "heuristic-fallback", {m.id: _heuristic_classify_email(m) for m in messages}
-
-    model_name = (os.environ.get("OPENAI_MODEL") or "gpt-5.4-mini").strip()
-    effort = (os.environ.get("OPENAI_REASONING_EFFORT") or "").strip()
-    options: dict[str, Any] = {}
-    if effort in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
-        options["reasoning"] = {"effort": effort}
-
-    if client is None:
-        from openai import OpenAI
-
-        client = OpenAI(timeout=90.0, max_retries=0)
+    if client is None and extract_mode == "fixture":
+        return "heuristic-fallback", {m.id: _heuristic_classify_email(m) for m in messages}
 
     email_payload = [
         {
@@ -913,6 +913,45 @@ def classify_emails_with_ai(
         }
         for m in messages
     ]
+
+    if use_local:
+        base_url = get_ollama_base_url()
+        tracker = UsageAccumulator(model=model_name)
+        by_id: dict[str, AIEmailDecision] = {}
+        batch_size = 5
+        try:
+            for start in range(0, len(email_payload), batch_size):
+                sub_payload = email_payload[start : start + batch_size]
+                batch_res = _call_ollama_structured(
+                    base_url=base_url,
+                    model=model_name,
+                    system_prompt=EMAIL_TRIAGE_SYSTEM_PROMPT,
+                    user_prompt=json.dumps(sub_payload, ensure_ascii=False),
+                    schema_type=AIEmailBatchClassification,
+                    tracker=tracker,
+                )
+                assert isinstance(batch_res, AIEmailBatchClassification)
+                for d in batch_res.decisions:
+                    by_id[d.message_id] = d
+        except (ValidationError, ValueError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI email classification failed: {exc}",
+            ) from exc
+        for m in messages:
+            if m.id not in by_id:
+                by_id[m.id] = _heuristic_classify_email(m)
+        return tracker.model, by_id
+
+    effort = (os.environ.get("OPENAI_REASONING_EFFORT") or "").strip()
+    options: dict[str, Any] = {}
+    if effort in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+        options["reasoning"] = {"effort": effort}
+
+    if client is None:
+        from openai import OpenAI
+
+        client = OpenAI(timeout=90.0, max_retries=0)
 
     try:
         response = client.responses.parse(
