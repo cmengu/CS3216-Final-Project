@@ -67,14 +67,25 @@ def create_app(
         app.state.slot = BoundedSemaphore(1)
         yield
 
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://100.89.215.68:3000",
+    ]
+    for env_key in ("FRONTEND_URL", "CORS_ORIGINS"):
+        for item in os.environ.get(env_key, "").split(","):
+            origin = item.strip().rstrip("/")
+            if origin and origin not in cors_origins:
+                cors_origins.append(origin)
+
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
     app.include_router(outlook_router)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-        allow_methods=["GET", "POST", "PUT"],
-        allow_headers=["Content-Type"],
+        allow_origins=cors_origins,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
     )
 
     @app.middleware("http")
