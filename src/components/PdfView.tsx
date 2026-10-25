@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { SourceBlock } from "@/checker/types";
+import { blockFor } from "./pdfEvidence";
 import { wholeItemRow } from "./pdfRow";
 import { projectBox, textRotation } from "./pdfRotation";
 import { Icon } from "./icons";
@@ -37,18 +38,6 @@ function screenBox(s: PageSize, b: Box) {
 }
 
 const ZOOMS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
-const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-
-/** The block that holds this line, and where it sits. */
-function blockFor(m: Mark, blocks: SourceBlock[]) {
-  const keys = [m.part, m.description.slice(0, 30)].filter((k): k is string => !!k && k.trim().length > 2).map(norm);
-  for (const k of keys) {
-    const b = blocks.find((x) => norm(x.text).includes(k) && x.locations.some((l) => l.bbox));
-    if (b) return { block: b, key: k };
-  }
-  return null;
-}
-
 /** Bottom-left PDF coordinates for a block location. */
 function toBottomLeft(loc: SourceBlock["locations"][number]) {
   const b = loc.bbox!;
@@ -80,7 +69,7 @@ async function placeMarks(doc: PDFDocumentProxy, marks: Mark[], blocks: SourceBl
     const loc = found.block.locations.find((l) => l.bbox)!;
     pages[m.n] = loc.page;
     const matched = { ...toBottomLeft(loc), text: found.block.text };
-    const row = wholeItemRow(blocks.flatMap((block) => block.locations
+    const row = found.block.kind === "table-row" ? matched : wholeItemRow(blocks.flatMap((block) => block.locations
       .filter((location) => location.page === loc.page && location.bbox)
       .map((location) => ({ ...toBottomLeft(location), text: block.text }))), matched, m.n);
     const b = row ?? matched;
@@ -115,7 +104,9 @@ export function PdfView({
   blocks,
   focus,
   rotations,
+  onClose,
 }: {
+  onClose?: () => void;
   rotations?: Record<number, number>;
   url: string;
   fileName: string;
@@ -218,28 +209,44 @@ export function PdfView({
     };
   }, [doc, width, zoom, sizes, scaleFor]);
 
-  const goTo = useCallback((p: number, y = 0) => {
-    const el = scroller.current?.querySelector<HTMLElement>(`[data-page="${p}"]`);
-    if (el && scroller.current) scroller.current.scrollTo({ top: el.offsetTop - 20 + y, behavior: "smooth" });
+  const scrollToTarget = useCallback((target: HTMLElement, highlight = false) => {
+    const pane = scroller.current;
+    if (!pane) return;
+    const outer = pane.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    // Rectangles share viewport coordinates; offsetTop may use an ancestor outside the pane.
+    const top = pane.scrollTop + rect.top - outer.top - pane.clientTop;
+    const left = pane.scrollLeft + rect.left - outer.left - pane.clientLeft;
+    const margin = highlight ? Math.min(80, pane.clientHeight / 4) : 20;
+    pane.scrollTo({
+      top: Math.max(0, top - margin),
+      left: Math.max(0, left - (highlight ? Math.max(20, (pane.clientWidth - rect.width) / 2) : 0)),
+      behavior: "smooth",
+    });
   }, []);
 
-  // "Show →": scroll to the highlight, or to its page.
+  const goTo = useCallback((p: number) => {
+    const target = scroller.current?.querySelector<HTMLElement>(`[data-page="${p}"]`);
+    if (target) scrollToTarget(target);
+  }, [scrollToTarget]);
+
+  // Wait for the pane and highlights to be laid out before focusing their rendered position.
   useEffect(() => {
-    if (!focus || !doc) return;
-    const box = placed.boxes.find((b) => b.n === focus.n);
-    if (box) {
-      const s = sizes[box.page - 1];
-      const scale = scaleFor(s.w);
-      goTo(box.page, Math.max(0, screenBox(s, box).top * scale - 80));
-    } else if (placed.pages[focus.n]) goTo(placed.pages[focus.n]);
-  }, [focus, doc, placed, sizes, goTo, scaleFor]);
+    if (!focus || !doc || !width) return;
+    const frame = requestAnimationFrame(() => {
+      const target = scroller.current?.querySelector<HTMLElement>(`[data-line="${focus.n}"]`);
+      if (target) scrollToTarget(target, true);
+      else if (placed.pages[focus.n]) goTo(placed.pages[focus.n]);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focus, doc, width, placed, sizes, zoom, goTo, scrollToTarget]);
 
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
     const pages = [...el.querySelectorAll<HTMLElement>("[data-page]")];
-    const mid = el.scrollTop + el.clientHeight / 3;
-    const at = pages.findLast((p) => p.offsetTop <= mid);
+    const mid = el.getBoundingClientRect().top + el.clientTop + el.clientHeight / 3;
+    const at = pages.findLast((p) => p.getBoundingClientRect().top <= mid);
     if (at) setPage(Number(at.dataset.page));
   };
 
@@ -275,6 +282,7 @@ export function PdfView({
         <a className="ic-icobtn" href={url} target="_blank" rel="noreferrer" aria-label="Open PDF in a new tab">
           <Icon name="external" />
         </a>
+        {onClose ? <button className="ic-icobtn" type="button" onClick={onClose} aria-label="Close PDF preview"><Icon name="x" /></button> : null}
       </div>
       <div className="ic-doc-scroll" ref={scroller} onScroll={onScroll}>
         {error ? <p className="muted" style={{ textAlign: "center" }}>{error}</p> : null}
@@ -297,13 +305,10 @@ export function PdfView({
                     .map((b) => (
                       <div
                         key={b.n}
+                        data-line={b.n}
                         className={`ic-hl${focus?.n === b.n ? " ic-hl--focus" : ""}`}
                         style={{ left: screenBox(s, b).left * scale, top: screenBox(s, b).top * scale, width: screenBox(s, b).width * scale, height: screenBox(s, b).height * scale }}
-                      >
-                        <span className="ic-hl-tag">
-                          <span className="ic-pill ic-pill--warn">Line {b.n}</span>
-                        </span>
-                      </div>
+                      />
                     ))}
                 </div>
               );

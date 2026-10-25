@@ -104,6 +104,7 @@ function Workspace() {
   const router = useRouter();
   const [seg, setSeg] = useState<"decide" | "done">("decide");
   const [q, setQ] = useState("");
+  const [pdfId, setPdfId] = useState<string | null>(null);
   const [focusState, setFocus] = useState<{ id: string; n: number; seq: number } | null>(null);
   const known = () => invoices ?? [];
   const picker = useFilePicker(PDF, true, (files) => enqueue(files, known));
@@ -134,10 +135,11 @@ function Workspace() {
     [inv],
   );
   const blocks = useMemo(() => inv?.blocks ?? [], [inv]);
+  const pdfOpen = !!inv && pdfId === inv.id;
   const exportCsv = () => download(csvName(), exportReadyToPay(all));
 
   return (
-    <div className="ic-work">
+    <div className={`ic-work${pdfOpen ? "" : " ic-work--no-pdf"}`}>
       {picker.node}
       <Queue
         decideList={piles.decide}
@@ -158,8 +160,13 @@ function Workspace() {
           key={inv.id}
           inv={inv}
           masterList={masterList}
-          activeLine={focus?.n ?? null}
-          onShow={(n) => setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }))}
+          activeLine={pdfOpen ? (focus?.n ?? null) : null}
+          onOpenPdf={() => setPdfId(inv.id)}
+          pdfOpen={pdfOpen}
+          onShow={(n) => {
+            setPdfId(inv.id);
+            setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }));
+          }}
         />
       ) : invoices === null ? (
         <section className="ic-check" aria-label="Check">
@@ -170,15 +177,11 @@ function Workspace() {
       ) : (
         <AllDecided count={piles.done.length} onUpload={picker.open} onExport={exportCsv} />
       )}
-      <div className="ic-docpane">
-        {inv ? (
-          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} rotations={inv.pageRotations} blocks={blocks} focus={focus} />
-        ) : (
-          <div className="ic-check-center">
-            <p className="muted">No invoice selected</p>
-          </div>
-        )}
-      </div>
+      {inv && pdfOpen ? (
+        <div className="ic-docpane">
+          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} rotations={inv.pageRotations} blocks={blocks} focus={focus} onClose={() => setPdfId(null)} />
+        </div>
+      ) : null}
     </div>
   );
 }

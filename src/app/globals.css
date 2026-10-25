@@ -308,3 +308,12 @@ a { color: var(--accent); }
   .ic-doc-bar .name { flex: 1 1 100%; }
   .ic-doc-bar .sp { display: none; }
 }
+
+/* Let invoice details use the available space while the source preview is closed. */
+.ic-work--no-pdf { grid-template-columns: 340px minmax(0, 1fr); }
+@media (max-width: 1200px) {
+  .ic-work--no-pdf { grid-template-columns: 260px minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .ic-work--no-pdf { grid-template-columns: minmax(0, 1fr); }
+}
