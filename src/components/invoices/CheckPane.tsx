@@ -248,7 +248,14 @@ export function CheckPane({
                     const price = line.unitPrice === null ? "—" : `${comparedCurrency ? comparedCurrency + " " : ""}${unit(line.unitPrice)}${priceUnit}`;
                     const total = line.lineTotal === null ? "—" : money(line.lineTotal, cur);
                     return (
-                      <div className="ic-line" role="listitem" key={n} aria-current={activeLine === n ? "true" : undefined}>
+                      <div
+                        className="ic-line"
+                        role="listitem"
+                        key={n}
+                        aria-current={activeLine === n ? "true" : undefined}
+                        onClick={flagged ? () => onShow(n) : undefined}
+                        style={flagged ? { cursor: "pointer" } : undefined}
+                      >
                         {flagged ? (
                           <span style={{ color: "var(--warn)" }}>
                             <Icon name="warn" size="row" style={{ color: "var(--warn)" }} />
@@ -301,7 +308,7 @@ export function CheckPane({
                         <div className="end">
                           <Pill pill={LINE_PILL[line.result]} />
                           {flagged ? (
-                            <button type="button" className="ic-link ic-link--sm" onClick={() => onShow(n)} aria-label={`Show line ${n} on the PDF`}>
+                            <button type="button" className="ic-link ic-link--sm" onClick={(e) => { e.stopPropagation(); onShow(n); }} aria-label={`Show line ${n} on the PDF`}>
                               Show
                               <Icon name="arrowR" arrow />
                             </button>

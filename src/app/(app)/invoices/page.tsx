@@ -169,7 +169,7 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
           inv={inv}
           masterList={masterList}
           activeLine={pdfOpen ? (focus?.n ?? null) : null}
-          onOpenPdf={() => setPdfId(inv.id)}
+          onOpenPdf={() => { setFocus(null); setPdfId(inv.id); }}
           pdfOpen={pdfOpen}
           onShow={(n) => {
             setPdfId(inv.id);
@@ -187,7 +187,7 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
       )}
       {inv && pdfOpen ? (
         <div className="ic-docpane">
-          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} rotations={inv.pageRotations} blocks={blocks} focus={focus} onClose={() => setPdfId(null)} />
+          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} rotations={inv.pageRotations} blocks={blocks} focus={focus} onClose={() => { setFocus(null); setPdfId(null); }} />
         </div>
       ) : null}
     </div>

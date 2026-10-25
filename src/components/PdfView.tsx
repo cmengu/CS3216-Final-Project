@@ -301,7 +301,7 @@ export function PdfView({
                     role="img"
                   />
                   {placed.boxes
-                    .filter((b) => b.page === i + 1)
+                    .filter((b) => b.page === i + 1 && focus?.n === b.n)
                     .map((b) => (
                       <div
                         key={b.n}
