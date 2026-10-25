@@ -47,6 +47,13 @@ function set(next: Partial<State>) {
   listeners.forEach((l) => l());
 }
 
+/** Clear upload queue notices and duplicate cache when switching user sessions. */
+export function resetUploadsSession() {
+  sent.clear();
+  files.clear();
+  set({ items: [], notices: [], lastDone: null, doneCount: 0 });
+}
+
 const notice = (n: Omit<UploadNotice, "key">) => set({ notices: [...state.notices, { ...n, key: `n${++seq}` }] });
 
 export function dismissNotice(key: string) {

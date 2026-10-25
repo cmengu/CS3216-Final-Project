@@ -4,7 +4,8 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SERVICE_URL } from "@/checker/api";
+import { SERVICE_URL, SESSION_ID_KEY, setActiveSessionId } from "@/checker/api";
+import { resetUploadsSession } from "@/checker/uploads";
 
 export interface User {
   email: string;
@@ -19,13 +20,26 @@ const DEFAULT_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD ?? "invoice-check
 const listeners = new Set<() => void>();
 let cached: { raw: string | null; user: User | null } = { raw: null, user: null };
 
-function store(user: User | null) {
+function newSessionId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* ignore */
+  }
+  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function store(user: User | null, sessionId?: string | null) {
   try {
     if (user) localStorage.setItem(KEY, JSON.stringify(user));
     else localStorage.removeItem(KEY);
   } catch {
     /* storage blocked */
   }
+  setActiveSessionId(user ? (sessionId ?? newSessionId()) : null);
+  resetUploadsSession();
   listeners.forEach((l) => l());
 }
 
@@ -60,9 +74,9 @@ export async function signIn(username: string, password: string): Promise<SignIn
       signal: AbortSignal.timeout(5_000),
     });
     if (resp.ok) {
-      const data = (await resp.json()) as { ok: boolean; user?: User };
+      const data = (await resp.json()) as { ok: boolean; user?: User; session_id?: string };
       if (data.ok && data.user) {
-        store(data.user);
+        store(data.user, data.session_id ?? newSessionId());
         return { ok: true, user: data.user };
       }
     }
@@ -71,7 +85,7 @@ export async function signIn(username: string, password: string): Promise<SignIn
     // Fallback if backend is unreachable (e.g., offline frontend test environment)
     if (trimmed.toLowerCase() === DEFAULT_USERNAME.toLowerCase() && password === DEFAULT_PASSWORD) {
       const user: User = { email: DEFAULT_USERNAME, provider: "password" };
-      store(user);
+      store(user, newSessionId());
       return { ok: true, user };
     }
     return { ok: false, error: "invalid" };
@@ -87,13 +101,13 @@ export async function signInWithMicrosoft(): Promise<SignInResult> {
 }
 
 export async function signOut(): Promise<void> {
-  store(null);
+  store(null, null);
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) l();
+    if (e.key === KEY || e.key === SESSION_ID_KEY) l();
   };
   window.addEventListener("storage", onStorage);
   return () => {

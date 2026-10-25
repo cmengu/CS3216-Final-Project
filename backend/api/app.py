@@ -7,6 +7,7 @@ INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real step
 import hmac
 import logging
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -14,7 +15,7 @@ from pathlib import Path
 from threading import BoundedSemaphore
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ValidationError
@@ -29,12 +30,13 @@ from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
-from .storage import Store
+from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger(__name__)
+_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 def _load_dotenv() -> None:
@@ -51,6 +53,34 @@ def _load_dotenv() -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def _request_session_id(request: Request, query_session_id: str | None = None) -> str:
+    candidates = (
+        request.headers.get("x-invoice-session"),
+        query_session_id,
+        request.query_params.get("session_id"),
+        request.cookies.get("ic_session"),
+    )
+    for raw in candidates:
+        if not raw:
+            continue
+        cleaned = raw.strip()
+        if _SESSION_TOKEN_RE.match(cleaned):
+            return normalize_session_id(cleaned)
+    return DEFAULT_SESSION_ID
+
+
+def _slot_wait_seconds() -> float:
+    raw = os.environ.get("INVOICE_SLOT_WAIT_SECONDS")
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return 0.0
+    if "pytest" in sys.modules:
+        return 0.0
+    return 45.0
+
+
 def create_app(
     *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf_bounded
 ) -> FastAPI:
@@ -64,7 +94,11 @@ def create_app(
         initialize_master_list(app.state.store)
         initialize_outlook(app.state.store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
-        app.state.slot = BoundedSemaphore(1)
+        try:
+            max_concurrent = max(1, int(os.environ.get("INVOICE_MAX_CONCURRENT_UPLOADS", "1")))
+        except ValueError:
+            max_concurrent = 1
+        app.state.slot = BoundedSemaphore(max_concurrent)
         yield
 
     cors_origins = [
@@ -123,6 +157,7 @@ def create_app(
             )
         return {
             "ok": True,
+            "session_id": str(uuid4()),
             "user": {
                 "email": expected_user,
                 "provider": "password",
@@ -144,7 +179,7 @@ def create_app(
         }
 
     @app.post("/invoices", response_model=SavedInvoice, status_code=201)
-    def upload(file: UploadFile, force_ocr: bool = False):
+    def upload(request: Request, file: UploadFile, force_ocr: bool = False):
         selected = app.state.stages
         if selected is None:
             file.file.close()
@@ -153,7 +188,13 @@ def create_app(
                 "Extraction/check adapters are unconfigured. Set INVOICE_MODE=fixture for known "
                 "dummy PDFs, or INVOICE_MODE=live with a model and uploaded master list.",
             )
-        if not app.state.slot.acquire(blocking=False):
+        wait_seconds = _slot_wait_seconds()
+        acquired = (
+            app.state.slot.acquire(blocking=True, timeout=wait_seconds)
+            if wait_seconds > 0
+            else app.state.slot.acquire(blocking=False)
+        )
+        if not acquired:
             file.file.close()
             raise HTTPException(
                 429,
@@ -161,6 +202,7 @@ def create_app(
                 headers={"Retry-After": "5"},
             )
         store = app.state.store
+        session_id = _request_session_id(request)
         invoice_id = str(uuid4())
         path = store.path(invoice_id)
         inserted = False
@@ -185,7 +227,12 @@ def create_app(
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             store.insert(
-                invoice_id, filename, document_hash, selected.mode, selected.price_sheet_version
+                invoice_id,
+                filename,
+                document_hash,
+                selected.mode,
+                selected.price_sheet_version,
+                session_id=session_id,
             )
             inserted = True
             stage = "reading"
@@ -213,8 +260,9 @@ def create_app(
                 # Persist failures without logging document text, provider response bodies or keys.
                 log.warning("Invoice %s failed (%s)", invoice_id, type(exc).__name__)
                 store.update(invoice_id, "failed", error=f"{stage}: {_failure_reason(exc)}")
-                return JSONResponse(store.get(invoice_id).model_dump(mode="json"), status_code=422)
-            return store.get(invoice_id)
+                failed_saved = store.get(invoice_id, session_id=session_id)
+                return JSONResponse(failed_saved.model_dump(mode="json"), status_code=422)
+            return store.get(invoice_id, session_id=session_id)
         finally:
             file.file.close()
             if not inserted:
@@ -222,19 +270,25 @@ def create_app(
             app.state.slot.release()
 
     @app.get("/invoices", response_model=list[InvoiceSummary])
-    def invoices(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
-        return app.state.store.list(limit, offset)
+    def invoices(
+        request: Request,
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ):
+        session_id = _request_session_id(request)
+        return app.state.store.list(limit, offset, session_id=session_id)
 
     @app.get("/invoices/{invoice_id}", response_model=SavedInvoice)
-    def invoice(invoice_id: UUID):
-        saved = app.state.store.get(str(invoice_id))
+    def invoice(invoice_id: UUID, request: Request, session_id: str | None = None):
+        sid = _request_session_id(request, session_id)
+        saved = app.state.store.get(str(invoice_id), session_id=sid)
         if saved is None:
             raise HTTPException(404, "Invoice not found")
         return saved
 
     @app.get("/invoices/{invoice_id}/file")
-    def invoice_file(invoice_id: UUID):
-        saved = invoice(invoice_id)
+    def invoice_file(invoice_id: UUID, request: Request, session_id: str | None = None):
+        saved = invoice(invoice_id, request, session_id)
         path = app.state.store.path(str(invoice_id))
         if not path.is_file():
             raise HTTPException(404, "Original PDF is unavailable")
@@ -246,15 +300,16 @@ def create_app(
         )
 
     @app.put("/invoices/{invoice_id}/outcome", response_model=SavedInvoice)
-    def decide(invoice_id: UUID, request: OutcomeRequest):
+    def decide(invoice_id: UUID, request_body: OutcomeRequest, request: Request):
         """Save the AP clerk's decision, or clear it with a null outcome. The clerk alone decides."""
-        saved = invoice(invoice_id)
-        reason = (request.reason or "").strip() or None
-        refusal = _outcome_refusal(saved, request.outcome, reason)
+        sid = _request_session_id(request)
+        saved = invoice(invoice_id, request, sid)
+        reason = (request_body.reason or "").strip() or None
+        refusal = _outcome_refusal(saved, request_body.outcome, reason)
         if refusal:
             raise HTTPException(*refusal)
-        app.state.store.decide(saved.id, request.outcome, reason)
-        return app.state.store.get(saved.id)
+        app.state.store.decide(saved.id, request_body.outcome, reason, session_id=sid)
+        return app.state.store.get(saved.id, session_id=sid)
 
     return app
 

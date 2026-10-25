@@ -362,3 +362,125 @@ def test_live_mode_uses_uploaded_list_not_env_path(tmp_path, monkeypatch):
         assert response.status_code == 409
         assert "Upload a master list" in response.json()["detail"]
         assert client.get("/invoices").json() == []
+
+
+def test_session_isolation_prevents_other_sessions_from_viewing_or_deciding_documents(tmp_path):
+    stages = FixtureStages(DATA)
+    app = create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    with TestClient(app) as client:
+        alice_headers = {"X-Invoice-Session": "session-alice"}
+        bob_headers = {"X-Invoice-Session": "session-bob"}
+
+        alice_doc = client.post(
+            "/invoices",
+            headers=alice_headers,
+            files={"file": ("invoice-01.pdf", (DATA / "invoice-01.pdf").read_bytes(), "application/pdf")},
+        ).json()
+        bob_doc = client.post(
+            "/invoices",
+            headers=bob_headers,
+            files={"file": ("invoice-02.pdf", (DATA / "invoice-02.pdf").read_bytes(), "application/pdf")},
+        ).json()
+
+        # Each session only lists its own uploaded documents
+        alice_list = client.get("/invoices", headers=alice_headers).json()
+        bob_list = client.get("/invoices", headers=bob_headers).json()
+        assert [row["id"] for row in alice_list] == [alice_doc["id"]]
+        assert [row["id"] for row in bob_list] == [bob_doc["id"]]
+
+        # Alice cannot read, download, or decide Bob's invoice
+        assert client.get(f"/invoices/{bob_doc['id']}", headers=alice_headers).status_code == 404
+        assert client.get(f"/invoices/{bob_doc['id']}/file", headers=alice_headers).status_code == 404
+        assert (
+            client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-alice").status_code
+            == 404
+        )
+        assert (
+            client.put(
+                f"/invoices/{bob_doc['id']}/outcome",
+                headers=alice_headers,
+                json={"outcome": "raise_with_supplier"},
+            ).status_code
+            == 404
+        )
+
+        # Bob can download via session_id query param and decide his own invoice
+        assert (
+            client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-bob").status_code == 200
+        )
+        assert (
+            client.put(
+                f"/invoices/{bob_doc['id']}/outcome",
+                headers=bob_headers,
+                json={"outcome": "raise_with_supplier"},
+            ).status_code
+            == 200
+        )
+
+
+def test_concurrent_multi_user_uploads_queue_and_isolate_by_session(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+
+    monkeypatch.setenv("INVOICE_SLOT_WAIT_SECONDS", "10")
+
+    def slow_reader(path, *, force_ocr=False):
+        time.sleep(0.05)
+        return lightweight_reader(path, force_ocr=force_ocr)
+
+    stages = FixtureStages(DATA)
+    app = create_app(storage_dir=tmp_path, stages=stages, reader=slow_reader)
+    pdf_bytes = (DATA / "invoice-01.pdf").read_bytes()
+
+    with TestClient(app) as client:
+        def upload_for_session(idx: int):
+            sid = f"concurrent-session-{idx}"
+            resp = client.post(
+                "/invoices",
+                headers={"X-Invoice-Session": sid},
+                files={"file": (f"user-{idx}.pdf", pdf_bytes, "application/pdf")},
+            )
+            return sid, resp.status_code, resp.json()
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(upload_for_session, range(4)))
+
+        for sid, status_code, body in results:
+            assert status_code == 201
+            listed = client.get("/invoices", headers={"X-Invoice-Session": sid}).json()
+            assert [row["id"] for row in listed] == [body["id"]]
+
+
+def test_gpu_accelerator_detection_prefers_cuda_and_falls_back_to_cpu(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from read.reader import detect_ocr_accelerator
+
+    monkeypatch.setenv("INVOICE_OCR_DEVICE", "cpu")
+    cpu_info = detect_ocr_accelerator()
+    assert cpu_info["device"] == "cpu"
+    assert cpu_info["torch_cuda"] is False
+    assert cpu_info["ort_cuda"] is False
+    assert cpu_info["num_threads"] >= 1
+
+    # Simulate an NVIDIA RTX 4070 with CUDA available in both PyTorch and ONNX Runtime
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            get_device_name=lambda idx: "NVIDIA GeForce RTX 4070",
+        )
+    )
+    fake_ort = SimpleNamespace(
+        get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+
+    monkeypatch.setenv("INVOICE_OCR_DEVICE", "auto")
+    cuda_info = detect_ocr_accelerator()
+    assert cuda_info["device"] == "cuda"
+    assert cuda_info["torch_cuda"] is True
+    assert cuda_info["ort_cuda"] is True
+    assert cuda_info["gpu_name"] == "NVIDIA GeForce RTX 4070"
+
+

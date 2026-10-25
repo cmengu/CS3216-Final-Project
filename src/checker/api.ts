@@ -9,6 +9,84 @@ import type { Outcome, SupplierInvoice } from "./types";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
 
 export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8001";
+export const SESSION_ID_KEY = "ic.session.id.v1";
+const USER_STORAGE_KEY = "ic.session.v2";
+
+function generateSessionId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* ignore */
+  }
+  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Return the active browser session ID when a user session is active, or null when no session exists.
+ */
+export function getActiveSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const fromSession = window.sessionStorage?.getItem(SESSION_ID_KEY)?.trim();
+    if (fromSession) return fromSession;
+    const fromLocal = window.localStorage?.getItem(SESSION_ID_KEY)?.trim();
+    if (fromLocal) {
+      try {
+        window.sessionStorage?.setItem(SESSION_ID_KEY, fromLocal);
+      } catch {
+        /* ignore */
+      }
+      return fromLocal;
+    }
+    const signedInUser = window.localStorage?.getItem(USER_STORAGE_KEY);
+    if (signedInUser) {
+      const created = generateSessionId();
+      try {
+        window.sessionStorage?.setItem(SESSION_ID_KEY, created);
+      } catch {
+        /* ignore */
+      }
+      try {
+        window.localStorage?.setItem(SESSION_ID_KEY, created);
+      } catch {
+        /* ignore */
+      }
+      return created;
+    }
+  } catch {
+    /* storage blocked */
+  }
+  return null;
+}
+
+export function setActiveSessionId(sessionId: string | null): void {
+  if (typeof window !== "undefined") {
+    try {
+      if (sessionId) {
+        window.sessionStorage?.setItem(SESSION_ID_KEY, sessionId);
+        window.localStorage?.setItem(SESSION_ID_KEY, sessionId);
+      } else {
+        window.sessionStorage?.removeItem(SESSION_ID_KEY);
+        window.localStorage?.removeItem(SESSION_ID_KEY);
+      }
+    } catch {
+      /* storage blocked */
+    }
+  }
+  cache = null;
+  reloadInvoices();
+}
+
+function sessionHeaders(extra?: Record<string, string>): Record<string, string> | undefined {
+  const sid = getActiveSessionId();
+  if (!sid && !extra) return undefined;
+  return {
+    ...(extra ?? {}),
+    ...(sid ? { "X-Invoice-Session": sid } : {}),
+  };
+}
 
 const SERVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,7 +108,12 @@ const RECHECK_MS = 3_000;
 
 async function read(path: string): Promise<Response> {
   try {
-    return await fetch(`${SERVICE_URL}${path}`, { cache: "no-store", signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+    const headers = sessionHeaders();
+    return await fetch(`${SERVICE_URL}${path}`, {
+      cache: "no-store",
+      ...(headers ? { headers } : {}),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+    });
   } catch {
     throw new Error(unreachable);
   }
@@ -98,9 +181,14 @@ export class UploadError extends Error {
 export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   const body = new FormData();
   body.append("file", file);
+  const headers = sessionHeaders();
   let response: Response;
   try {
-    response = await fetch(`${SERVICE_URL}/invoices`, { method: "POST", body });
+    response = await fetch(`${SERVICE_URL}/invoices`, {
+      method: "POST",
+      body,
+      ...(headers ? { headers } : {}),
+    });
   } catch {
     throw new UploadError(unreachable, null);
   }
@@ -118,7 +206,11 @@ export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
 }
 
 /** Where the service keeps the PDF exactly as it was uploaded. */
-export const invoiceFileUrl = (id: string) => `${SERVICE_URL}/invoices/${id}/file`;
+export const invoiceFileUrl = (id: string) => {
+  const sid = getActiveSessionId();
+  const base = `${SERVICE_URL}/invoices/${id}/file`;
+  return sid ? `${base}?session_id=${encodeURIComponent(sid)}` : base;
+};
 
 /**
  * Send a failed invoice's own PDF through the check again. The service keeps the first attempt,
@@ -151,7 +243,7 @@ export async function decideInvoice(id: string, outcome: Outcome | null, reason:
   try {
     response = await fetch(`${SERVICE_URL}/invoices/${id}/outcome`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: sessionHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ outcome, reason }),
       signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });
