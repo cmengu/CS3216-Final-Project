@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { decideInvoice, rememberInvoice, retryInvoice } from "@/checker/api";
+import { invoiceFileUrl, decideInvoice, rememberInvoice, retryInvoice } from "@/checker/api";
 import {
   checkPill,
   decision,
@@ -159,11 +159,15 @@ export function CheckPane({
   masterList,
   activeLine,
   onShow,
+  onOpenPdf,
+  pdfOpen,
 }: {
   inv: SupplierInvoice;
   masterList: MasterList | null;
   activeLine: number | null;
   onShow: (n: number) => void;
+  onOpenPdf: () => void;
+  pdfOpen: boolean;
 }) {
   const [dialog, setDialog] = useState<"pay" | "raise" | "compare" | null>(null);
   const [rechecking, setRechecking] = useState(false);
@@ -188,6 +192,12 @@ export function CheckPane({
           <span className="muted" style={{ fontSize: 14 }}>
             {meta.filter(Boolean).join(" · ")}
           </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <a className="ic-link ic-link--sm" href={invoiceFileUrl(inv.id)} target="_blank" rel="noreferrer">{inv.fileName}</a>
+            {checkPill(inv).tone !== "good" && !pdfOpen ? (
+              <button type="button" className="ic-link ic-link--sm" onClick={onOpenPdf} aria-label="Open original PDF preview">Open</button>
+            ) : null}
+          </div>
         </div>
 
         {outdated ? (

@@ -87,6 +87,7 @@ export interface SupplierInvoice {
 
 /** A piece of the PDF's text and where it sits, from the reader. */
 export interface SourceBlock {
+  kind?: "table-row";
   text: string;
   locations: {
     page: number;
