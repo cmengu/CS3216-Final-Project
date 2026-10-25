@@ -4,6 +4,7 @@ No auth/connectors in release 1. Bind to loopback, one worker. The mode is alway
 INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real steps.
 """
 
+import hmac
 import logging
 import os
 import sys
@@ -16,7 +17,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
@@ -86,9 +87,36 @@ def create_app(
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         response = await call_next(request)
-        if request.url.path.startswith(("/master-list", "/invoices", "/outlook", "/auth/outlook")):
+        if request.url.path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    class SignInPayload(BaseModel):
+        username: str | None = None
+        email: str | None = None
+        password: str = ""
+
+    @app.post("/auth/sign-in")
+    def auth_sign_in(payload: SignInPayload):
+        expected_user = (os.environ.get("AUTH_USERNAME") or "demo-account").strip()
+        expected_pass = os.environ.get("AUTH_PASSWORD") or "invoice-checker"
+        supplied_user = (payload.username or payload.email or "").strip()
+        supplied_pass = payload.password or ""
+
+        user_ok = hmac.compare_digest(supplied_user.lower(), expected_user.lower())
+        pass_ok = hmac.compare_digest(supplied_pass, expected_pass)
+        if not (user_ok and pass_ok):
+            return JSONResponse(
+                {"ok": False, "error": "invalid", "detail": "Invalid username or password"},
+                status_code=401,
+            )
+        return {
+            "ok": True,
+            "user": {
+                "email": expected_user,
+                "provider": "password",
+            },
+        }
 
     @app.get("/health")
     def health():

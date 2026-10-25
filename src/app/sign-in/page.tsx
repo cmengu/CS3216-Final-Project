@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { signIn, signInWithGoogle, signInWithMicrosoft, useUser, type SignInResult } from "@/auth";
+import { signIn, useUser, type SignInResult } from "@/auth";
 import { Icon } from "@/components/icons";
 
 export default function SignIn() {
   const user = useUser();
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [wrong, setWrong] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,21 +38,22 @@ export default function SignIn() {
           onSubmit={async (e) => {
             e.preventDefault();
             setBusy(true);
-            finish(await signIn(email, password));
+            finish(await signIn(username, password));
             setBusy(false);
           }}
         >
           <div className="ic-field">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="username">Username</label>
             <input
-              id="email"
-              className="ic-input"
-              type="email"
-              autoComplete="email"
+              id="username"
+              className={`ic-input${wrong ? " ic-input--error" : ""}`}
+              type="text"
+              autoComplete="username"
+              placeholder="demo-account"
               required
-              value={email}
+              value={username}
               onChange={(e) => {
-                setEmail(e.target.value);
+                setUsername(e.target.value);
                 setWrong(false);
               }}
             />
@@ -62,7 +63,6 @@ export default function SignIn() {
               <label htmlFor="password" className="lbl">
                 Password
               </label>
-              {/* TODO(backend): link to the password reset flow once auth exists */}
               <button type="button" className="ic-link" style={{ minHeight: 0, fontSize: 13 }} onClick={() => setForgot(true)}>
                 Forgot password?
               </button>
@@ -83,7 +83,7 @@ export default function SignIn() {
             />
             {wrong ? (
               <p id="pw-error" className="ic-hint ic-hint--error" role="alert">
-                Email or password is incorrect.
+                Username or password is incorrect.
               </p>
             ) : null}
             {forgot ? (
@@ -96,13 +96,6 @@ export default function SignIn() {
             Sign in
           </button>
         </form>
-        <div className="ic-or">or</div>
-        <button className="ic-btn ic-btn--secondary ic-btn--block" type="button" onClick={async () => finish(await signInWithGoogle())}>
-          Continue with Google
-        </button>
-        <button className="ic-btn ic-btn--secondary ic-btn--block" type="button" onClick={async () => finish(await signInWithMicrosoft())}>
-          Continue with Microsoft
-        </button>
       </main>
     </div>
   );
