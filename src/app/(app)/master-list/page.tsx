@@ -5,10 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
-import { Dialog, Notice, Search } from "@/components/ui";
+import { Notice, Search } from "@/components/ui";
 import { money, whenLabel } from "@/checker/present";
 import type { MasterItem } from "@/masterList";
 import { MasterImport } from "@/components/MasterImport";
+import { ColumnMappings } from "@/components/ColumnMappings";
 
 const day = (iso: string | null) => {
   if (!iso) return "—";
@@ -17,7 +18,7 @@ const day = (iso: string | null) => {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 };
 const valid = (i: MasterItem) => (i.validFrom || i.validTo ? `${day(i.validFrom)} – ${day(i.validTo)}` : "");
-const pct = (d: number | null) => (d ? `${Number((d * 100).toFixed(2))}%` : "");
+const pct = (d: string | number | null) => (d ? `${Number((Number(d) * 100).toFixed(2))}%` : "");
 
 function FirstRun() {
   const router = useRouter();
@@ -27,13 +28,6 @@ function FirstRun() {
   </div>;
 }
 
-function ReplaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return <Dialog open={open} title="Replace master list" onClose={onClose}>
-    <p className="muted">Choose a file and review the column mapping. The current list is replaced only after all rows pass validation.</p>
-    {open ? <MasterImport replace onSaved={onClose} /> : null}
-  </Dialog>;
-}
-
 function MasterListView() {
   const { masterList } = useApp();
   const params = useSearchParams();
@@ -41,6 +35,8 @@ function MasterListView() {
   const [q, setQ] = useState("");
   const [supplier, setSupplier] = useState("");
   const [replace, setReplace] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [mappingDismissed, setMappingDismissed] = useState(false);
   const replaceOpen = replace || params.get("replace") === "1";
   const uploaded = params.get("uploaded") === "1";
 
@@ -54,6 +50,18 @@ function MasterListView() {
   }, [items, q, supplier]);
 
   if (!masterList) return <FirstRun />;
+
+  const closeReplacement = () => {
+    setReplace(false);
+    if (params.get("replace")) router.replace("/master-list");
+  };
+  if (replaceOpen) return <div className="ic-page ic-page--narrow" style={{ paddingTop: 40 }}>
+    <div className="ic-headrow"><h1 className="ic-h1">Replace master list</h1>
+      <button className="ic-btn ic-btn--secondary" type="button" onClick={closeReplacement}>Cancel replacement</button>
+    </div>
+    <p className="muted">Your current list stays in use until you confirm the replacement.</p>
+    <MasterImport replace onSaved={closeReplacement} />
+  </div>;
 
   return (
     <div className="ic-page" style={{ height: "calc(100vh - var(--header-height))" }}>
@@ -76,9 +84,10 @@ function MasterListView() {
             {masterList.file} · {masterList.items.length} items · {masterList.supplierCount} suppliers · Uploaded {whenLabel(masterList.uploadedAt)}
           </p>
         </div>
-        <button type="button" className="ic-btn ic-btn--secondary" onClick={() => setReplace(true)}>
-          Replace file
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {masterList.columnMapping ? <button type="button" className="ic-btn ic-btn--secondary" onClick={() => setMappingOpen(true)}>Column mappings</button> : null}
+          <button type="button" className="ic-btn ic-btn--secondary" onClick={() => setReplace(true)}>Replace file</button>
+        </div>
       </div>
       <div className="ic-controls">
         <div style={{ flex: "1 1 280px", maxWidth: 420 }}>
@@ -146,13 +155,11 @@ function MasterListView() {
           </table>
         </div>
       </section>
-      <ReplaceDialog
-        open={replaceOpen}
-        onClose={() => {
-          setReplace(false);
-          if (params.get("replace")) router.replace("/master-list");
-        }}
-      />
+      {masterList.columnMapping ? <ColumnMappings
+        open={mappingOpen || (uploaded && !mappingDismissed)}
+        selection={masterList.columnMapping}
+        onClose={() => { setMappingOpen(false); setMappingDismissed(true); }}
+      /> : null}
     </div>
   );
 }

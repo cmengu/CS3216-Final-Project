@@ -35,6 +35,8 @@ explicit invoice currency. exchange_rate is the printed multiplier from line cur
 to invoice currency; null if no conversion is printed. Never calculate converted prices.
 flat_charge is true ONLY for a clearly flat service/freight fee, not a product missing a price.
 Leave unprinted quantity, unit and unit_price null even for flat charges.
+A monetary amount on a flat fee is not a unit price: mark the fee flat_charge=true even
+when a foreign-currency fee amount and its conversion rate are printed without a quantity.
 Keep the charge description separate from quantity, rate, currency and conversion details:
 e.g. 'Freight - 2.40 M3 @ USD 85.00/M3' has description 'Freight'.
 Do not invent product codes for freight, courier, or service descriptions without codes.
@@ -57,11 +59,66 @@ def normalized_description(value: str | None) -> str:
     return normalized(text)
 
 
+def normalized_unit(value: str | None) -> str:
+    unit = normalized(value).replace("³", "3").replace("²", "2")
+    return "piece" if unit in {"pc", "pcs", "piece", "pieces"} else unit
+
+
 def money(value: Decimal) -> Decimal:
     return value.quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
 
+def flat_charge(invoice, line, candidates):
+    """Recognize a code-free per-JOB fee only when its printed amount reconciles."""
+    if line.flat_charge:
+        return True
+    if line.quantity is not None or line.unit is not None:
+        return False
+    if line.unit_price is None:
+        return True
+    if line.part_number or len(candidates) != 1 or normalized_unit(candidates[0]["uom"]) != "job":
+        return False
+    if any(
+        value is not None and D(value) != 0 for value in (line.discount_rate, line.discount_amount)
+    ):
+        return False
+    if not line.currency or not invoice.currency or line.line_total is None:
+        return False
+    price = D(line.unit_price)
+    if line.currency != invoice.currency:
+        if line.exchange_rate is None or D(line.exchange_rate) <= 0:
+            return False
+        price *= D(line.exchange_rate)
+    elif line.exchange_rate is not None and D(line.exchange_rate) != 1:
+        return False
+    return money(price) == D(line.line_total)
+
+
 class PriceSheet:
+    @classmethod
+    def from_master(cls, document):
+        """Adapt confirmed import fields; missing agreement terms remain missing."""
+        sheet = cls.__new__(cls)
+        sheet.version = document["version"]
+        sheet.rows = [
+            {
+                "key": str(index),
+                "supplier": item.get("supplier"),
+                "po": item.get("po"),
+                "item": item.get("item"),
+                "description": item.get("description") or item["name"],
+                "uom": item.get("unit"),
+                "currency": item["currency"].upper() if item.get("currency") else None,
+                "unit_price": item["price"],
+                "discount": str(item["discount"]) if item.get("discount") is not None else None,
+                "tax": str(item["tax"]) if item.get("tax") is not None else None,
+                "valid_from": item.get("validFrom"),
+                "valid_to": item.get("validTo"),
+            }
+            for index, item in enumerate(document["items"])
+        ]
+        return sheet
+
     def __init__(self, path: Path):
         data = path.read_bytes()
         self.version = hashlib.sha256(data).hexdigest()
@@ -137,67 +194,78 @@ class PriceSheet:
                 overcharge=None,
             )
 
-        if not all(
-            (invoice.supplier_name, invoice.purchase_order, invoice.currency, invoice.invoice_date)
-        ):
-            return review("Missing supplier, PO, currency or invoice date")
+        if not invoice.currency:
+            return review("Invoice currency is missing")
         try:
-            issued = date.fromisoformat(invoice.invoice_date)
+            issued = date.fromisoformat(invoice.invoice_date) if invoice.invoice_date else None
         except ValueError:
             return review("Invalid invoice date")
         scoped = [
             r
             for r in self.rows
-            if normalized(r["supplier"]) == normalized(invoice.supplier_name)
-            and normalized(r["po"]) == normalized(invoice.purchase_order)
-            and r["currency"] == invoice.currency
-            and date.fromisoformat(r["valid_from"]) <= issued <= date.fromisoformat(r["valid_to"])
+            if (not r["supplier"] or normalized(r["supplier"]) == normalized(invoice.supplier_name))
+            and (not r["po"] or normalized(r["po"]) == normalized(invoice.purchase_order))
+            and (not r["currency"] or r["currency"] == invoice.currency)
+            and (
+                not r["valid_from"]
+                or issued is not None
+                and date.fromisoformat(r["valid_from"]) <= issued
+            )
+            and (
+                not r["valid_to"]
+                or issued is not None
+                and issued <= date.fromisoformat(r["valid_to"])
+            )
         ]
         if not scoped:
             return review("No valid price agreement for supplier, PO, currency and date")
-        part_code = (
-            None
-            if not line.part_number or re.fullmatch(r"\d+(?:-\d+)?", line.part_number.strip())
-            else line.part_number
-        )
+        part_code = line.part_number.strip() if line.part_number else None
         candidates = [
             r
             for r in scoped
             if (
-                re.sub(r"\s+", "", r["item"]).casefold()
-                == re.sub(r"\s+", "", part_code).casefold()
-                if part_code
+                re.sub(r"\s+", "", r["item"]).casefold() == re.sub(r"\s+", "", part_code).casefold()
+                if part_code and r["item"]
                 else normalized_description(r["description"])
                 == normalized_description(line.description)
             )
         ]
         if not candidates:
-            return review(
-                "Not exist in Master Sheet", "unknown_part"
-            )
-        is_flat = line.flat_charge or (
-            line.unit is None and line.quantity is None and line.unit_price is None
-        )
+            return review("Not exist in Master Sheet", "unknown_part")
+        is_flat = flat_charge(invoice, line, candidates)
         unit = line.unit or ("JOB" if is_flat else None)
-        candidates = [r for r in candidates if normalized(r["uom"]) == normalized(unit)]
+        if any(not r["currency"] or not r["uom"] for r in candidates):
+            return review("Master list needs currency and unit before this line can be compared")
+        candidates = [r for r in candidates if normalized_unit(r["uom"]) == normalized_unit(unit)]
         if len(candidates) != 1:
             return review("Missing/mismatched unit or ambiguous price agreement")
         master = candidates[0]
+        agreed_discount = D(master["discount"]) if master["discount"] is not None else None
         if (
             line.discount_rate is None
             and line.discount_amount is None
-            and D(master["discount"]) != 0
+            and agreed_discount not in (None, D(0))
         ):
             return review("Missing discount information")
-        discount = D(master["discount"]) if line.discount_rate is None else D(line.discount_rate)
-        if not D(0) <= discount <= D(1) or discount != D(master["discount"]):
+        discount = (
+            (agreed_discount or D(0)) if line.discount_rate is None else D(line.discount_rate)
+        )
+        if (
+            not D(0) <= discount <= D(1)
+            or agreed_discount is not None
+            and discount != agreed_discount
+        ):
             return review("Invoice discount differs from the agreement")
-        if invoice.tax_rate is not None and D(invoice.tax_rate) != D(master["tax"]):
+        if (
+            master["tax"] is not None
+            and invoice.tax_rate is not None
+            and D(invoice.tax_rate) != D(master["tax"])
+        ):
             return review("Invoice tax rate differs from the agreement")
         quantity = D(line.quantity) if line.quantity is not None else None
         price = D(line.unit_price) if line.unit_price is not None else None
         billed_flat_amount = False
-        if is_flat and master["uom"] == "JOB":
+        if is_flat and normalized_unit(master["uom"]) == "job":
             quantity = quantity if quantity is not None else D(1)
             # A flat billed amount is a per-JOB price only for one undiscounted job.
             if price is None and quantity == 1 and discount == 0 and line.line_total is not None:
@@ -223,9 +291,12 @@ class PriceSheet:
         if line.line_total is None:
             return review("Missing printed line amount")
         expected_discount = money(quantity * price * discount)
-        if line.discount_amount is not None and abs(
-            D(line.discount_amount) - expected_discount
-        ) > D("0.01"):
+        known_discount_rate = agreed_discount is not None or line.discount_rate is not None
+        if (
+            known_discount_rate
+            and line.discount_amount is not None
+            and abs(D(line.discount_amount) - expected_discount) > D("0.01")
+        ):
             return review("Printed discount amount differs from the agreement")
         actual_discount = (
             D(line.discount_amount) if line.discount_amount is not None else expected_discount
@@ -238,7 +309,9 @@ class PriceSheet:
         agreed = D(master["unit_price"])
         difference = price - agreed
         mismatch = abs(difference) > TOLERANCE
-        expected_amount = money(quantity * agreed) - money(quantity * agreed * discount)
+        expected_amount = money(quantity * agreed) - (
+            money(quantity * agreed * discount) if known_discount_rate else actual_discount
+        )
         overcharge = max(D(0), actual_amount - expected_amount) if mismatch else D(0)
         return LineResult(
             line_index=index,
@@ -259,8 +332,8 @@ class PriceSheet:
         matched = [
             r
             for r in self.rows
-            if (po_norm and normalized(r["po"]) == po_norm)
-            or (sup_norm and normalized(r["supplier"]) == sup_norm)
+            if (not r["po"] or po_norm and normalized(r["po"]) == po_norm)
+            and (not r["supplier"] or sup_norm and normalized(r["supplier"]) == sup_norm)
         ]
         seen = set()
         hints = []
@@ -294,23 +367,25 @@ class PriceSheet:
             critique.append("No line items were extracted from the invoice.")
 
         hints = self.catalog_grounding_hints(invoice)
-        known_items = {re.sub(r"\s+", "", h["item"]).casefold() for h in hints}
+        known_items = {re.sub(r"\s+", "", h["item"]).casefold() for h in hints if h["item"]}
         known_descs = {normalized_description(h["description"]) for h in hints}
         need_catalog_hint = False
 
         for idx, line in enumerate(invoice.lines):
             label = line.part_number or line.description or f"row {idx + 1}"
-            is_flat = line.flat_charge or (
-                line.unit is None and line.quantity is None and line.unit_price is None
-            )
+            line_hints = [
+                h
+                for h in hints
+                if normalized_description(h["description"])
+                == normalized_description(line.description)
+            ]
+            is_flat = flat_charge(invoice, line, line_hints)
             if not line.description:
                 critique.append(f"Line {idx + 1} is missing its item description.")
             if line.line_total is None:
                 critique.append(f"Line {idx + 1} ({label}) is missing line_total.")
             if not is_flat and (line.quantity is None or line.unit_price is None):
-                critique.append(
-                    f"Line {idx + 1} ({label}) is missing quantity or unit_price."
-                )
+                critique.append(f"Line {idx + 1} ({label}) is missing quantity or unit_price.")
             elif (
                 line.quantity is not None
                 and line.unit_price is not None
@@ -350,11 +425,14 @@ class PriceSheet:
                 part_code = (
                     None
                     if not line.part_number
-                    or re.fullmatch(r"\d+(?:-\d+)?", line.part_number.strip())
                     else re.sub(r"\s+", "", line.part_number).casefold()
                 )
                 desc_norm = normalized_description(line.description)
-                if part_code and part_code not in known_items:
+                code_free_description = any(
+                    not h["item"] and normalized_description(h["description"]) == desc_norm
+                    for h in hints
+                )
+                if part_code and part_code not in known_items and not code_free_description:
                     need_catalog_hint = True
                     critique.append(
                         f"Line {idx + 1}: extracted part_number '{line.part_number}' does not match "
@@ -400,7 +478,7 @@ class PriceSheet:
 class LiveStages:
     mode = "live"
 
-    def __init__(self, price_sheet: Path, *, model: str, client=None):
+    def __init__(self, price_sheet: Path | PriceSheet, *, model: str, client=None):
         if not model.strip():
             raise ValueError("Set OPENAI_MODEL for live extraction")
         self.sheet = price_sheet if isinstance(price_sheet, PriceSheet) else PriceSheet(price_sheet)
@@ -443,4 +521,3 @@ class LiveStages:
         if not isinstance(invoice, CheckingInvoice):
             raise ValueError("Live checking requires printed PO, unit and currency context")
         return self.sheet.check(invoice)
-

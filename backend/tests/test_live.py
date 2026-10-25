@@ -259,10 +259,10 @@ def test_checker_against_mock_answer_fields():
     assert statuses.count("price_mismatch") == 7
 
 
-def test_inch_quote_description_normalization_and_dummy_fallback(sheet, tmp_path):
+def test_inch_quote_description_normalization_and_no_dummy_fallback(sheet, tmp_path):
     sheet.write_text(
         MASTER
-        + 'C,Supplier,PO-1,UNION-3.5,3.1/2 inch (88.9mm) SMS UNION SS304,PC,SGD,10,0.05,0.09,2026-10-01,2026-10-31\n'
+        + "C,Supplier,PO-1,UNION-3.5,3.1/2 inch (88.9mm) SMS UNION SS304,PC,SGD,10,0.05,0.09,2026-10-01,2026-10-31\n"
     )
     code_free = invoice(
         part_number=None,
@@ -289,6 +289,38 @@ def test_inch_quote_description_normalization_and_dummy_fallback(sheet, tmp_path
     assert fallback_check.price_sheet_version == stages.price_sheet_version
     assert fallback_check.lines[0].status == "needs_person"
     assert fallback_check.overcharge_total is None
+
+
+def test_foreign_flat_amount_is_not_mistaken_for_missing_product_quantity(sheet):
+    record = invoice(
+        part_number=None,
+        description="Freight",
+        quantity=None,
+        unit=None,
+        unit_price="100.00",
+        line_total="20.00",
+        currency="CNY",
+        exchange_rate="0.20",
+        discount_rate=None,
+        flat_charge=False,
+    )
+    record.subtotal, record.tax, record.invoice_total = "20.00", "1.80", "21.80"
+    price_sheet = PriceSheet(sheet)
+    result = price_sheet.check(record)
+    assert result.lines[0].status == "match"
+    assert result.lines[0].invoice_price == "20.0000"
+    assert result.overcharge_total == "0.00"
+    assert not any(
+        "missing quantity" in finding for finding in price_sheet.verify_extraction(record)
+    )
+    record.lines[0].exchange_rate = None
+    assert price_sheet.check(record).lines[0].status == "needs_person"
+    record.lines[0].exchange_rate = "0.30"
+    assert price_sheet.check(record).lines[0].status == "needs_person"
+    record.lines[0].description = "Part"
+    record.lines[0].unit_price, record.lines[0].line_total = "10", "10"
+    record.lines[0].currency, record.lines[0].exchange_rate = "SGD", None
+    assert price_sheet.check(record).lines[0].status == "needs_person"
 
 
 def test_agentic_reflection_repairs_ocr_misread_and_never_leaks_prices(sheet):
@@ -347,4 +379,3 @@ def test_agentic_reflection_repairs_ocr_misread_and_never_leaks_prices(sheet):
     check = stages.check(extracted)
     assert check.lines[0].status == "price_mismatch"
     assert check.overcharge_total == "3.80"
-

@@ -1,4 +1,4 @@
-"""Persistent master-list import and immutable versions used by live invoice checking."""
+"""Persistent, immutable master-list versions used by invoice checks."""
 
 import hashlib
 import json
@@ -34,7 +34,22 @@ def read_upload(file):
 
 @router.get("")
 def current(request: Request):
-    return request.app.state.store.latest_master_list()
+    return current_master(request.app.state.store)
+
+
+def current_master(store, version=None):
+    """The latest master list, or the one saved with this version; None when there is none."""
+    if version is None:
+        return store.latest_master_list()
+    return store.master_list_version(version)
+
+
+@router.get("/versions/{version}")
+def historical(version: str, request: Request):
+    document = current_master(request.app.state.store, version)
+    if document is None:
+        raise HTTPException(404, "The master list used for this check is unavailable.")
+    return document
 
 
 @router.get("/events")
@@ -73,13 +88,18 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
         document = {
             "id": str(uuid4()),
             "version": hashlib.sha256(
-                data + json.dumps(selection, sort_keys=True).encode()
+                data + json.dumps({"selection": selection, "items": items}, sort_keys=True).encode()
             ).hexdigest(),
             "file": filename,
             "uploadedAt": timestamp,
             "items": items,
             "supplierCount": len({i["supplier"] for i in items if i["supplier"]}),
         }
+        if all(key in selection for key in ("sheet", "header", "mapping")):
+            document["columnMapping"] = {
+                **selection,
+                "columns": tables[selection["sheet"]][selection["header"]],
+            }
         replace = request.method == "PUT"
         event = {
             "kind": "replaced" if replace else "uploaded",

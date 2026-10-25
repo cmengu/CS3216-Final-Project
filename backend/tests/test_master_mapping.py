@@ -105,3 +105,52 @@ def test_no_api_key_keeps_manual_path(monkeypatch):
     result = preview({"Catalogue": SHEETS[0]["rows"]})["sheets"][0]
     assert result["mappingSource"] == "manual"
     assert "not configured" in result["note"]
+
+
+@pytest.mark.parametrize(
+    "names,expected", [(["Description"], 0), (["Description", "Item name"], None)]
+)
+def test_preview_fills_only_unambiguous_missing_name(monkeypatch, names, expected):
+    columns = names + ["Agreed unit price"]
+    layout = Layouts(
+        sheets=[
+            Layout(
+                sheet=0,
+                header=0,
+                columns=[Column(field="price", column=len(names))],
+                note="",
+            )
+        ]
+    )
+    monkeypatch.setattr("api.master_import.suggest_layouts", lambda sheets: layout)
+    result = preview({"Prices": [columns, ["Sample"] * len(names) + ["12.50"]]})["sheets"][0]
+    assert result["mapping"].get("name") == expected
+    assert result["mapping"]["price"] == len(names)
+
+
+def test_real_workbook_header_fallback_when_ai_unavailable(monkeypatch):
+    from pathlib import Path
+
+    from api.master_import import read_tables
+
+    def unavailable(*args):
+        raise ValueError("AI mapping is unavailable")
+
+    monkeypatch.setattr("api.master_import.suggest_layouts", unavailable)
+    path = Path(__file__).resolve().parents[2] / "data/mock_invoice_dataset/master_pricing.xlsx"
+    sheets = preview(read_tables(path.name, path.read_bytes()))["sheets"]
+    prices = next(s for s in sheets if s["name"] == "Master prices")
+    assert prices["header"] == 5
+    assert prices["mapping"]["name"] == 5
+    assert prices["mapping"]["price"] == 8
+    assert prices["mappingSource"] == "manual"  # Fallback requires user review.
+    usage = next(s for s in sheets if s["name"] == "Usage")
+    assert usage["mapping"] == {}
+
+
+def test_header_fallback_does_not_guess_between_tables():
+    from api.master_import import fallback_layout
+
+    assert (
+        fallback_layout([["Name", "Price"], ["Bolt", "2"], ["Name", "Price"], ["Nut", "3"]]) is None
+    )

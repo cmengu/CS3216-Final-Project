@@ -162,6 +162,16 @@ class Store:
             ).fetchone()
         return _loaded(row["document"]) if row else None
 
+    def master_list_version(self, version: str) -> dict | None:
+        """The newest saved master list with this version, or None."""
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT document FROM master_lists WHERE json_extract(document, '$.version') = ? "
+                "ORDER BY rowid DESC LIMIT 1",
+                (version,),
+            ).fetchone()
+        return _loaded(row["document"]) if row else None
+
     def master_list_events(self) -> list[dict]:
         with self.connect() as db:
             rows = db.execute("SELECT event FROM master_lists ORDER BY rowid DESC").fetchall()
@@ -323,6 +333,16 @@ class PostgresStore:
         with self.connect() as db:
             row = db.execute(
                 f"SELECT document FROM {SCHEMA}.master_lists ORDER BY seq DESC LIMIT 1"
+            ).fetchone()
+        return row["document"] if row else None
+
+    def master_list_version(self, version: str) -> dict | None:
+        """The newest saved master list with this version, or None."""
+        with self.connect() as db:
+            row = db.execute(
+                f"SELECT document FROM {SCHEMA}.master_lists WHERE document->>'version' = %s "
+                "ORDER BY seq DESC LIMIT 1",
+                (version,),
             ).fetchone()
         return row["document"] if row else None
 

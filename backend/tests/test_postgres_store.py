@@ -56,7 +56,7 @@ def test_master_list_versions_keep_their_order_and_state_rules(store):
     ids += [first, second]
 
     def doc(i):
-        return {"id": i, "uploadedAt": "2026-10-23T00:00:00+00:00", "items": []}
+        return {"id": i, "version": i, "uploadedAt": "2026-10-23T00:00:00+00:00", "items": []}
 
     with pytest.raises(NoMasterList):
         store.add_master_list(doc(first), {"kind": "replaced"}, b"x", replace=True)
@@ -68,3 +68,6 @@ def test_master_list_versions_keep_their_order_and_state_rules(store):
     assert store.latest_master_list()["id"] == second
     kinds = [e["kind"] for e in store.master_list_events()[:2]]
     assert kinds == ["replaced", "uploaded"]
+    assert store.master_list_version(first)["id"] == first
+    assert store.master_list_version(second)["id"] == second
+    assert store.master_list_version(str(uuid4())) is None
