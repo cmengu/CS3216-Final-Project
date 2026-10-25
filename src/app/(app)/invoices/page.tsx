@@ -163,25 +163,23 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
   const exportCsv = () => download(csvName(), exportReadyToPay(all));
 
   return (
-    <div className={`ic-work${pdfOpen ? "" : " ic-work--no-pdf"}`}>
+    <div className="ic-work ic-work--no-pdf">
       {picker.node}
-      {!pdfOpen ? (
-        <Queue
-          decideList={piles.decide}
-          doneList={piles.done}
-          seg={seg}
-          onSeg={setSeg}
-          q={q}
-          onQ={setQ}
-          selected={selectedId}
-          uploads={uploads.items}
-          notices={uploads.notices}
-          onUpload={picker.open}
-          onOutlook={onOutlook}
-          loadError={invoices === null ? invoiceError : null}
-          onRetryLoad={reloadInvoices}
-        />
-      ) : null}
+      <Queue
+        decideList={piles.decide}
+        doneList={piles.done}
+        seg={seg}
+        onSeg={setSeg}
+        q={q}
+        onQ={setQ}
+        selected={selectedId}
+        uploads={uploads.items}
+        notices={uploads.notices}
+        onUpload={picker.open}
+        onOutlook={onOutlook}
+        loadError={invoices === null ? invoiceError : null}
+        onRetryLoad={reloadInvoices}
+      />
       {inv ? (
         <CheckPane
           key={inv.id}
@@ -209,18 +207,18 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
         <AllDecided count={piles.done.length} onUpload={picker.open} onExport={exportCsv} />
       )}
       {inv && pdfOpen ? (
-        <div className="ic-docpane">
-          <PdfView
-            key={inv.id}
-            url={invoiceFileUrl(inv.id)}
-            fileName={inv.fileName}
-            marks={marks}
-            rotations={inv.pageRotations}
-            blocks={blocks}
-            focus={focus}
-            onClose={closePdf}
-          />
-        </div>
+        <PdfView
+          key={`pdf-${inv.id}`}
+          inv={inv}
+          url={invoiceFileUrl(inv.id)}
+          fileName={inv.fileName}
+          marks={marks}
+          rotations={inv.pageRotations}
+          blocks={blocks}
+          focus={focus}
+          onSelectLine={(n) => setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }))}
+          onClose={closePdf}
+        />
       ) : null}
     </div>
   );

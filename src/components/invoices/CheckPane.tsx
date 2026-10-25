@@ -27,7 +27,7 @@ import { Pill } from "@/components/ui";
 import type { MasterList } from "@/masterList";
 import { CompareDrawer, PayAnywayDialog, RaiseDialog } from "./Dialogs";
 
-async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: string | null = null): Promise<string | null> {
+export async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: string | null = null): Promise<string | null> {
   try {
     rememberInvoice(await decideInvoice(inv.id, outcome, reason));
     return null;
@@ -36,7 +36,7 @@ async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: str
   }
 }
 
-function DecisionBar({ inv, onPayAnyway, onRaise, onClosePdf }: { inv: SupplierInvoice; onPayAnyway: () => void; onRaise: () => void; onClosePdf?: () => void }) {
+export function DecisionBar({ inv, onPayAnyway, onRaise, onClosePdf }: { inv: SupplierInvoice; onPayAnyway: () => void; onRaise: () => void; onClosePdf?: () => void }) {
   const d = decision(inv);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,7 +56,7 @@ function DecisionBar({ inv, onPayAnyway, onRaise, onClosePdf }: { inv: SupplierI
             <span className="muted">{whenLabel(inv.decidedAt)}</span>
           </div>
           {onClosePdf ? (
-            <button type="button" className="ic-btn ic-btn--secondary" onClick={onClosePdf}>
+            <button type="button" className="ic-btn ic-btn--secondary" style={{ color: "var(--ink)" }} onClick={onClosePdf}>
               Back to invoices
             </button>
           ) : null}
@@ -98,7 +98,7 @@ function DecisionBar({ inv, onPayAnyway, onRaise, onClosePdf }: { inv: SupplierI
             {d.sub ? <span className="muted">{d.sub}</span> : null}
           </div>
           {onClosePdf ? (
-            <button type="button" className="ic-btn ic-btn--secondary" onClick={onClosePdf}>
+            <button type="button" className="ic-btn ic-btn--secondary" style={{ color: "var(--ink)" }} onClick={onClosePdf}>
               Back to invoices
             </button>
           ) : null}
@@ -362,7 +362,7 @@ export function CheckPane({
         )}
       </div>
 
-      <DecisionBar inv={inv} onPayAnyway={() => setDialog("pay")} onRaise={() => setDialog("raise")} onClosePdf={pdfOpen ? onClosePdf : undefined} />
+      <DecisionBar inv={inv} onPayAnyway={() => setDialog("pay")} onRaise={() => setDialog("raise")} />
 
       <PayAnywayDialog inv={inv} open={dialog === "pay"} onClose={() => setDialog(null)} onSubmit={(reason) => decide(inv, "ready_to_pay_anyway", reason)} />
       <RaiseDialog inv={inv} open={dialog === "raise"} onClose={() => setDialog(null)} onRecord={() => decide(inv, "raise_with_supplier")} />
