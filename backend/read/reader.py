@@ -65,12 +65,14 @@ def detect_ocr_accelerator() -> dict[str, object]:
         use_ort_cuda = ort_cuda
         active_device = "cuda" if (torch_cuda or ort_cuda) else "cpu"
 
+    rapidocr_backend = "torch" if (use_torch_cuda and not use_ort_cuda) else "onnxruntime"
     info: dict[str, object] = {
         "requested_device": requested,
         "device": active_device,
         "gpu_name": gpu_name,
         "torch_cuda": use_torch_cuda,
         "ort_cuda": use_ort_cuda,
+        "rapidocr_backend": rapidocr_backend,
         "num_threads": num_threads,
     }
     _log.info("OCR accelerator configured: %s", info)
@@ -142,6 +144,9 @@ def _converter(ocr: bool):
         docling_device = AcceleratorDevice.CPU
 
     ort_use_cuda = bool(accel_info["ort_cuda"])
+    torch_use_cuda = bool(accel_info["torch_cuda"])
+    use_torch_backend = torch_use_cuda and not ort_use_cuda
+    use_cuda = torch_use_cuda or ort_use_cuda
     num_threads = int(accel_info["num_threads"])  # type: ignore[arg-type]
 
     options = PdfPipelineOptions()
@@ -150,12 +155,22 @@ def _converter(ocr: bool):
     options.generate_parsed_pages = True  # Retain from_ocr flags until metadata is recorded.
     options.ocr_options = RapidOcrOptions(
         mode=OcrMode.FULL_PAGE,
-        rapidocr_params={
-            "EngineConfig.onnxruntime.use_cuda": ort_use_cuda,
-            "Det.use_cuda": ort_use_cuda,
-            "Cls.use_cuda": ort_use_cuda,
-            "Rec.use_cuda": ort_use_cuda,
-        },
+        backend="torch" if use_torch_backend else "onnxruntime",
+        rapidocr_params=(
+            {
+                "EngineConfig.torch.use_cuda": True,
+                "Det.use_cuda": True,
+                "Cls.use_cuda": True,
+                "Rec.use_cuda": True,
+            }
+            if use_torch_backend
+            else {
+                "EngineConfig.onnxruntime.use_cuda": use_cuda,
+                "Det.use_cuda": use_cuda,
+                "Cls.use_cuda": use_cuda,
+                "Rec.use_cuda": use_cuda,
+            }
+        ),
     )
     options.accelerator_options = AcceleratorOptions(
         device=docling_device,
@@ -170,10 +185,23 @@ def _converter(ocr: bool):
 
 @lru_cache(maxsize=1)
 def _rapid_ocr():
-    from rapidocr import RapidOCR
+    from rapidocr import EngineType, RapidOCR
 
     accel_info = detect_ocr_accelerator()
     ort_use_cuda = bool(accel_info["ort_cuda"])
+    torch_use_cuda = bool(accel_info["torch_cuda"])
+    if torch_use_cuda and not ort_use_cuda:
+        return RapidOCR(
+            params={
+                "Det.engine_type": EngineType.TORCH,
+                "Cls.engine_type": EngineType.TORCH,
+                "Rec.engine_type": EngineType.TORCH,
+                "EngineConfig.torch.use_cuda": True,
+                "Det.use_cuda": True,
+                "Cls.use_cuda": True,
+                "Rec.use_cuda": True,
+            }
+        )
     return RapidOCR(
         params={
             "EngineConfig.onnxruntime.use_cuda": ort_use_cuda,
