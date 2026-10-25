@@ -1,7 +1,8 @@
 """The Postgres store against a real database. Runs only when DATABASE_URL is set.
 
-Rows are written under random ids and removed afterwards, so the test can share the schema
-with a running service.
+Each test gets its own throwaway schema, dropped afterwards, so the test never reads or writes
+the live `invoice_checker` schema even when DATABASE_URL points at the running service's
+database.
 """
 
 import os
@@ -13,24 +14,30 @@ from api.contracts import CheckResult
 from api.storage import MasterListExists, NoMasterList, PostgresStore
 
 URL = os.environ.get("DATABASE_URL", "").strip()
-pytestmark = pytest.mark.skipif(not URL, reason="DATABASE_URL is not set")
+needs_db = pytest.mark.skipif(not URL, reason="DATABASE_URL is not set")
 
 
 @pytest.fixture
 def store(tmp_path):
-    store = PostgresStore(URL, tmp_path)
-    ids: list[str] = []
-    yield store, ids
-    with store.connect() as db:
-        db.execute("DELETE FROM invoice_checker.invoices WHERE id = ANY(%s)", (ids,))
-        db.execute("DELETE FROM invoice_checker.master_lists WHERE id = ANY(%s)", (ids,))
-    store.pool.close()
+    schema = f"invoice_checker_test_{uuid4().hex[:8]}"
+    store = PostgresStore(URL, tmp_path, schema=schema)
+    try:
+        yield store
+    finally:
+        with store.connect() as db:
+            db.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        store.pool.close()
 
 
-def test_an_invoice_round_trips_with_its_pdf_and_outcome(store, tmp_path):
-    store, ids = store
+@pytest.mark.parametrize("schema", ["", "Invoice", "1st", "a-b", "a;DROP SCHEMA x", "a\n"])
+def test_only_a_plain_schema_name_is_accepted(schema, tmp_path):
+    with pytest.raises(ValueError, match="Invalid Postgres schema name"):
+        PostgresStore("postgresql://unused", tmp_path, schema=schema)
+
+
+@needs_db
+def test_an_invoice_round_trips_with_its_pdf_and_outcome(store):
     invoice_id = str(uuid4())
-    ids.append(invoice_id)
     store.path(invoice_id).write_bytes(b"%PDF-1.4 fake")
     store.insert(invoice_id, "a.pdf", "hash", "live", "v1")
 
@@ -50,10 +57,9 @@ def test_an_invoice_round_trips_with_its_pdf_and_outcome(store, tmp_path):
     assert store.path(invoice_id).read_bytes() == b"%PDF-1.4 fake"
 
 
+@needs_db
 def test_master_list_versions_keep_their_order_and_state_rules(store):
-    store, ids = store
     first, second = str(uuid4()), str(uuid4())
-    ids += [first, second]
 
     def doc(i):
         return {"id": i, "version": i, "uploadedAt": "2026-10-23T00:00:00+00:00", "items": []}

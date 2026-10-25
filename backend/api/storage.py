@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -204,21 +205,22 @@ def _check_state(exists: bool, replace: bool):
 
 
 SCHEMA = "invoice_checker"
-POSTGRES_TABLES = f"""
-CREATE SCHEMA IF NOT EXISTS {SCHEMA};
-CREATE TABLE IF NOT EXISTS {SCHEMA}.invoices (
+SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
+POSTGRES_TABLES = """
+CREATE SCHEMA IF NOT EXISTS {schema};
+CREATE TABLE IF NOT EXISTS {schema}.invoices (
     id TEXT PRIMARY KEY, filename TEXT NOT NULL, document_hash TEXT NOT NULL,
     status TEXT NOT NULL, mode TEXT NOT NULL, created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL, error TEXT, price_sheet_version TEXT NOT NULL,
     document JSONB, invoice JSONB, check_result JSONB,
     outcome TEXT, outcome_reason TEXT, decided_at TEXT
 );
-CREATE INDEX IF NOT EXISTS invoice_time ON {SCHEMA}.invoices (created_at DESC, id DESC);
-CREATE TABLE IF NOT EXISTS {SCHEMA}.invoice_files (
-    id TEXT PRIMARY KEY REFERENCES {SCHEMA}.invoices(id) ON DELETE CASCADE,
+CREATE INDEX IF NOT EXISTS invoice_time ON {schema}.invoices (created_at DESC, id DESC);
+CREATE TABLE IF NOT EXISTS {schema}.invoice_files (
+    id TEXT PRIMARY KEY REFERENCES {schema}.invoices(id) ON DELETE CASCADE,
     content BYTEA NOT NULL
 );
-CREATE TABLE IF NOT EXISTS {SCHEMA}.master_lists (
+CREATE TABLE IF NOT EXISTS {schema}.master_lists (
     seq BIGSERIAL PRIMARY KEY, id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL,
     document JSONB NOT NULL, event JSONB NOT NULL, source BYTEA NOT NULL
 );
@@ -232,10 +234,14 @@ class PostgresStore:
     route needs a path, so the local disk is only a cache.
     """
 
-    def __init__(self, url: str, directory: Path):
+    def __init__(self, url: str, directory: Path, *, schema: str = SCHEMA):
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
+        # The name is put into SQL text, so only a plain lowercase identifier is accepted.
+        if not SCHEMA_NAME.fullmatch(schema):
+            raise ValueError(f"Invalid Postgres schema name: {schema!r}")
+        self.schema = schema
         self.directory = directory.resolve()
         self.files = self.directory / "files"
         self.files.mkdir(parents=True, exist_ok=True)
@@ -248,7 +254,7 @@ class PostgresStore:
             open=True,
         )
         with self.connect() as db:
-            db.execute(POSTGRES_TABLES)
+            db.execute(POSTGRES_TABLES.format(schema=self.schema))
 
     @contextmanager
     def connect(self):
@@ -258,7 +264,7 @@ class PostgresStore:
     def recover(self):
         with self.connect() as db:
             db.execute(
-                f"""UPDATE {SCHEMA}.invoices SET status='failed', error=%s, updated_at=%s
+                f"""UPDATE {self.schema}.invoices SET status='failed', error=%s, updated_at=%s
                 WHERE status NOT IN ('completed', 'failed')""",
                 (INTERRUPTED, now()),
             )
@@ -268,7 +274,7 @@ class PostgresStore:
         if not local.exists():
             with self.connect() as db:
                 row = db.execute(
-                    f"SELECT content FROM {SCHEMA}.invoice_files WHERE id=%s", (invoice_id,)
+                    f"SELECT content FROM {self.schema}.invoice_files WHERE id=%s", (invoice_id,)
                 ).fetchone()
             if row is not None:
                 self.files.mkdir(parents=True, exist_ok=True)
@@ -281,13 +287,13 @@ class PostgresStore:
         content = self.path(invoice_id).read_bytes()
         with self.connect() as db:
             db.execute(
-                f"""INSERT INTO {SCHEMA}.invoices
+                f"""INSERT INTO {self.schema}.invoices
                 (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version)
                 VALUES (%s,%s,%s,'reading',%s,%s,%s,%s)""",
                 (invoice_id, filename, document_hash, mode, at, at, price_sheet_version),
             )
             db.execute(
-                f"INSERT INTO {SCHEMA}.invoice_files (id, content) VALUES (%s, %s)",
+                f"INSERT INTO {self.schema}.invoice_files (id, content) VALUES (%s, %s)",
                 (invoice_id, content),
             )
 
@@ -299,7 +305,7 @@ class PostgresStore:
 
         with self.connect() as db:
             db.execute(
-                f"""UPDATE {SCHEMA}.invoices SET status=%s, updated_at=%s, error=%s,
+                f"""UPDATE {self.schema}.invoices SET status=%s, updated_at=%s, error=%s,
                 document=COALESCE(%s::jsonb, document), invoice=COALESCE(%s::jsonb, invoice),
                 check_result=COALESCE(%s::jsonb, check_result) WHERE id=%s""",
                 (status, now(), error, blob(document), blob(invoice), blob(check), invoice_id),
@@ -308,7 +314,7 @@ class PostgresStore:
     def decide(self, invoice_id: str, outcome: str | None, reason: str | None):
         with self.connect() as db:
             db.execute(
-                f"""UPDATE {SCHEMA}.invoices SET outcome=%s, outcome_reason=%s, decided_at=%s
+                f"""UPDATE {self.schema}.invoices SET outcome=%s, outcome_reason=%s, decided_at=%s
                 WHERE id=%s""",
                 (outcome, reason, now() if outcome else None, invoice_id),
             )
@@ -316,14 +322,14 @@ class PostgresStore:
     def get(self, invoice_id: str) -> SavedInvoice | None:
         with self.connect() as db:
             row = db.execute(
-                f"SELECT * FROM {SCHEMA}.invoices WHERE id=%s", (invoice_id,)
+                f"SELECT * FROM {self.schema}.invoices WHERE id=%s", (invoice_id,)
             ).fetchone()
         return None if row is None else _saved(row, invoice_id)
 
     def list(self, limit: int, offset: int) -> list[InvoiceSummary]:
         with self.connect() as db:
             rows = db.execute(
-                f"""SELECT {SUMMARY} FROM {SCHEMA}.invoices
+                f"""SELECT {SUMMARY} FROM {self.schema}.invoices
                 ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s""",
                 (limit, offset),
             ).fetchall()
@@ -332,7 +338,7 @@ class PostgresStore:
     def latest_master_list(self) -> dict | None:
         with self.connect() as db:
             row = db.execute(
-                f"SELECT document FROM {SCHEMA}.master_lists ORDER BY seq DESC LIMIT 1"
+                f"SELECT document FROM {self.schema}.master_lists ORDER BY seq DESC LIMIT 1"
             ).fetchone()
         return row["document"] if row else None
 
@@ -340,7 +346,7 @@ class PostgresStore:
         """The newest saved master list with this version, or None."""
         with self.connect() as db:
             row = db.execute(
-                f"SELECT document FROM {SCHEMA}.master_lists WHERE document->>'version' = %s "
+                f"SELECT document FROM {self.schema}.master_lists WHERE document->>'version' = %s "
                 "ORDER BY seq DESC LIMIT 1",
                 (version,),
             ).fetchone()
@@ -349,7 +355,7 @@ class PostgresStore:
     def master_list_events(self) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT event FROM {SCHEMA}.master_lists ORDER BY seq DESC"
+                f"SELECT event FROM {self.schema}.master_lists ORDER BY seq DESC"
             ).fetchall()
         return [row["event"] for row in rows]
 
@@ -357,11 +363,11 @@ class PostgresStore:
         from psycopg.types.json import Jsonb
 
         with self.connect() as db, db.transaction():
-            db.execute(f"LOCK TABLE {SCHEMA}.master_lists IN SHARE ROW EXCLUSIVE MODE")
-            exists = db.execute(f"SELECT 1 FROM {SCHEMA}.master_lists LIMIT 1").fetchone()
+            db.execute(f"LOCK TABLE {self.schema}.master_lists IN SHARE ROW EXCLUSIVE MODE")
+            exists = db.execute(f"SELECT 1 FROM {self.schema}.master_lists LIMIT 1").fetchone()
             _check_state(exists is not None, replace)
             db.execute(
-                f"""INSERT INTO {SCHEMA}.master_lists (id, created_at, document, event, source)
+                f"""INSERT INTO {self.schema}.master_lists (id, created_at, document, event, source)
                 VALUES (%s,%s,%s,%s,%s)""",
                 (document["id"], document["uploadedAt"], Jsonb(document), Jsonb(event), source),
             )
