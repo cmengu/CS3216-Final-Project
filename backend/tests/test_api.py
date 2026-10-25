@@ -577,4 +577,69 @@ def test_session_isolation_for_master_list_and_outlook(tmp_path, monkeypatch):
         assert client.get("/outlook/status", headers=alice_headers).json()["connected"] is True
 
 
+def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.setenv("AUTH_USERNAME", "demo-account")
+    monkeypatch.setenv("AUTH_PASSWORD", "invoice-checker")
+
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        # 1. Protected endpoints reject unauthenticated requests and unsigned headers
+        assert client.get("/invoices").status_code == 401
+        assert client.get("/master-list").status_code == 401
+        assert client.get("/outlook/status").status_code == 401
+        assert (
+            client.get("/invoices", headers={"X-Invoice-Session": "forged-plain-uuid"}).status_code
+            == 401
+        )
+        assert (
+            client.get(
+                "/invoices", headers={"Cookie": "ic_session=ic1.forged.signature"}
+            ).status_code
+            == 401
+        )
+        assert client.get("/auth/me").status_code == 401
+
+        # 2. Invalid credentials rejected
+        bad_login = client.post(
+            "/auth/sign-in", json={"username": "demo-account", "password": "wrong"}
+        )
+        assert bad_login.status_code == 401
+
+        # 3. Valid credentials set an HttpOnly signed cookie and omit provider="password"
+        good_login = client.post(
+            "/auth/sign-in", json={"username": "demo-account", "password": "invoice-checker"}
+        )
+        assert good_login.status_code == 200
+        body = good_login.json()
+        assert body["ok"] is True
+        assert body["user"] == {"email": "demo-account"}
+        assert "provider" not in body["user"]
+        set_cookie = good_login.headers.get("set-cookie", "")
+        assert "ic_session=ic1." in set_cookie
+        assert "HttpOnly" in set_cookie
+
+        # 4. Subsequent requests use the HttpOnly cookie automatically
+        me_res = client.get("/auth/me")
+        assert me_res.status_code == 200
+        assert me_res.json()["authenticated"] is True
+        assert me_res.json()["user"] == {"email": "demo-account"}
+
+        upload_res = client.post(
+            "/invoices",
+            files={"file": ("invoice-01.pdf", (DATA / "invoice-01.pdf").read_bytes(), "application/pdf")},
+        )
+        assert upload_res.status_code == 201
+        assert len(client.get("/invoices").json()) == 1
+
+        # 5. Sign-out clears the cookie and revokes access
+        out_res = client.post("/auth/sign-out")
+        assert out_res.status_code == 200
+        assert client.get("/auth/me").status_code == 401
+        assert client.get("/invoices").status_code == 401
+
+
+
 

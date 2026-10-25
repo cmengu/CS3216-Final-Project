@@ -133,7 +133,7 @@ export function PdfView({
       try {
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-        const loading = pdfjs.getDocument({ url });
+        const loading = pdfjs.getDocument({ url, withCredentials: true });
         task = loading;
         const loaded = await loading.promise;
         if (!live) return;

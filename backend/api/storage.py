@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import Request
 
+from .auth import extract_request_claims, is_auth_required
 from .contracts import InvoiceSummary, SavedInvoice
 
 DEFAULT_SESSION_ID = "default"
@@ -32,6 +33,11 @@ def normalize_session_id(session_id: str | None) -> str:
 
 
 def request_session_id(request: Request, query_session_id: str | None = None) -> str:
+    claims = extract_request_claims(request, query_session_id)
+    if claims is not None:
+        return normalize_session_id(claims["session_id"])
+    if is_auth_required():
+        return DEFAULT_SESSION_ID
     candidates = (
         request.headers.get("x-invoice-session"),
         query_session_id,

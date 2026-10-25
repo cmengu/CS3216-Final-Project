@@ -82,6 +82,7 @@ export async function fetchOutlookStatus(): Promise<OutlookResult<OutlookStatus>
     const headers = sessionHeaders();
     const res = await fetch(`${SERVICE_URL}/outlook/status`, {
       cache: "no-store",
+      credentials: "include",
       ...(headers ? { headers } : {}),
     });
     if (!res.ok) {
@@ -103,6 +104,7 @@ export async function disconnectOutlook(): Promise<OutlookResult<OutlookStatus>>
     const res = await fetch(`${SERVICE_URL}/outlook/disconnect`, {
       method: "POST",
       cache: "no-store",
+      credentials: "include",
       ...(headers ? { headers } : {}),
     });
     if (!res.ok) {
@@ -144,6 +146,7 @@ export async function fetchOutlookMessages(options?: {
     const headers = sessionHeaders();
     const res = await fetch(`${SERVICE_URL}/outlook/messages?${params.toString()}`, {
       cache: "no-store",
+      credentials: "include",
       ...(headers ? { headers } : {}),
     });
     if (!res.ok) {
@@ -177,6 +180,7 @@ export async function scanOutlookMessages(options?: {
   try {
     const res = await fetch(`${SERVICE_URL}/outlook/scan`, {
       method: "POST",
+      credentials: "include",
       headers: sessionHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
       cache: "no-store",
@@ -203,6 +207,7 @@ export async function fetchOutlookMessageDetail(
       `${SERVICE_URL}/outlook/messages/${encodeURIComponent(messageId)}`,
       {
         cache: "no-store",
+        credentials: "include",
         ...(headers ? { headers } : {}),
       }
     );
@@ -230,6 +235,7 @@ export async function downloadOutlookAttachmentFile(
     )}/attachments/${encodeURIComponent(attachment.id)}/file`;
     const res = await fetch(url, {
       cache: "no-store",
+      credentials: "include",
       ...(headers ? { headers } : {}),
     });
     if (!res.ok) {

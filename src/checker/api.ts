@@ -10,71 +10,35 @@ import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-s
 
 export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8001";
 export const SESSION_ID_KEY = "ic.session.id.v1";
-const USER_STORAGE_KEY = "ic.session.v2";
 
-function generateSessionId(): string {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID();
+let activeSessionId: string | null = null;
+
+function clearLegacyBrowserStorage(): void {
+  if (typeof window === "undefined") return;
+  for (const key of ["ic.session.v1", "ic.session.v2", SESSION_ID_KEY]) {
+    try {
+      window.localStorage?.removeItem(key);
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
+    try {
+      window.sessionStorage?.removeItem(key);
+    } catch {
+      /* ignore */
+    }
   }
-  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /**
- * Return the active browser session ID when a user session is active, or null when no session exists.
+ * Return the active in-memory session token/ID when set, or null when using HttpOnly cookie auth.
  */
 export function getActiveSessionId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const fromSession = window.sessionStorage?.getItem(SESSION_ID_KEY)?.trim();
-    if (fromSession) return fromSession;
-    const fromLocal = window.localStorage?.getItem(SESSION_ID_KEY)?.trim();
-    if (fromLocal) {
-      try {
-        window.sessionStorage?.setItem(SESSION_ID_KEY, fromLocal);
-      } catch {
-        /* ignore */
-      }
-      return fromLocal;
-    }
-    const signedInUser = window.localStorage?.getItem(USER_STORAGE_KEY);
-    if (signedInUser) {
-      const created = generateSessionId();
-      try {
-        window.sessionStorage?.setItem(SESSION_ID_KEY, created);
-      } catch {
-        /* ignore */
-      }
-      try {
-        window.localStorage?.setItem(SESSION_ID_KEY, created);
-      } catch {
-        /* ignore */
-      }
-      return created;
-    }
-  } catch {
-    /* storage blocked */
-  }
-  return null;
+  return activeSessionId;
 }
 
 export function setActiveSessionId(sessionId: string | null): void {
-  if (typeof window !== "undefined") {
-    try {
-      if (sessionId) {
-        window.sessionStorage?.setItem(SESSION_ID_KEY, sessionId);
-        window.localStorage?.setItem(SESSION_ID_KEY, sessionId);
-      } else {
-        window.sessionStorage?.removeItem(SESSION_ID_KEY);
-        window.localStorage?.removeItem(SESSION_ID_KEY);
-      }
-    } catch {
-      /* storage blocked */
-    }
-  }
+  clearLegacyBrowserStorage();
+  activeSessionId = sessionId ? sessionId.trim() || null : null;
   cache = null;
   reloadInvoices();
 }
@@ -111,6 +75,7 @@ async function read(path: string): Promise<Response> {
     const headers = sessionHeaders();
     return await fetch(`${SERVICE_URL}${path}`, {
       cache: "no-store",
+      credentials: "include",
       ...(headers ? { headers } : {}),
       signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });
@@ -187,6 +152,7 @@ export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
     response = await fetch(`${SERVICE_URL}/invoices`, {
       method: "POST",
       body,
+      credentials: "include",
       ...(headers ? { headers } : {}),
     });
   } catch {
@@ -243,6 +209,7 @@ export async function decideInvoice(id: string, outcome: Outcome | null, reason:
   try {
     response = await fetch(`${SERVICE_URL}/invoices/${id}/outcome`, {
       method: "PUT",
+      credentials: "include",
       headers: sessionHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ outcome, reason }),
       signal: AbortSignal.timeout(READ_TIMEOUT_MS),

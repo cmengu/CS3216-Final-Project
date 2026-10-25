@@ -7,7 +7,6 @@ INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real step
 import hmac
 import logging
 import os
-import re
 import sys
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -23,6 +22,14 @@ from pydantic import BaseModel, ValidationError
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
+from .auth import (
+    COOKIE_NAME,
+    TOKEN_TTL_SECONDS,
+    create_session_token,
+    extract_request_claims,
+    has_invalid_auth_token,
+    is_auth_required,
+)
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
 from .master_list import initialize as initialize_master_list
@@ -30,13 +37,12 @@ from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
-from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id
+from .storage import Store, request_session_id
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger(__name__)
-_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 def _load_dotenv() -> None:
@@ -54,19 +60,7 @@ def _load_dotenv() -> None:
 
 
 def _request_session_id(request: Request, query_session_id: str | None = None) -> str:
-    candidates = (
-        request.headers.get("x-invoice-session"),
-        query_session_id,
-        request.query_params.get("session_id"),
-        request.cookies.get("ic_session"),
-    )
-    for raw in candidates:
-        if not raw:
-            continue
-        cleaned = raw.strip()
-        if _SESSION_TOKEN_RE.match(cleaned):
-            return normalize_session_id(cleaned)
-    return DEFAULT_SESSION_ID
+    return request_session_id(request, query_session_id)
 
 
 def _slot_wait_seconds() -> float:
@@ -115,12 +109,6 @@ def create_app(
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
     app.include_router(outlook_router)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
 
     @app.middleware("http")
     async def advertised_size(request, call_next):
@@ -131,10 +119,34 @@ def create_app(
                     return JSONResponse({"detail": "Upload exceeds 20 MiB"}, status_code=413)
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
+        path = request.url.path
+        protected = path.startswith(("/invoices", "/master-list", "/outlook", "/auth/outlook/login"))
+        if protected and request.method != "OPTIONS":
+            if has_invalid_auth_token(request):
+                return JSONResponse(
+                    {"detail": "Invalid or expired session"},
+                    status_code=401,
+                    headers={"Cache-Control": "no-store"},
+                )
+            if is_auth_required() and extract_request_claims(request) is None:
+                return JSONResponse(
+                    {"detail": "Authentication required"},
+                    status_code=401,
+                    headers={"Cache-Control": "no-store"},
+                )
         response = await call_next(request)
-        if request.url.path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
+        if path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_origin_regex=r"^https?://.*",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
 
     class SignInPayload(BaseModel):
         username: str | None = None
@@ -155,14 +167,50 @@ def create_app(
                 {"ok": False, "error": "invalid", "detail": "Invalid username or password"},
                 status_code=401,
             )
+        session_id = str(uuid4())
+        token = create_session_token(expected_user, session_id)
+        response = JSONResponse(
+            {
+                "ok": True,
+                "session_id": token,
+                "user": {
+                    "email": expected_user,
+                },
+            }
+        )
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=token,
+            httponly=True,
+            samesite="lax",
+            path="/",
+            max_age=TOKEN_TTL_SECONDS,
+        )
+        return response
+
+    @app.get("/auth/me")
+    def auth_me(request: Request):
+        claims = extract_request_claims(request)
+        if claims is None:
+            return JSONResponse(
+                {"ok": False, "authenticated": False, "detail": "Authentication required"},
+                status_code=401,
+            )
+        token = create_session_token(claims["username"], claims["session_id"])
         return {
             "ok": True,
-            "session_id": str(uuid4()),
+            "authenticated": True,
+            "session_id": token,
             "user": {
-                "email": expected_user,
-                "provider": "password",
+                "email": claims["username"],
             },
         }
+
+    @app.post("/auth/sign-out")
+    def auth_sign_out():
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(key=COOKIE_NAME, path="/", samesite="lax")
+        return response
 
     @app.get("/health")
     def health(request: Request):
