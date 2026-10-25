@@ -15,4 +15,3 @@ __all__ = [
     "extract_with_usage",
     "refine_with_usage",
 ]
-
