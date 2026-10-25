@@ -7,7 +7,7 @@ the agreed fields, and checks each line against a price sheet. The [backend](bac
 holds the reader, the service, the price check and the scorer, with invented invoices in
 `data/dummy/`. It runs on replayed answers (`INVOICE_MODE=fixture`) or on the real steps
 (`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
-defaults to `http://127.0.0.1:8000`. The earlier PO demo remains below.
+defaults to `http://127.0.0.1:8001`. The earlier PO demo remains below.
 
 **Continuing the work? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md):** where it stands and what is next.
 Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).
@@ -83,7 +83,7 @@ The demo keeps its data in your own browser. Nothing you do is sent to a server 
 ## Facts at a glance
 
 - **Stack:** Next.js 16.3.8 (App Router), React 19.2.8, TypeScript 5. Tests: Vitest 5. Browser walks: `playwright-core` driving your installed Google Chrome.
-- **PO frontend runs where:** in the browser only, with no API calls. The independent invoice backend runs locally on port 8000.
+- **PO frontend runs where:** in the browser only, with no API calls. The independent invoice backend runs locally on port 8001.
 - **Data:** invented sample data in `src/sample/`, copied into one `localStorage` key on first load (`KEY` in `src/state/demo-store.ts`).
 - **Roles:** five, defined in `src/sample/people.ts`. Every permission is one function in `src/platform/access.ts`.
 - **Deploy:** Vercel. See [Deploy](#deploy).

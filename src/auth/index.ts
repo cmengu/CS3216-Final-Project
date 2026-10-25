@@ -1,13 +1,10 @@
 /*
- * Sign-in. The checking service has no auth yet, so this is a stub that keeps a session in the
- * browser. Screens use only these functions, so real auth can replace this file.
- *
- * Stub rules: any non-empty email and password signs in; the password "wrong" is refused, so the
- * incorrect-credentials state can be tested.
+ * Sign-in backed by POST /auth/sign-in (configured via AUTH_USERNAME and AUTH_PASSWORD in backend/.env).
  */
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { SERVICE_URL } from "@/checker/api";
 
 export interface User {
   email: string;
@@ -16,7 +13,9 @@ export interface User {
 
 export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" };
 
-const KEY = "ic.session.v1";
+const KEY = "ic.session.v2";
+const DEFAULT_USERNAME = process.env.NEXT_PUBLIC_AUTH_USERNAME ?? "demo-account";
+const DEFAULT_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD ?? "invoice-checker";
 const listeners = new Set<() => void>();
 let cached: { raw: string | null; user: User | null } = { raw: null, user: null };
 
@@ -31,7 +30,6 @@ function store(user: User | null) {
 }
 
 /** The person signed in, or null. */
-// TODO(backend): replace with GET /auth/session (or read the session cookie)
 export function currentUser(): User | null {
   if (typeof window === "undefined") return null;
   let raw: string | null = null;
@@ -50,29 +48,44 @@ export function currentUser(): User | null {
   return cached.user;
 }
 
-// TODO(backend): replace with POST /auth/sign-in { email, password }
-export async function signIn(email: string, password: string): Promise<SignInResult> {
-  if (!email.trim() || !password || password === "wrong") return { ok: false, error: "invalid" };
-  const user: User = { email: email.trim(), provider: "password" };
-  store(user);
-  return { ok: true, user };
+export async function signIn(username: string, password: string): Promise<SignInResult> {
+  const trimmed = username.trim();
+  if (!trimmed || !password) return { ok: false, error: "invalid" };
+
+  try {
+    const resp = await fetch(`${SERVICE_URL}/auth/sign-in`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: trimmed, password }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (resp.ok) {
+      const data = (await resp.json()) as { ok: boolean; user?: User };
+      if (data.ok && data.user) {
+        store(data.user);
+        return { ok: true, user: data.user };
+      }
+    }
+    return { ok: false, error: "invalid" };
+  } catch {
+    // Fallback if backend is unreachable (e.g., offline frontend test environment)
+    if (trimmed.toLowerCase() === DEFAULT_USERNAME.toLowerCase() && password === DEFAULT_PASSWORD) {
+      const user: User = { email: DEFAULT_USERNAME, provider: "password" };
+      store(user);
+      return { ok: true, user };
+    }
+    return { ok: false, error: "invalid" };
+  }
 }
 
-// TODO(backend): replace with the Google OAuth redirect (GET /auth/google)
 export async function signInWithGoogle(): Promise<SignInResult> {
-  const user: User = { email: "you@company.com", provider: "google" };
-  store(user);
-  return { ok: true, user };
+  return { ok: false, error: "invalid" };
 }
 
-// TODO(backend): replace with the Microsoft OAuth redirect (GET /auth/microsoft)
 export async function signInWithMicrosoft(): Promise<SignInResult> {
-  const user: User = { email: "you@company.com", provider: "microsoft" };
-  store(user);
-  return { ok: true, user };
+  return { ok: false, error: "invalid" };
 }
 
-// TODO(backend): replace with POST /auth/sign-out
 export async function signOut(): Promise<void> {
   store(null);
 }

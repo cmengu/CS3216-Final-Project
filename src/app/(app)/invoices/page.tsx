@@ -12,6 +12,7 @@ import { enqueue, useUploads } from "@/checker/uploads";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
 import { AllDecided, CheckPane } from "@/components/invoices/CheckPane";
+import { OutlookDialog } from "@/components/invoices/OutlookDialog";
 import { Queue } from "@/components/invoices/Queue";
 import { PdfView } from "@/components/PdfView";
 import { download, Dropzone, Notice, useFilePicker } from "@/components/ui";
@@ -48,7 +49,7 @@ function MasterPanel() {
   );
 }
 
-function GuidedSetup() {
+function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
   const { invoices } = useApp();
   const uploads = useUploads();
   const known = () => invoices ?? [];
@@ -56,7 +57,13 @@ function GuidedSetup() {
   const busy = uploads.items.length > 0;
   return (
     <div className="ic-page" style={{ paddingTop: 40 }}>
-      <h1 className="ic-h1">Upload your first invoice</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <h1 className="ic-h1" style={{ margin: 0 }}>Upload your first invoice</h1>
+        <button type="button" className="ic-btn ic-btn--secondary" onClick={onOutlook}>
+          <Icon name="mail" size="ui" />
+          Import from Outlook
+        </button>
+      </div>
       <div className="ic-split">
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {uploads.notices.map((n) => (
@@ -97,7 +104,7 @@ function GuidedSetup() {
   );
 }
 
-function Workspace() {
+function Workspace({ onOutlook }: { onOutlook: () => void }) {
   const { invoices, invoiceError, masterList } = useApp();
   const uploads = useUploads();
   const params = useSearchParams();
@@ -150,6 +157,7 @@ function Workspace() {
         uploads={uploads.items}
         notices={uploads.notices}
         onUpload={picker.open}
+        onOutlook={onOutlook}
         loadError={invoices === null ? invoiceError : null}
         onRetryLoad={reloadInvoices}
       />
@@ -184,8 +192,37 @@ function Workspace() {
 }
 
 function InvoicesView() {
-  const { phase } = useApp();
+  const { phase, invoices } = useApp();
   const router = useRouter();
+  const params = useSearchParams();
+  const [manualOpen, setManualOpen] = useState(false);
+  const [dismissedQueryNotice, setDismissedQueryNotice] = useState(false);
+
+  const outlookParam = params.get("outlook");
+  const outlookError = params.get("outlook_error");
+  const openFromQuery = Boolean(outlookParam || outlookError);
+  const outlookOpen = manualOpen || openFromQuery;
+
+  const initialNotice = useMemo(() => {
+    if (dismissedQueryNotice) return null;
+    if (outlookError) return { tone: "warn" as const, text: outlookError };
+    if (outlookParam === "connected") {
+      return { text: "Microsoft Outlook connected. Select an email to view its content or import PDF attachments." };
+    }
+    return null;
+  }, [dismissedQueryNotice, outlookError, outlookParam]);
+
+  const clearOutlookQuery = () => {
+    const id = params.get("id");
+    router.replace(id ? `/invoices?id=${encodeURIComponent(id)}` : "/invoices", { scroll: false });
+  };
+
+  const closeOutlook = () => {
+    setManualOpen(false);
+    setDismissedQueryNotice(false);
+    if (openFromQuery) clearOutlookQuery();
+  };
+
   useEffect(() => {
     if (phase === "first") router.replace("/master-list");
   }, [phase, router]);
@@ -196,8 +233,23 @@ function InvoicesView() {
         <p className="muted">Loading…</p>
       </div>
     );
-  if (phase === "setup") return <GuidedSetup />;
-  return <Workspace />;
+  const known = () => invoices ?? [];
+  return (
+    <>
+      {phase === "setup" ? (
+        <GuidedSetup onOutlook={() => setManualOpen(true)} />
+      ) : (
+        <Workspace onOutlook={() => setManualOpen(true)} />
+      )}
+      <OutlookDialog
+        open={outlookOpen}
+        onClose={closeOutlook}
+        onImportFiles={(files) => enqueue(files, known)}
+        initialNotice={initialNotice}
+        onClearInitialNotice={() => setDismissedQueryNotice(true)}
+      />
+    </>
+  );
 }
 
 export default function Page() {

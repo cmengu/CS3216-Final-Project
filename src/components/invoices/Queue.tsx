@@ -49,6 +49,7 @@ export function Queue({
   uploads,
   notices,
   onUpload,
+  onOutlook,
   loadError,
   onRetryLoad,
 }: {
@@ -62,6 +63,7 @@ export function Queue({
   uploads: QueueItem[];
   notices: UploadNotice[];
   onUpload: () => void;
+  onOutlook?: () => void;
   loadError: string | null;
   onRetryLoad: () => void;
 }) {
@@ -73,10 +75,23 @@ export function Queue({
     <aside className="ic-queue" aria-label="Invoices">
       <div className="ic-queue-h">
         <h1>Invoices</h1>
-        <button className="ic-btn ic-btn--primary ic-btn--sm" type="button" onClick={onUpload}>
-          <Icon name="upload" size="ui" />
-          Upload
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {onOutlook ? (
+            <button
+              className="ic-btn ic-btn--secondary ic-btn--sm"
+              type="button"
+              onClick={onOutlook}
+              title="Connect or import from Microsoft Outlook"
+            >
+              <Icon name="mail" size="ui" />
+              Outlook
+            </button>
+          ) : null}
+          <button className="ic-btn ic-btn--primary ic-btn--sm" type="button" onClick={onUpload}>
+            <Icon name="upload" size="ui" />
+            Upload
+          </button>
+        </div>
       </div>
       <Search label="Search invoices" value={q} onChange={onQ} full />
       <div className="ic-seg ic-seg--fill" role="group" aria-label="Show">

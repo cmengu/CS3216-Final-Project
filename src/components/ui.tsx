@@ -98,7 +98,7 @@ export function Dialog({
   title: string;
   onClose: () => void;
   footer?: ReactNode;
-  size?: "sm";
+  size?: "sm" | "lg";
   drawer?: boolean;
   sub?: ReactNode;
   children: ReactNode;
@@ -109,7 +109,7 @@ export function Dialog({
   return (
     <>
       <div className="ic-scrim" onClick={onClose} />
-      <div ref={box} role="dialog" aria-modal="true" aria-labelledby={id} className={drawer ? "ic-drawer" : `ic-dialog${size === "sm" ? " ic-dialog--sm" : ""}`}>
+      <div ref={box} role="dialog" aria-modal="true" aria-labelledby={id} className={drawer ? "ic-drawer" : `ic-dialog${size === "sm" ? " ic-dialog--sm" : size === "lg" ? " ic-dialog--lg" : ""}`}>
         <div className="ic-dialog-h">
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             <h2 id={id}>{title}</h2>
