@@ -1,0 +1,46 @@
+name: Checks
+
+# Runs on every pull request and on every push to main. Branch protection on main
+# requires both jobs to pass before a pull request can merge.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      # The reading models (docling extra) are left out: their tests are skipped by default.
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check api check eval extract read dummy schema.py tests
+      - run: uv run pytest -q
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test

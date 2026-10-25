@@ -239,9 +239,13 @@ def _recover_sideways_page(
                 points.append(((1 - u) * W, v * H))
             else:
                 points.append((u * W, (1 - v) * H))
-        loc.bbox = {"l": min(p[0] for p in points), "r": max(p[0] for p in points),
-                    "b": min(p[1] for p in points), "t": max(p[1] for p in points),
-                    "coord_origin": "BOTTOMLEFT"}
+        loc.bbox = {
+            "l": min(p[0] for p in points),
+            "r": max(p[0] for p in points),
+            "b": min(p[1] for p in points),
+            "t": max(p[1] for p in points),
+            "coord_origin": "BOTTOMLEFT",
+        }
         loc.page_width, loc.page_height = W, H
     return "\n".join(lines_md), blocks, len(items), _encode_page_image(best_image), best_rotation
 
@@ -282,7 +286,9 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             if use_ocr and _is_sideways_page(page_blocks):
                 recovered = _recover_sideways_page(path, index)
                 if recovered is not None:
-                    upright_md, upright_blocks, upright_cells, image_data_url, display_rotation = recovered
+                    upright_md, upright_blocks, upright_cells, image_data_url, display_rotation = (
+                        recovered
+                    )
                     markdown = upright_md
                     page_blocks = upright_blocks
                     ocr_cells = max(ocr_cells, upright_cells)
@@ -329,4 +335,3 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
         pages=pages,
         docling_document=docling_payload,
     )
-

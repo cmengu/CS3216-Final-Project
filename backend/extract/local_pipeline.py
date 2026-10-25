@@ -75,7 +75,9 @@ class UsageAccumulator:
     input_tokens: int = 0
     output_tokens: int = 0
 
-    def add(self, prompt_tokens: int, completion_tokens: int, reported_model: str | None = None) -> None:
+    def add(
+        self, prompt_tokens: int, completion_tokens: int, reported_model: str | None = None
+    ) -> None:
         if reported_model:
             self.model = reported_model
         self.input_tokens += max(0, int(prompt_tokens))
@@ -197,9 +199,7 @@ def get_ollama_base_url() -> str:
 def get_challenger_model(primary_model: str) -> str:
     """Return the cross-model Challenger LLM used whenever a gatekeeper or catalog check flags an issue."""
     configured = (
-        os.environ.get("OLLAMA_CHALLENGER_MODEL")
-        or os.environ.get("OLLAMA_SECONDARY_MODEL")
-        or ""
+        os.environ.get("OLLAMA_CHALLENGER_MODEL") or os.environ.get("OLLAMA_SECONDARY_MODEL") or ""
     ).strip()
     if configured and configured.lower() != primary_model.strip().lower():
         return configured
@@ -664,13 +664,20 @@ def _select_best_header(
     bill_to = _extract_bill_to_names(markdown)
     w_sup = (winner.supplier_name or "").strip()
     r_sup = (runner_up.supplier_name or "").strip()
-    if (not w_sup or w_sup.casefold() in FORBIDDEN_SUPPLIER_NAMES or w_sup.casefold() in bill_to) and (
-        r_sup and r_sup.casefold() not in FORBIDDEN_SUPPLIER_NAMES and r_sup.casefold() not in bill_to
+    if (
+        not w_sup or w_sup.casefold() in FORBIDDEN_SUPPLIER_NAMES or w_sup.casefold() in bill_to
+    ) and (
+        r_sup
+        and r_sup.casefold() not in FORBIDDEN_SUPPLIER_NAMES
+        and r_sup.casefold() not in bill_to
     ):
         winner.supplier_name = runner_up.supplier_name
 
     for str_field in ("invoice_number", "invoice_date", "currency"):
-        if getattr(winner, str_field, None) is None and getattr(runner_up, str_field, None) is not None:
+        if (
+            getattr(winner, str_field, None) is None
+            and getattr(runner_up, str_field, None) is not None
+        ):
             setattr(winner, str_field, getattr(runner_up, str_field))
 
     for num_field in ("subtotal", "tax", "invoice_total"):
@@ -784,7 +791,9 @@ def _group_rows_into_chunks(data_rows: list[str], chunk_size: int = CHUNK_SIZE) 
     for row in filtered_rows:
         if not logical_groups:
             logical_groups.append([row])
-        elif not _row_has_printed_amount(row) or not _row_has_printed_amount(logical_groups[-1][-1]):
+        elif not _row_has_printed_amount(row) or not _row_has_printed_amount(
+            logical_groups[-1][-1]
+        ):
             logical_groups[-1].append(row)
         else:
             logical_groups.append([row])
@@ -825,9 +834,15 @@ def _score_chunk_candidate(
                 extracted_amounts.append(D(line.line_total))
             except InvalidOperation:
                 pass
-        if line.quantity is not None and line.unit_price is not None and line.line_total is not None:
+        if (
+            line.quantity is not None
+            and line.unit_price is not None
+            and line.line_total is not None
+        ):
             try:
-                if abs((D(line.quantity) * D(line.unit_price)).quantize(D("0.01")) - D(line.line_total)) <= D("0.01"):
+                if abs(
+                    (D(line.quantity) * D(line.unit_price)).quantize(D("0.01")) - D(line.line_total)
+                ) <= D("0.01"):
                     math_consistent += 1
             except InvalidOperation:
                 pass
@@ -875,7 +890,9 @@ def _score_single_line_candidate(
             pass
     if line.quantity is not None and line.unit_price is not None and line.line_total is not None:
         try:
-            if abs((D(line.quantity) * D(line.unit_price)).quantize(D("0.01")) - D(line.line_total)) <= D("0.01"):
+            if abs(
+                (D(line.quantity) * D(line.unit_price)).quantize(D("0.01")) - D(line.line_total)
+            ) <= D("0.01"):
                 score += 4
         except InvalidOperation:
             pass
@@ -936,17 +953,12 @@ def _extract_chunk_with_gatekeeper(
 
     # Gatekeeper 2: Check row count and chunk sum of printed amounts
     printed_amounts = [a for r in chunk_rows if (a := _row_printed_amount(r)) is not None]
-    extracted_amounts = [
-        D(line.line_total) for line in lines if line.line_total is not None
-    ]
+    extracted_amounts = [D(line.line_total) for line in lines if line.line_total is not None]
     row_count_mismatch = len(lines) != expected_rows
     missing_fields = any(line.description is None or line.line_total is None for line in lines)
-    amount_sum_mismatch = (
-        len(printed_amounts) == expected_rows
-        and (
-            len(extracted_amounts) != expected_rows
-            or abs(sum(printed_amounts, D(0)) - sum(extracted_amounts, D(0))) > D("0.01")
-        )
+    amount_sum_mismatch = len(printed_amounts) == expected_rows and (
+        len(extracted_amounts) != expected_rows
+        or abs(sum(printed_amounts, D(0)) - sum(extracted_amounts, D(0))) > D("0.01")
     )
 
     if row_count_mismatch or missing_fields or amount_sum_mismatch:
@@ -1006,7 +1018,11 @@ def _verify_and_repair_lines_step(
         if line.part_number is None and line.description:
             desc_clean = line.description.strip()
             m_sku = re.match(r"^([A-Z]{2,}[A-Z0-9]*(?:-[A-Z0-9]+)+)\s+(.+)$", desc_clean)
-            if m_sku and (has_other_part_numbers or raw_row.lstrip().startswith("| |") or raw_row.lstrip().startswith("||")):
+            if m_sku and (
+                has_other_part_numbers
+                or raw_row.lstrip().startswith("| |")
+                or raw_row.lstrip().startswith("||")
+            ):
                 candidate_sku, candidate_desc = m_sku.group(1), m_sku.group(2)
                 # Verify with a focused 1-line micro-call to the Cross-Model Challenger
                 split_res = _call_ollama_structured(
@@ -1140,7 +1156,9 @@ def extract_local_with_usage(
     else:
         # Fallback when invoice lines are not formatted as a markdown table
         chunk_schema = CheckingLineChunk if is_checking else StandardLineChunk
-        sys_prompt = CHUNK_LINES_SYSTEM_PROMPT + (CHECKING_LINES_EXTRA_PROMPT if is_checking else "")
+        sys_prompt = CHUNK_LINES_SYSTEM_PROMPT + (
+            CHECKING_LINES_EXTRA_PROMPT if is_checking else ""
+        )
         if extra_instructions:
             sys_prompt += "\n" + extra_instructions
         fallback_chunk = _call_ollama_structured(
@@ -1168,7 +1186,9 @@ def extract_local_with_usage(
     # Assemble final record
     if is_checking and isinstance(header_draft, CheckingHeaderDraft):
         checking_lines = [
-            line if isinstance(line, CheckingLine) else CheckingLine.model_validate(line.model_dump())
+            line
+            if isinstance(line, CheckingLine)
+            else CheckingLine.model_validate(line.model_dump())
             for line in verified_lines
         ]
         record: InvoiceRecord = CheckingInvoice(
@@ -1221,9 +1241,7 @@ def refine_local_with_usage(
     refined = draft.model_copy(deep=True)
 
     # Extract catalog grounding block if present in critique
-    catalog_hint_block = "\n".join(
-        c for c in critique if "Known catalog items" in c
-    )
+    catalog_hint_block = "\n".join(c for c in critique if "Known catalog items" in c)
 
     # Find which specific 1-based line numbers were flagged in critique
     flagged_line_indices: set[int] = set()
@@ -1252,8 +1270,10 @@ def refine_local_with_usage(
         refined.invoice_number = header_draft.invoice_number or refined.invoice_number
         refined.invoice_date = header_draft.invoice_date or refined.invoice_date
         refined.currency = header_draft.currency or refined.currency
-        if is_checking and isinstance(refined, CheckingInvoice) and isinstance(
-            header_draft, CheckingHeaderDraft
+        if (
+            is_checking
+            and isinstance(refined, CheckingInvoice)
+            and isinstance(header_draft, CheckingHeaderDraft)
         ):
             refined.purchase_order = header_draft.purchase_order or refined.purchase_order
             refined.tax_rate = header_draft.tax_rate or refined.tax_rate
@@ -1285,8 +1305,7 @@ def refine_local_with_usage(
             f"Invoice currency: {refined.currency}\n"
             f"Raw markdown row for Line {idx + 1}: {raw_row}\n"
             f"Current extracted Line {idx + 1}: {current_line.model_dump_json()}\n"
-            f"Critique for Line {idx + 1}:\n"
-            + "\n".join(f"- {c}" for c in line_critiques)
+            f"Critique for Line {idx + 1}:\n" + "\n".join(f"- {c}" for c in line_critiques)
         )
         if catalog_hint_block:
             user_prompt += f"\n\n{catalog_hint_block}"
@@ -1301,9 +1320,15 @@ def refine_local_with_usage(
         )
         if len(repaired_chunk.lines) == 1:
             new_line = repaired_chunk.lines[0]
-            if new_line.part_number and re.match(r"^\d{1,3}-\d{1,2}$", new_line.part_number.strip()):
+            if new_line.part_number and re.match(
+                r"^\d{1,3}-\d{1,2}$", new_line.part_number.strip()
+            ):
                 new_line.part_number = None
-            refined.lines[idx] = _select_best_line(current_line, new_line, raw_row) if not catalog_hint_block else new_line
+            refined.lines[idx] = (
+                _select_best_line(current_line, new_line, raw_row)
+                if not catalog_hint_block
+                else new_line
+            )
 
     if is_checking and isinstance(refined, CheckingInvoice):
         refined.warnings = []
