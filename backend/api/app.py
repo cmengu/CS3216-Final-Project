@@ -4,6 +4,7 @@ No auth/connectors in release 1. Bind to loopback, one worker. The mode is alway
 INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real steps.
 """
 
+import hmac
 import logging
 import os
 import sys
@@ -16,7 +17,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
@@ -24,8 +25,10 @@ from read.reader import MAX_BYTES, validate_pdf
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
 from .master_list import router as master_list_router
+from .outlook import initialize as initialize_outlook
+from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
-from .storage import open_store
+from .storage import Store, open_store
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -57,17 +60,35 @@ def create_app(
     async def lifespan(app):
         app.state.store = open_store(store_dir)
         app.state.store.recover()
+        # Outlook keeps its sign-in tokens in SQLite on the service's own disk, even when invoices
+        # and master lists are in Postgres: its queries are written for SQLite.
+        app.state.outlook_store = (
+            app.state.store if isinstance(app.state.store, Store) else Store(store_dir)
+        )
+        initialize_outlook(app.state.outlook_store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
         app.state.slot = BoundedSemaphore(1)
         yield
 
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://100.89.215.68:3000",
+    ]
+    for env_key in ("FRONTEND_URL", "CORS_ORIGINS", "INVOICE_ALLOWED_ORIGINS"):
+        for item in os.environ.get(env_key, "").split(","):
+            origin = item.strip().rstrip("/")
+            if origin and origin not in cors_origins:
+                cors_origins.append(origin)
+
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
+    app.include_router(outlook_router)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_allowed_origins(),
-        allow_methods=["GET", "POST", "PUT"],
-        allow_headers=["Content-Type"],
+        allow_origins=cors_origins,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
     )
 
     @app.middleware("http")
@@ -80,9 +101,36 @@ def create_app(
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         response = await call_next(request)
-        if request.url.path.startswith(("/master-list", "/invoices")):
+        if request.url.path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    class SignInPayload(BaseModel):
+        username: str | None = None
+        email: str | None = None
+        password: str = ""
+
+    @app.post("/auth/sign-in")
+    def auth_sign_in(payload: SignInPayload):
+        expected_user = (os.environ.get("AUTH_USERNAME") or "demo-account").strip()
+        expected_pass = os.environ.get("AUTH_PASSWORD") or "invoice-checker"
+        supplied_user = (payload.username or payload.email or "").strip()
+        supplied_pass = payload.password or ""
+
+        user_ok = hmac.compare_digest(supplied_user.lower(), expected_user.lower())
+        pass_ok = hmac.compare_digest(supplied_pass, expected_pass)
+        if not (user_ok and pass_ok):
+            return JSONResponse(
+                {"ok": False, "error": "invalid", "detail": "Invalid username or password"},
+                status_code=401,
+            )
+        return {
+            "ok": True,
+            "user": {
+                "email": expected_user,
+                "provider": "password",
+            },
+        }
 
     @app.get("/health")
     def health():
@@ -256,13 +304,6 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     if not checked or not _over_sheet_price(saved):
         return 409, "Raise with supplier needs a line priced over the sheet"
     return None
-
-
-def _allowed_origins() -> list[str]:
-    """The screens' origins, comma separated. The dev server is allowed when nothing is set."""
-    configured = os.environ.get("INVOICE_ALLOWED_ORIGINS", "")
-    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
-    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 def _stages_from_environment() -> Stages | None:

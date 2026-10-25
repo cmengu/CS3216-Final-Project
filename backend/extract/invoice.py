@@ -63,6 +63,25 @@ def extract_with_usage(
 ) -> ExtractedInvoice:
     text = _page_text(document)
     selected = _model_name(model)
+    if client is None:
+        from extract.local_pipeline import extract_local_with_usage, is_local_model
+
+        if is_local_model(selected):
+            record, tracker = extract_local_with_usage(
+                document,
+                model=selected,
+                record_type=record_type,
+                extra_instructions=extra_instructions,
+            )
+            return ExtractedInvoice(
+                record=record,
+                usage=TokenUsage(
+                    model=tracker.model,
+                    input_tokens=tracker.input_tokens,
+                    output_tokens=tracker.output_tokens,
+                    total_tokens=tracker.total_tokens,
+                ),
+            )
     options = _reasoning_options()
     return _call_parse(
         client=client,
@@ -87,6 +106,27 @@ def refine_with_usage(
 ) -> ExtractedInvoice:
     text = _page_text(document)
     selected = _model_name(model)
+    if client is None:
+        from extract.local_pipeline import is_local_model, refine_local_with_usage
+
+        if is_local_model(selected):
+            record, tracker = refine_local_with_usage(
+                document,
+                draft,
+                critique,
+                model=selected,
+                record_type=record_type,
+                extra_instructions=extra_instructions,
+            )
+            return ExtractedInvoice(
+                record=record,
+                usage=TokenUsage(
+                    model=tracker.model,
+                    input_tokens=tracker.input_tokens,
+                    output_tokens=tracker.output_tokens,
+                    total_tokens=tracker.total_tokens,
+                ),
+            )
     options = _reasoning_options()
     system_content = SYSTEM_PROMPT + extra_instructions + REFLECTION_PROMPT
     critique_block = "\n".join(f"- {item}" for item in critique)
@@ -187,7 +227,6 @@ def _call_parse(
             "The model's answer did not match the invoice field list; no invoice was accepted"
         ) from exc
     return ExtractedInvoice(record=record, usage=_token_usage(response, selected))
-
 
 
 def _page_text(document: ParsedDocument) -> str:

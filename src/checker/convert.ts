@@ -1,3 +1,4 @@
+import { tableRows, type TableDocument } from "@/components/pdfEvidence";
 /*
  * Turn one saved invoice from the checking service into the shape the screens use.
  * No other file needs the service's names.
@@ -56,6 +57,7 @@ export interface ServiceInvoice {
     lines: ServiceLine[];
   } | null;
   document?: {
+    docling_document?: TableDocument;
     page_count?: number;
     pages?: { page_number: number; display_rotation?: number }[];
     blocks?: { text: string; locations?: ServiceLocation[] }[];
@@ -149,7 +151,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
 
 /** Only the text and positions; the reader's full document is not kept. */
 function blocksOf(saved: ServiceInvoice): SourceBlock[] {
-  return (saved.document?.blocks ?? []).map((b) => ({
+  return [...tableRows(saved.document?.docling_document, (saved.document?.pages ?? []).filter((p) => p.display_rotation).map((p) => p.page_number)), ...(saved.document?.blocks ?? []).map((b) => ({
     text: b.text,
     locations: (b.locations ?? []).map((l) => ({
       page: l.page,
@@ -157,5 +159,5 @@ function blocksOf(saved: ServiceInvoice): SourceBlock[] {
       pageWidth: l.page_width ?? null,
       pageHeight: l.page_height ?? null,
     })),
-  }));
+  }))];
 }

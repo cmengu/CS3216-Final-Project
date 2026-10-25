@@ -23,6 +23,9 @@ INVOICE_MODE=live
 INVOICE_CHECKER=master_list
 INVOICE_DATA_DIR=runtime/live
 INVOICE_OCR_TIMEOUT=180
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_REDIRECT_URI=http://localhost:8001/auth/outlook/callback
 ```
 
 Fill the key locally. `gpt-6-luna` with reasoning `none` prioritizes latency; availability
@@ -32,7 +35,7 @@ Paths above are relative to `backend/`. From that directory:
 
 ```sh
 uv sync --locked --extra dev --extra docling --extra dummy
-.venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8000 --workers 1
+.venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8001 --workers 1
 ```
 
 Live startup fails clearly if the key or model is missing. Upload and confirm a master list
@@ -79,14 +82,14 @@ Python 3.12 is recommended. From `backend/`:
 
 ```sh
 uv sync --locked --extra dev --extra docling --extra dummy
-INVOICE_MODE=fixture .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
+INVOICE_MODE=fixture .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8001 --workers 1
 ```
 
 For the real steps, with the key and model in the environment:
 
 ```sh
 INVOICE_MODE=live INVOICE_CHECKER=master_list \
-  .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --workers 1
+  .venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8001 --workers 1
 ```
 
 Upload the master list through the frontend, review its column mappings, then confirm the
@@ -95,11 +98,11 @@ Replacing the master affects subsequent uploads immediately, without a server re
 Old invoices retain their saved results; use Recheck with current master list to create a
 new check explicitly. `GET /master-list/versions/{version}` retrieves the original snapshot.
 
-Open <http://127.0.0.1:8000/docs> to upload a PDF through Swagger, or from the repository root:
+Open <http://127.0.0.1:8001/docs> to upload a PDF through Swagger, or from the repository root:
 
 ```sh
-curl -F 'file=@data/dummy/invoice-02.pdf' http://127.0.0.1:8000/invoices
-curl http://127.0.0.1:8000/invoices
+curl -F 'file=@data/dummy/invoice-02.pdf' http://127.0.0.1:8001/invoices
+curl http://127.0.0.1:8001/invoices
 ```
 
 The first Docling run downloads model weights. Subsequent runs reuse locally cached weights
