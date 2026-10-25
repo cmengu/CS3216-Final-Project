@@ -501,7 +501,7 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
             detail="Microsoft OAuth is not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in backend/.env.",
         )
 
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     state = secrets.token_urlsafe(32)
     verifier, challenge = _pkce_pair()
     safe_return = _sanitize_return_to(return_to)
@@ -545,7 +545,7 @@ def outlook_callback(
     error_description: str | None = None,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     return_to = "/invoices"
 
     if state:
@@ -643,7 +643,7 @@ def outlook_callback(
 @router.get("/outlook/status", response_model=OutlookStatusResponse)
 def outlook_status(request: Request):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     with store.connect() as conn:
         row = conn.execute(
             "SELECT email, display_name, connected_at FROM outlook_connections WHERE id = 1"
@@ -667,7 +667,7 @@ def outlook_status(request: Request):
 @router.post("/outlook/disconnect", response_model=OutlookStatusResponse)
 def outlook_disconnect(request: Request):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     with store.connect() as conn:
         conn.execute("DELETE FROM outlook_connections WHERE id = 1")
         conn.execute("DELETE FROM outlook_oauth_states")
@@ -1016,7 +1016,7 @@ def list_outlook_messages(
     date_to: str | None = None,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     results = _fetch_inbox_messages(
         store,
         cfg,
@@ -1035,7 +1035,7 @@ def scan_outlook_messages(
     body: OutlookScanRequest,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
 
     summaries = _fetch_inbox_messages(
         store,
@@ -1107,7 +1107,7 @@ def scan_outlook_messages(
 @router.get("/outlook/messages/{message_id}", response_model=OutlookMessageDetail)
 def get_outlook_message(request: Request, message_id: str):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
 
     msg_data = _graph_get(
         store,
@@ -1134,7 +1134,7 @@ def download_outlook_attachment(
     attachment_id: str,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
 
     att = _graph_get(
         store,

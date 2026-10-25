@@ -24,12 +24,11 @@ from read.reader import MAX_BYTES, validate_pdf
 
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
-from .master_list import initialize as initialize_master_list
 from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
-from .storage import Store
+from .storage import Store, open_store
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -59,10 +58,14 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.store = Store(store_dir)
+        app.state.store = open_store(store_dir)
         app.state.store.recover()
-        initialize_master_list(app.state.store)
-        initialize_outlook(app.state.store)
+        # Outlook keeps its sign-in tokens in SQLite on the service's own disk, even when invoices
+        # and master lists are in Postgres: its queries are written for SQLite.
+        app.state.outlook_store = (
+            app.state.store if isinstance(app.state.store, Store) else Store(store_dir)
+        )
+        initialize_outlook(app.state.outlook_store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
         app.state.slot = BoundedSemaphore(1)
         yield
@@ -72,7 +75,7 @@ def create_app(
         "http://127.0.0.1:3000",
         "http://100.89.215.68:3000",
     ]
-    for env_key in ("FRONTEND_URL", "CORS_ORIGINS"):
+    for env_key in ("FRONTEND_URL", "CORS_ORIGINS", "INVOICE_ALLOWED_ORIGINS"):
         for item in os.environ.get(env_key, "").split(","):
             origin = item.strip().rstrip("/")
             if origin and origin not in cors_origins:
