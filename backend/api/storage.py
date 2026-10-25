@@ -1,14 +1,18 @@
 """Single-machine persistence. No invoice data or local file paths in the public repo."""
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from fastapi import Request
+
 from .contracts import InvoiceSummary, SavedInvoice
 
 DEFAULT_SESSION_ID = "default"
+_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 # The AP clerk's decision. Added after the first release, so older databases gain the columns.
 OUTCOME_COLUMNS = ("outcome", "outcome_reason", "decided_at")
@@ -25,6 +29,22 @@ def normalize_session_id(session_id: str | None) -> str:
     if not cleaned or len(cleaned) > 128:
         return DEFAULT_SESSION_ID
     return cleaned
+
+
+def request_session_id(request: Request, query_session_id: str | None = None) -> str:
+    candidates = (
+        request.headers.get("x-invoice-session"),
+        query_session_id,
+        request.query_params.get("session_id"),
+        request.cookies.get("ic_session"),
+    )
+    for raw in candidates:
+        if not raw:
+            continue
+        cleaned = raw.strip()
+        if _SESSION_TOKEN_RE.match(cleaned):
+            return normalize_session_id(cleaned)
+    return DEFAULT_SESSION_ID
 
 
 class Store:

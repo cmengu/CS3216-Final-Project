@@ -484,3 +484,97 @@ def test_gpu_accelerator_detection_prefers_cuda_and_falls_back_to_cpu(monkeypatc
     assert cuda_info["gpu_name"] == "NVIDIA GeForce RTX 4070"
 
 
+def test_session_isolation_for_master_list_and_outlook(tmp_path, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id-123")
+    monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "client-secret-xyz")
+    monkeypatch.setenv("MICROSOFT_REDIRECT_URI", "http://localhost:8001/auth/outlook/callback")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+
+    monkeypatch.setattr(
+        "api.outlook._exchange_code_for_tokens",
+        lambda cfg, code, verifier: {
+            "access_token": "alice-access-token",
+            "refresh_token": "alice-refresh-token",
+            "expires_in": 3600,
+        },
+    )
+    monkeypatch.setattr(
+        "api.outlook._fetch_graph_profile",
+        lambda token: {
+            "displayName": "Alice Wong",
+            "mail": "alice@company.example",
+        },
+    )
+
+    alice_headers = {"X-Invoice-Session": "session-alice"}
+    bob_headers = {"X-Invoice-Session": "session-bob"}
+
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        # 1. Master list isolation: Alice uploads a master list; Bob sees None and empty events
+        alice_csv = b"name,price,quantity\nBolt,1.20,10\n"
+        bob_csv = b"name,price,quantity\nWasher,0.50,100\n"
+        csv_options = '{"sheet":"CSV","header":0,"mapping":{"name":0,"price":1,"quantity":2}}'
+
+        res_alice = client.post(
+            "/master-list",
+            headers=alice_headers,
+            files={"file": ("alice-prices.csv", alice_csv, "text/csv")},
+            data={"options": csv_options},
+        )
+        assert res_alice.status_code == 201
+        alice_master = res_alice.json()
+        assert alice_master["file"] == "alice-prices.csv"
+
+        assert client.get("/master-list", headers=bob_headers).json() is None
+        assert client.get("/master-list/events", headers=bob_headers).json() == []
+        assert (
+            client.get(
+                f"/master-list/versions/{alice_master['version']}",
+                headers=bob_headers,
+            ).status_code
+            == 404
+        )
+
+        # Bob can upload his own initial master list with POST (not blocked by Alice's list)
+        res_bob = client.post(
+            "/master-list",
+            headers=bob_headers,
+            files={"file": ("bob-prices.csv", bob_csv, "text/csv")},
+            data={"options": csv_options},
+        )
+        assert res_bob.status_code == 201
+        assert client.get("/master-list", headers=bob_headers).json()["file"] == "bob-prices.csv"
+        assert (
+            client.get("/master-list", headers=alice_headers).json()["file"] == "alice-prices.csv"
+        )
+
+        # 2. Outlook OAuth isolation: Alice connects Outlook; Bob remains disconnected
+        login_res = client.get(
+            "/auth/outlook/login?return_to=/invoices&session_id=session-alice",
+            follow_redirects=False,
+        )
+        assert login_res.status_code == 302
+        state = parse_qs(urlparse(login_res.headers["location"]).query)["state"][0]
+
+        cb_res = client.get(
+            f"/auth/outlook/callback?code=code-123&state={state}",
+            follow_redirects=False,
+        )
+        assert cb_res.status_code == 302
+
+        alice_status = client.get("/outlook/status", headers=alice_headers).json()
+        bob_status = client.get("/outlook/status", headers=bob_headers).json()
+        assert alice_status["connected"] is True
+        assert alice_status["email"] == "alice@company.example"
+        assert bob_status["connected"] is False
+        assert bob_status["email"] is None
+
+        # Bob disconnecting does not disconnect Alice
+        client.post("/outlook/disconnect", headers=bob_headers)
+        assert client.get("/outlook/status", headers=alice_headers).json()["connected"] is True
+
+
+

@@ -79,7 +79,7 @@ export function setActiveSessionId(sessionId: string | null): void {
   reloadInvoices();
 }
 
-function sessionHeaders(extra?: Record<string, string>): Record<string, string> | undefined {
+export function sessionHeaders(extra?: Record<string, string>): Record<string, string> | undefined {
   const sid = getActiveSessionId();
   if (!sid && !extra) return undefined;
   return {

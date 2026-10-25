@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
 from .master_import import normalize, preview, read_tables
-from .storage import now
+from .storage import DEFAULT_SESSION_ID, normalize_session_id, now, request_session_id
 
 router = APIRouter(prefix="/master-list")
 MAX_UPLOAD = 5 * 1024 * 1024
@@ -17,8 +17,18 @@ def initialize(store):
     with store.connect() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS master_lists (
             id TEXT PRIMARY KEY, created_at TEXT NOT NULL, document TEXT NOT NULL,
-            event TEXT NOT NULL, source BLOB NOT NULL
+            event TEXT NOT NULL, source BLOB NOT NULL,
+            session_id TEXT NOT NULL DEFAULT 'default'
         )""")
+        present = {row["name"] for row in db.execute("PRAGMA table_info(master_lists)")}
+        if "session_id" not in present:
+            db.execute(
+                "ALTER TABLE master_lists ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
+            )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS master_lists_session_idx "
+            "ON master_lists(session_id, created_at DESC)"
+        )
 
 
 def read_upload(file):
@@ -42,27 +52,34 @@ def read_upload(file):
 
 @router.get("")
 def current(request: Request):
-    return current_master(request.app.state.store)
+    return current_master(request.app.state.store, session_id=request_session_id(request))
 
 
-def current_master(store, version=None):
+def current_master(store, version=None, *, session_id: str = DEFAULT_SESSION_ID):
+    sid = normalize_session_id(session_id)
     with store.connect() as db:
         if version is None:
             row = db.execute(
-                "SELECT document FROM master_lists ORDER BY rowid DESC LIMIT 1"
+                "SELECT document FROM master_lists WHERE session_id = ? ORDER BY rowid DESC LIMIT 1",
+                (sid,),
             ).fetchone()
         else:
             row = db.execute(
-                "SELECT document FROM master_lists WHERE json_extract(document, '$.version') = ? "
+                "SELECT document FROM master_lists "
+                "WHERE session_id = ? AND json_extract(document, '$.version') = ? "
                 "ORDER BY rowid DESC LIMIT 1",
-                (version,),
+                (sid, version),
             ).fetchone()
     return json.loads(row["document"]) if row else None
 
 
 @router.get("/versions/{version}")
 def historical(version: str, request: Request):
-    document = current_master(request.app.state.store, version)
+    document = current_master(
+        request.app.state.store,
+        version,
+        session_id=request_session_id(request),
+    )
     if document is None:
         raise HTTPException(404, "The master list used for this check is unavailable.")
     return document
@@ -70,8 +87,12 @@ def historical(version: str, request: Request):
 
 @router.get("/events")
 def events(request: Request):
+    sid = request_session_id(request)
     with request.app.state.store.connect() as db:
-        rows = db.execute("SELECT event FROM master_lists ORDER BY rowid DESC").fetchall()
+        rows = db.execute(
+            "SELECT event FROM master_lists WHERE session_id = ? ORDER BY rowid DESC",
+            (sid,),
+        ).fetchall()
     return [json.loads(row["event"]) for row in rows]
 
 
@@ -118,10 +139,14 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
                 **selection,
                 "columns": tables[selection["sheet"]][selection["header"]],
             }
+        sid = request_session_id(request)
         with request.app.state.store.connect() as db:
             # Serialize replacement events and the active-version order in a single transaction.
             db.execute("BEGIN IMMEDIATE")
-            exists = db.execute("SELECT 1 FROM master_lists LIMIT 1").fetchone()
+            exists = db.execute(
+                "SELECT 1 FROM master_lists WHERE session_id = ? LIMIT 1",
+                (sid,),
+            ).fetchone()
             if request.method == "POST" and exists:
                 raise HTTPException(409, "A master list already exists. Use Replace file.")
             if request.method == "PUT" and not exists:
@@ -134,8 +159,9 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
                 "suppliers": document["supplierCount"],
             }
             db.execute(
-                "INSERT INTO master_lists VALUES (?,?,?,?,?)",
-                (document["id"], timestamp, json.dumps(document), json.dumps(event), data),
+                "INSERT INTO master_lists (id, created_at, document, event, source, session_id) "
+                "VALUES (?,?,?,?,?,?)",
+                (document["id"], timestamp, json.dumps(document), json.dumps(event), data, sid),
             )
         return document
     finally:

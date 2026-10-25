@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { SERVICE_URL } from "@/checker/api";
+import { SERVICE_URL, sessionHeaders } from "@/checker/api";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
 import type { MasterItem } from "./parse";
 export type { MasterItem } from "./parse";
@@ -33,13 +33,20 @@ const SYNC_KEY = `ic.master-list.changed:${SERVICE_URL}`;
 function emit() { listeners.forEach((listener) => listener()); }
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${SERVICE_URL}/master-list${path}`, {
-    ...options, cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(15_000),
+    ...options, ...(sessionHeaders() ? { headers: sessionHeaders(options?.headers as Record<string, string> | undefined) } : {}), cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(15_000),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Master list request failed.");
   return data;
 }
 export function getMasterList() { return cached; }
+export function resetMasterListSession() {
+  cached = undefined;
+  events = [];
+  error = null;
+  loading = null;
+  void refreshMasterList(true);
+}
 export function getMasterListEvents() { return events; }
 export function refreshMasterList(force = false): Promise<void> {
   if (saving) {

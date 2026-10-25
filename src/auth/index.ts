@@ -6,6 +6,7 @@
 import { useSyncExternalStore } from "react";
 import { SERVICE_URL, SESSION_ID_KEY, setActiveSessionId } from "@/checker/api";
 import { resetUploadsSession } from "@/checker/uploads";
+import { resetMasterListSession } from "@/masterList";
 
 export interface User {
   email: string;
@@ -40,6 +41,7 @@ function store(user: User | null, sessionId?: string | null) {
   }
   setActiveSessionId(user ? (sessionId ?? newSessionId()) : null);
   resetUploadsSession();
+  resetMasterListSession();
   listeners.forEach((l) => l());
 }
 

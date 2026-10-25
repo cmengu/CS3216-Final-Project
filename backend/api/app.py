@@ -165,15 +165,16 @@ def create_app(
         }
 
     @app.get("/health")
-    def health():
+    def health(request: Request):
         selected = app.state.stages
+        sid = _request_session_id(request)
         return {
             "status": "ok",
             "mode": selected.mode if selected else "unconfigured",
             "processing_configured": selected is not None
             and (
                 not isinstance(selected, UploadedMasterStages)
-                or current_master(app.state.store) is not None
+                or current_master(app.state.store, session_id=sid) is not None
             ),
             "contract": "proposed-v1",
         }
@@ -209,7 +210,7 @@ def create_app(
         try:
             if isinstance(selected, UploadedMasterStages):
                 try:
-                    selected = selected.bind(store)
+                    selected = selected.bind(store, session_id=session_id)
                 except ValueError as exc:
                     raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
