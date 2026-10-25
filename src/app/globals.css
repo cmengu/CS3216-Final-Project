@@ -167,7 +167,7 @@ a { color: var(--accent); }
 .ic-decide .sum { display: flex; flex-direction: column; flex: 1 1 150px; min-width: 0; }
 .ic-decide .sum b { white-space: nowrap; }
 .ic-decide .sum + :is(button, a) { margin-left: auto; }
-.ic-decide > .ic-btn--primary { margin-left: auto; }
+
 .ic-decide .sum b { font-weight: 600; }
 
 /* Notices */
@@ -256,7 +256,7 @@ a { color: var(--accent); }
 .ic-or::before, .ic-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
 /* Daily workspace */
-.ic-work { flex: none; height: calc(100vh - var(--header-height)); display: grid; grid-template-columns: 340px minmax(380px, 460px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.ic-work { flex: none; height: calc(100vh - var(--header-height)); display: grid; grid-template-columns: minmax(380px, 460px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
 .ic-queue { min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 20px 16px 0; border-right: 1px solid var(--line); background: var(--surface); }
 .ic-queue-h { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
 .ic-queue-h h1 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -290,8 +290,8 @@ a { color: var(--accent); }
 
 /* Keep invoice details and the original PDF reachable on smaller screens. */
 @media (max-width: 1200px) {
-  .ic-work { height: auto; grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: minmax(600px, calc(100dvh - var(--header-height))) auto; overflow: visible; }
-  .ic-docpane { grid-column: 1 / -1; height: 80dvh; min-height: 500px; }
+  .ic-work { grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); }
+
 }
 @media (max-width: 700px) {
   .ic-top { height: auto; min-height: var(--header-height); grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px 16px; }
@@ -317,6 +317,7 @@ a { color: var(--accent); }
 }
 @media (max-width: 700px) {
   .ic-work--no-pdf { grid-template-columns: minmax(0, 1fr); }
+}
 /* Outlook AI Invoice Triage dialog */
 .ic-outlook { display: flex; flex-direction: column; gap: 12px; }
 .ic-outlook-connect { display: flex; flex-direction: column; gap: 16px; }
