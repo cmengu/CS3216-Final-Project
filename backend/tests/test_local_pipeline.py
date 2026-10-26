@@ -9,15 +9,12 @@ from extract.local_pipeline import (
     _extract_candidate_issuer_headings,
     _extract_markdown_tables,
     _group_rows_into_chunks,
-    _select_best_chunk,
-    _select_best_header,
-    _select_best_line,
     _validate_header_gatekeeper,
     get_challenger_model,
     is_local_model,
 )
 from read.models import ParsedDocument
-from schema import InvoiceLine, InvoiceRecord
+from schema import InvoiceRecord
 
 
 def _doc(markdown: str, filename: str = "invoice.pdf") -> ParsedDocument:
@@ -77,10 +74,7 @@ def test_table_segmentation_separates_item_tables_from_summary_tables():
 
 
 def test_chunking_excludes_footer_total_row_and_splits_large_tables():
-    rows = [
-        f"| DIO-SCH-40V | Schottky diode 40V | 5000 | 0.032 | 160.00 |"
-        for _ in range(14)
-    ] + [
+    rows = ["| DIO-SCH-40V | Schottky diode 40V | 5000 | 0.032 | 160.00 |" for _ in range(14)] + [
         "| | | | Total: | US$2,240.00 |",
     ]
     chunks = _group_rows_into_chunks(rows, chunk_size=6)
@@ -477,5 +471,3 @@ def test_dual_model_challenger_invoked_and_judged_on_gatekeeper_failures(monkeyp
     assert len(result.record.lines) == 2
     assert result.record.lines[1].quantity == "10000"
     assert result.record.lines[1].line_total == "47.00"
-
-

@@ -552,7 +552,7 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
             detail="Microsoft OAuth is not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in backend/.env.",
         )
 
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     sid = request_session_id(request)
     state = secrets.token_urlsafe(32)
     verifier, challenge = _pkce_pair()
@@ -597,7 +597,7 @@ def outlook_callback(
     error_description: str | None = None,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     return_to = "/invoices"
 
     if state:
@@ -712,7 +712,7 @@ def outlook_callback(
 @router.get("/outlook/status", response_model=OutlookStatusResponse)
 def outlook_status(request: Request):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     sid = request_session_id(request)
     with store.connect() as conn:
         row = _read_connection_row(conn, sid)
@@ -735,7 +735,7 @@ def outlook_status(request: Request):
 @router.post("/outlook/disconnect", response_model=OutlookStatusResponse)
 def outlook_disconnect(request: Request):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     sid = request_session_id(request)
     with store.connect() as conn:
         _delete_connection_row(conn, sid)
@@ -1085,7 +1085,7 @@ def list_outlook_messages(
     date_to: str | None = None,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
     try:
         results = _fetch_inbox_messages(
@@ -1108,7 +1108,7 @@ def scan_outlook_messages(
     body: OutlookScanRequest,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
     try:
         summaries = _fetch_inbox_messages(
@@ -1183,7 +1183,7 @@ def scan_outlook_messages(
 @router.get("/outlook/messages/{message_id}", response_model=OutlookMessageDetail)
 def get_outlook_message(request: Request, message_id: str):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
     try:
         msg_data = _graph_get(
@@ -1213,7 +1213,7 @@ def download_outlook_attachment(
     attachment_id: str,
 ):
     cfg = get_outlook_config()
-    store: Store = request.app.state.store
+    store: Store = request.app.state.outlook_store
     token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
     try:
         att = _graph_get(

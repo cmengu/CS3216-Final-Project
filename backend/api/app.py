@@ -32,12 +32,11 @@ from .auth import (
 )
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
-from .master_list import initialize as initialize_master_list
 from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
-from .storage import Store, request_session_id
+from .storage import Store, open_store, request_session_id
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -83,28 +82,38 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.store = Store(store_dir)
+        app.state.store = open_store(store_dir)
         app.state.store.recover()
-        initialize_master_list(app.state.store)
-        initialize_outlook(app.state.store)
+        # Outlook keeps its sign-in tokens in SQLite on the service's own disk, even when invoices
+        # and master lists are in Postgres: its queries are written for SQLite.
+        app.state.outlook_store = (
+            app.state.store if isinstance(app.state.store, Store) else Store(store_dir)
+        )
+        initialize_outlook(app.state.outlook_store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
         try:
             max_concurrent = max(1, int(os.environ.get("INVOICE_MAX_CONCURRENT_UPLOADS", "1")))
         except ValueError:
             max_concurrent = 1
         app.state.slot = BoundedSemaphore(max_concurrent)
-        yield
+        try:
+            yield
+        finally:
+            if hasattr(app.state.store, "pool"):
+                app.state.store.pool.close()
 
     cors_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://100.89.215.68:3000",
     ]
-    for env_key in ("FRONTEND_URL", "CORS_ORIGINS"):
+    for env_key in ("FRONTEND_URL", "CORS_ORIGINS", "INVOICE_ALLOWED_ORIGINS"):
         for item in os.environ.get(env_key, "").split(","):
             origin = item.strip().rstrip("/")
             if origin and origin not in cors_origins:
                 cors_origins.append(origin)
+    # Preview deployments get a new address each time, so they are allowed by pattern.
+    cors_origin_regex = os.environ.get("INVOICE_ALLOWED_ORIGIN_REGEX", "").strip() or None
 
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
@@ -120,7 +129,9 @@ def create_app(
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         path = request.url.path
-        protected = path.startswith(("/invoices", "/master-list", "/outlook", "/auth/outlook/login"))
+        protected = path.startswith(
+            ("/invoices", "/master-list", "/outlook", "/auth/outlook/login")
+        )
         if protected and request.method != "OPTIONS":
             if has_invalid_auth_token(request):
                 return JSONResponse(
@@ -142,7 +153,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
-        allow_origin_regex=r"^https?://.*",
+        allow_origin_regex=cors_origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],

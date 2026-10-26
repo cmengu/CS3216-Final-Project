@@ -182,17 +182,13 @@ def _validate_layouts(result: Layouts, sheets: list[dict]) -> Layouts:
                 )
             continue
         if not 0 <= layout.header < len(rows):
-            raise ValueError(
-                "AI mapping returned an invalid header row. Select columns manually."
-            )
+            raise ValueError("AI mapping returned an invalid header row. Select columns manually.")
         fields = [c.field for c in layout.columns]
         if len(fields) != len(set(fields)) or any(
             not 0 <= c.column < len(rows[layout.header]) for c in layout.columns
         ):
             raise ValueError("AI mapping returned invalid columns. Select columns manually.")
-        required = [
-            c.column for c in layout.columns if c.field in ("name", "price", "quantity")
-        ]
+        required = [c.column for c in layout.columns if c.field in ("name", "price", "quantity")]
         if len(required) != len(set(required)):
             raise ValueError("AI mapping reused a required column. Select columns manually.")
     return result

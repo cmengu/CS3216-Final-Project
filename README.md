@@ -189,15 +189,28 @@ To confirm a change: `npm test && npm run typecheck && npm run build`, then the 
 
 ## Deploy
 
-The live site is on Vercel and is deployed by hand. No push to GitHub deploys anything yet.
+The app is two deployments. The Vercel project is connected to this GitHub repo: every push builds a preview, and a merge to `main` deploys the screens to production. The service is deployed by hand from a checkout.
+
+| Piece | Where | URL |
+|---|---|---|
+| Screens (Next.js) | Vercel, project `invoice-checker` | https://invoice-checker-cs3216.vercel.app (also `-wheat`) |
+| Service (FastAPI) | Railway, project `invoice-checker`, service `invoice-api` | https://invoice-api-production-1f3a.up.railway.app |
+
+**Screens.** `vercel.json` pins the framework to Next.js. The one build-time setting is `NEXT_PUBLIC_INVOICE_API`, the service's URL, set on the Vercel project. To deploy a checkout without going through GitHub, from the repo root:
 
 ```
-vercel pull --yes --environment=production
-vercel build --prod
-vercel deploy --prebuilt --prod --yes
+vercel deploy --prod --yes
 ```
 
-The repo no longer needs a private package, so Vercel could also build it straight from GitHub once the project is linked.
+**Service.** `backend/Dockerfile` builds the image from the repo root (`RAILWAY_DOCKERFILE_PATH=backend/Dockerfile`), with CPU-only torch so the image stays small. A volume is mounted at `/data` and `INVOICE_DATA_DIR=/data` keeps the SQLite database and uploaded files across deploys. The service's variables are `INVOICE_MODE=live`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`, `INVOICE_OCR_TIMEOUT`, and `INVOICE_ALLOWED_ORIGINS`, a comma-separated list of the screens' origins for CORS (the dev server is allowed when it is unset). From the repo root, after `railway login` and `railway link`:
+
+```
+railway up --detach
+```
+
+Check `https://invoice-api-production-1f3a.up.railway.app/health` for `"mode": "live"` once it is up. Changing a variable in Railway rebuilds and redeploys on its own.
+
+**Database.** The service keeps its data in SQLite under `INVOICE_DATA_DIR` unless `DATABASE_URL` is set, in which case it uses Postgres and creates its tables in a schema named `invoice_checker` (so it can share a Supabase project with other apps). Uploaded PDFs are stored in the database too; the local `files/` folder is only a cache. For Supabase use the pooler URI on port 6543, `postgresql://postgres.<ref>:<password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres`, copied from the project's Connect dialog (the host differs per project). Tests run against SQLite; `tests/test_postgres_store.py` runs only when `DATABASE_URL` is set.
 
 ## Help and maintainer
 

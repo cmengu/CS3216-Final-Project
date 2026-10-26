@@ -7,6 +7,7 @@ from openpyxl import Workbook
 
 from api.app import create_app
 from api.master_import import normalize, read_tables
+from api.storage import Store
 
 
 @pytest.fixture(autouse=True)
@@ -212,3 +213,17 @@ def test_omit_quantity_even_when_file_has_column():
 def test_total_price_with_quantity():
     row = normalize(read_tables("a.csv", b"name,price,quantity\nBolt,1.25,8\n"))[0]
     assert row["totalPrice"] == "10.00"
+
+
+def test_the_store_finds_a_master_list_by_its_version(tmp_path):
+    store = Store(tmp_path)
+
+    def doc(i, version):
+        return {"id": i, "version": version, "uploadedAt": "2026-10-23T00:00:00+00:00"}
+
+    store.add_master_list(doc("a", "v1"), {"kind": "uploaded"}, b"x", replace=False)
+    store.add_master_list(doc("b", "v2"), {"kind": "replaced"}, b"y", replace=True)
+
+    assert store.master_list_version("v1")["id"] == "a"
+    assert store.master_list_version("v2")["id"] == "b"
+    assert store.master_list_version("unknown") is None

@@ -1,10 +1,10 @@
 """A stalled native import/conversion must not hold the API's processing slot forever."""
 
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from tempfile import TemporaryDirectory
 

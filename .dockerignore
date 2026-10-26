@@ -1,0 +1,17 @@
+# The image is the backend only. See backend/Dockerfile.
+.git
+.next
+node_modules
+.vercel
+src
+public
+scripts
+docs
+backend/.venv
+backend/runtime
+backend/tests
+backend/__pycache__
+**/__pycache__
+data/private
+data/mock_invoice_dataset
+.env*

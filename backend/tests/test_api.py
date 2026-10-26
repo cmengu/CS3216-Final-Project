@@ -374,12 +374,24 @@ def test_session_isolation_prevents_other_sessions_from_viewing_or_deciding_docu
         alice_doc = client.post(
             "/invoices",
             headers=alice_headers,
-            files={"file": ("invoice-01.pdf", (DATA / "invoice-01.pdf").read_bytes(), "application/pdf")},
+            files={
+                "file": (
+                    "invoice-01.pdf",
+                    (DATA / "invoice-01.pdf").read_bytes(),
+                    "application/pdf",
+                )
+            },
         ).json()
         bob_doc = client.post(
             "/invoices",
             headers=bob_headers,
-            files={"file": ("invoice-02.pdf", (DATA / "invoice-02.pdf").read_bytes(), "application/pdf")},
+            files={
+                "file": (
+                    "invoice-02.pdf",
+                    (DATA / "invoice-02.pdf").read_bytes(),
+                    "application/pdf",
+                )
+            },
         ).json()
 
         # Each session only lists its own uploaded documents
@@ -390,7 +402,9 @@ def test_session_isolation_prevents_other_sessions_from_viewing_or_deciding_docu
 
         # Alice cannot read, download, or decide Bob's invoice
         assert client.get(f"/invoices/{bob_doc['id']}", headers=alice_headers).status_code == 404
-        assert client.get(f"/invoices/{bob_doc['id']}/file", headers=alice_headers).status_code == 404
+        assert (
+            client.get(f"/invoices/{bob_doc['id']}/file", headers=alice_headers).status_code == 404
+        )
         assert (
             client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-alice").status_code
             == 404
@@ -419,8 +433,8 @@ def test_session_isolation_prevents_other_sessions_from_viewing_or_deciding_docu
 
 
 def test_concurrent_multi_user_uploads_queue_and_isolate_by_session(tmp_path, monkeypatch):
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
 
     monkeypatch.setenv("INVOICE_SLOT_WAIT_SECONDS", "10")
 
@@ -433,6 +447,7 @@ def test_concurrent_multi_user_uploads_queue_and_isolate_by_session(tmp_path, mo
     pdf_bytes = (DATA / "invoice-01.pdf").read_bytes()
 
     with TestClient(app) as client:
+
         def upload_for_session(idx: int):
             sid = f"concurrent-session-{idx}"
             resp = client.post(
@@ -454,6 +469,7 @@ def test_concurrent_multi_user_uploads_queue_and_isolate_by_session(tmp_path, mo
 def test_gpu_accelerator_detection_prefers_cuda_and_falls_back_to_cpu(monkeypatch):
     import sys
     from types import SimpleNamespace
+
     from read.reader import detect_ocr_accelerator
 
     monkeypatch.setenv("INVOICE_OCR_DEVICE", "cpu")
@@ -629,7 +645,13 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
 
         upload_res = client.post(
             "/invoices",
-            files={"file": ("invoice-01.pdf", (DATA / "invoice-01.pdf").read_bytes(), "application/pdf")},
+            files={
+                "file": (
+                    "invoice-01.pdf",
+                    (DATA / "invoice-01.pdf").read_bytes(),
+                    "application/pdf",
+                )
+            },
         )
         assert upload_res.status_code == 201
         assert len(client.get("/invoices").json()) == 1
@@ -641,5 +663,21 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
         assert client.get("/invoices").status_code == 401
 
 
+def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "INVOICE_ALLOWED_ORIGIN_REGEX", r"https://invoice-checker-[a-z0-9-]+-team\.vercel\.app"
+    )
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
 
+        def allowed(origin):
+            response = client.options(
+                "/health",
+                headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
+            )
+            assert response.headers.get("access-control-allow-credentials") == "true"
+            return response.headers.get("access-control-allow-origin") == origin
 
+        assert allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app")
+        assert allowed("http://localhost:3000")
+        assert not allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app.evil.com")
+        assert not allowed("https://evil.vercel.app")
