@@ -362,3 +362,22 @@ def test_live_mode_uses_uploaded_list_not_env_path(tmp_path, monkeypatch):
         assert response.status_code == 409
         assert "Upload a master list" in response.json()["detail"]
         assert client.get("/invoices").json() == []
+
+
+def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "INVOICE_ALLOWED_ORIGIN_REGEX", r"https://invoice-checker-[a-z0-9-]+-team\.vercel\.app"
+    )
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+
+        def allowed(origin):
+            response = client.options(
+                "/health",
+                headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
+            )
+            return response.headers.get("access-control-allow-origin") == origin
+
+        assert allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app")
+        assert allowed("http://localhost:3000")
+        assert not allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app.evil.com")
+        assert not allowed("https://evil.vercel.app")

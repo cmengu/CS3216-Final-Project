@@ -148,7 +148,9 @@ completed invoice with a non-null `overcharge_total` and every line a `match`;
 `ready_to_pay_anyway` on any finished invoice, failed ones included, with a reason of 1–500
 characters. An invoice still being checked answers 409, a missing reason 422.
 
-CORS allows localhost/127.0.0.1 on port 3000. HTTP errors use `detail`; processing failures
+CORS allows localhost/127.0.0.1 on port 3000, the comma-separated origins in
+`INVOICE_ALLOWED_ORIGINS`, and any origin that fully matches `INVOICE_ALLOWED_ORIGIN_REGEX`
+(for preview deployments, whose address changes each time). HTTP errors use `detail`; processing failures
 include `error` on the saved record. Original document bytes, SQLite and results are stored
 under ignored `backend/runtime/`. Change this with `INVOICE_DATA_DIR`. Don't expose this local
 storage through a public static directory.

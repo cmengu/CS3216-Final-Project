@@ -80,6 +80,8 @@ def create_app(
             origin = item.strip().rstrip("/")
             if origin and origin not in cors_origins:
                 cors_origins.append(origin)
+    # Preview deployments get a new address each time, so they are allowed by pattern.
+    cors_origin_regex = os.environ.get("INVOICE_ALLOWED_ORIGIN_REGEX", "").strip() or None
 
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
@@ -87,6 +89,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
+        allow_origin_regex=cors_origin_regex,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
