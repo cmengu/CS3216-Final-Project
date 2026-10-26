@@ -74,7 +74,6 @@ const P: Record<string, ReactNode> = {
       <path d="M9 9h6M9 13h6M9 17h4" />
     </>
   ),
-  compare: <path d="M7 4v16M17 4v16M3 8h8M13 16h8" />,
   arrowR: <path d="M5 12h14M13 6l6 6-6 6" />,
   chevL: <path d="M15 6l-6 6 6 6" />,
   minus: <path d="M5 12h14" />,

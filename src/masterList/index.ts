@@ -70,7 +70,6 @@ export function refreshMasterList(force = false): Promise<void> {
   loading = pending;
   return pending;
 }
-export const getMasterListVersion = (version: string) => api<MasterList>(`/versions/${encodeURIComponent(version)}`);
 export async function previewMasterList(file: File): Promise<ImportPreview> {
   const body = new FormData(); body.append("file", file);
   return api<ImportPreview>("/preview", { method: "POST", body, signal: AbortSignal.timeout(60_000) });

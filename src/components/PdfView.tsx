@@ -10,18 +10,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import {
-  checkPill,
   lineAttention,
-  linesPill,
   money,
   orderedLines,
-  statusPill,
   taxLabel,
 } from "@/checker/present";
 import type { SourceBlock, SupplierInvoice } from "@/checker/types";
-import { decide, DecisionBar } from "@/components/invoices/CheckPane";
-import { PayAnywayDialog, RaiseDialog } from "@/components/invoices/Dialogs";
-import { Pill } from "@/components/ui";
 import { blockFor } from "./pdfEvidence";
 import { wholeItemRow } from "./pdfRow";
 import { projectBox, textRotation } from "./pdfRotation";
@@ -138,7 +132,6 @@ export function PdfView({
   const [page, setPage] = useState(1);
   const [placed, setPlaced] = useState<{ boxes: Box[]; pages: Record<number, number> }>({ boxes: [], pages: {} });
   const [sizes, setSizes] = useState<PageSize[]>([]);
-  const [dialog, setDialog] = useState<"pay" | "raise" | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const canvases = useRef<(HTMLCanvasElement | null)[]>([]);
 
@@ -268,6 +261,12 @@ export function PdfView({
     if (at) setPage(Number(at.dataset.page));
   };
 
+  const rotatePage = () => setSizes((current) => current.map((s, i) => {
+    if (i !== page - 1) return s;
+    const viewport = s.viewport.clone({ rotation: (s.viewport.rotation + 90) % 360 });
+    return { w: viewport.width, h: viewport.height, viewport };
+  }));
+
   const n = doc?.numPages ?? 0;
   const zoomPct = Math.round((sizes[page - 1] ? scaleFor(sizes[page - 1].w) : ZOOMS[zoom]) * 100);
 
@@ -306,8 +305,6 @@ export function PdfView({
   );
 
   if (inv) {
-    const pill = linesPill(inv);
-    const subtitle = [inv.number, inv.fileName].filter(Boolean).join(" · ");
     return (
       <div className="ic-pdfmodal-scrim" onClick={onClose}>
         <section
@@ -318,15 +315,6 @@ export function PdfView({
           onClick={(e) => e.stopPropagation()}
         >
           <header className="ic-pdfmodal-head">
-            <div className="ic-pdfmodal-title">
-              <div className="ic-pdfmodal-title-row">
-                <span className="ic-pdfmodal-supplier">
-                  {inv.state === "failed" ? inv.fileName : (inv.supplier ?? inv.fileName)}
-                </span>
-                <Pill pill={inv.outcome ? statusPill(inv) : checkPill(inv)} />
-              </div>
-              <span className="muted">{subtitle}</span>
-            </div>
             <div className="ic-pdfmodal-tools">
               <button className="ic-icobtn" type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => goTo(page - 1)}>
                 <Icon name="chevL" />
@@ -345,6 +333,7 @@ export function PdfView({
               <button className="ic-icobtn" type="button" aria-label="Zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}>
                 <Icon name="plus" />
               </button>
+              <button className="ic-icobtn" type="button" aria-label="Rotate current page clockwise" title="Rotate current page clockwise" disabled={!doc} onClick={rotatePage}>↻</button>
               {onClose ? (
                 <button className="ic-pdfmodal-close" type="button" onClick={onClose} aria-label="Close PDF preview">
                   <Icon name="x" />
@@ -357,11 +346,6 @@ export function PdfView({
 
           <div className="ic-pdfmodal-body">
             <aside className="ic-pdfmodal-side" aria-label="Invoice lines">
-              <div className="ic-pdfmodal-side-h">
-                <h2>Lines</h2>
-                {pill ? <Pill pill={pill} /> : null}
-              </div>
-              <p className="muted ic-pdfmodal-sub">Pick a line to highlight it on the invoice.</p>
               <div className="ic-pdfmodal-lines" role="list">
                 {orderedLines(inv).map(({ line, n: lineNum }) => {
                   const flagged = line.result !== "match";
@@ -414,9 +398,6 @@ export function PdfView({
             <div className="ic-pdfmodal-stage">{canvasNodes}</div>
           </div>
 
-          <DecisionBar inv={inv} onPayAnyway={() => setDialog("pay")} onRaise={() => setDialog("raise")} onClosePdf={onClose} />
-          <PayAnywayDialog inv={inv} open={dialog === "pay"} onClose={() => setDialog(null)} onSubmit={(reason) => decide(inv, "ready_to_pay_anyway", reason)} />
-          <RaiseDialog inv={inv} open={dialog === "raise"} onClose={() => setDialog(null)} onRecord={() => decide(inv, "raise_with_supplier")} />
         </section>
       </div>
     );
@@ -445,11 +426,7 @@ export function PdfView({
         <button className="ic-icobtn" type="button" aria-label="Zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}>
           <Icon name="plus" />
         </button>
-        <button className="ic-icobtn" type="button" aria-label="Rotate current page clockwise" title="Rotate current page clockwise" disabled={!doc} onClick={() => setSizes((current) => current.map((s, i) => {
-          if (i !== page - 1) return s;
-          const viewport = s.viewport.clone({ rotation: (s.viewport.rotation + 90) % 360 });
-          return { w: viewport.width, h: viewport.height, viewport };
-        }))}>↻</button>
+        <button className="ic-icobtn" type="button" aria-label="Rotate current page clockwise" title="Rotate current page clockwise" disabled={!doc} onClick={rotatePage}>↻</button>
         <a className="ic-icobtn" href={url} target="_blank" rel="noreferrer" aria-label="Open PDF in a new tab">
           <Icon name="external" />
         </a>

@@ -52,6 +52,7 @@ export function Queue({
   onOutlook,
   loadError,
   onRetryLoad,
+  onCollapse,
 }: {
   decideList: SupplierInvoice[];
   doneList: SupplierInvoice[];
@@ -66,16 +67,20 @@ export function Queue({
   onOutlook?: () => void;
   loadError: string | null;
   onRetryLoad: () => void;
+  onCollapse?: () => void;
 }) {
   const ql = q.trim().toLowerCase();
   const match = (inv: SupplierInvoice) => !ql || [inv.supplier, inv.number, inv.fileName, inv.purchaseOrder].join(" ").toLowerCase().includes(ql);
   const list = (seg === "decide" ? decideList : doneList).filter(match);
   const current = uploads[0];
   return (
-    <aside className="ic-queue" aria-label="Invoices">
+    <aside id="invoice-sidebar" className="ic-queue" aria-label="Invoices">
       <div className="ic-queue-h">
-        <h1>Invoices</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="ic-queue-title">
+          <h1>Invoices</h1>
+          {onCollapse ? <button type="button" className="ic-icobtn" onClick={onCollapse} aria-label="Collapse invoice sidebar" aria-expanded={true} aria-controls="invoice-sidebar" title="Collapse sidebar"><Icon name="chevL" /></button> : null}
+        </div>
+        <div className="ic-queue-actions">
           {onOutlook ? (
             <button
               className="ic-btn ic-btn--secondary ic-btn--sm"

@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { REASON_MAX } from "@/checker/review";
-import { mailto, payAnywayLine, raiseEmail, shortDescription, signed, unit, whenLabel } from "@/checker/present";
+import { mailto, payAnywayLine, raiseEmail } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
 import { Icon } from "@/components/icons";
-import { Dialog, Pill } from "@/components/ui";
-import { getMasterListVersion, type MasterList } from "@/masterList";
+import { Dialog } from "@/components/ui";
 
 export function PayAnywayDialog({
   inv,
@@ -166,83 +164,6 @@ export function RaiseDialog({
           {error}
         </p>
       ) : null}
-    </Dialog>
-  );
-}
-
-export function CompareDrawer({ inv, open, onClose, masterList }: { inv: SupplierInvoice; open: boolean; onClose: () => void; masterList: MasterList | null }) {
-  const [historical, setHistorical] = useState<MasterList | null>(null);
-  const [unavailableVersion, setUnavailableVersion] = useState<string | null>(null);
-  const version = inv.priceSheet;
-  const snapshot = masterList?.version === version ? masterList : historical?.version === version ? historical : null;
-  useEffect(() => {
-    if (!open || !version || masterList?.version === version) return;
-    let live = true;
-    getMasterListVersion(version).then(
-      (found) => { if (live) setHistorical(found); },
-      () => { if (live) setUnavailableVersion(version); },
-    );
-    return () => { live = false; };
-  }, [open, version, masterList?.version]);
-  return (
-    <Dialog
-      open={open}
-      drawer
-      title="Compare with master list"
-      sub={[inv.supplier, inv.purchaseOrder].filter(Boolean).join(" · ")}
-      onClose={onClose}
-      footer={
-        <>
-          <span className="muted">{snapshot ? `${snapshot.file} · ${whenLabel(snapshot.uploadedAt)} · Version ${snapshot.version.slice(0, 8)}` : unavailableVersion === version || !version ? "Original master list unavailable; showing saved comparison" : "Loading original master list…"}</span>
-          <Link className="ic-link" href="/master-list">
-            View current master list
-            <Icon name="arrowR" arrow />
-          </Link>
-        </>
-      }
-    >
-      <table className="ic-grid">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Unit</th>
-            <th className="r">Master list</th>
-            <th className="r">Invoice</th>
-            <th className="r">Difference</th>
-          </tr>
-        </thead>
-        <tbody>
-          {inv.lines.map((l, i) => {
-            const differs = l.result === "price_mismatch";
-            return (
-              <tr key={i}>
-                <td>
-                  <div>{shortDescription(l)}</div>
-                  {l.part ? (
-                    <div className="muted mono" style={{ fontSize: 12.5 }}>
-                      {l.part}
-                    </div>
-                  ) : null}
-                </td>
-                <td>{l.unit ?? ""}</td>
-                <td className="r">{l.sheetPrice === null ? "—" : unit(l.sheetPrice)}</td>
-                <td className="r" style={differs ? { fontWeight: 600 } : undefined}>
-                  {l.unitPrice === null ? "—" : unit(l.unitPrice)}
-                </td>
-                <td className="r">
-                  {l.result === "match" ? (
-                    <Pill pill={{ text: "Matches", tone: "good" }} />
-                  ) : differs && l.difference !== null ? (
-                    <span style={{ color: "var(--warn)", fontWeight: 600 }}>{signed(l.difference)}</span>
-                  ) : (
-                    <Pill pill={{ text: l.result === "unknown_part" ? "Not on master list" : "Needs you", tone: "warn" }} />
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </Dialog>
   );
 }
