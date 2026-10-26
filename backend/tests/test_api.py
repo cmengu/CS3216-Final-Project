@@ -681,3 +681,27 @@ def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, mon
         assert allowed("http://localhost:3000")
         assert not allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app.evil.com")
         assert not allowed("https://evil.vercel.app")
+
+
+def test_session_cookie_crosses_sites_only_over_https(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_USERNAME", "demo-account")
+    monkeypatch.setenv("AUTH_PASSWORD", "invoice-checker")
+    login = {"username": "demo-account", "password": "invoice-checker"}
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+        # Railway's proxy ends HTTPS and forwards plain http with X-Forwarded-Proto.
+        deployed = (
+            client.post("/auth/sign-in", json=login, headers={"X-Forwarded-Proto": "https"})
+            .headers["set-cookie"]
+            .lower()
+        )
+        assert "samesite=none" in deployed and "secure" in deployed and "httponly" in deployed
+
+        signed_out = (
+            client.post("/auth/sign-out", headers={"X-Forwarded-Proto": "https"})
+            .headers["set-cookie"]
+            .lower()
+        )
+        assert "samesite=none" in signed_out and "secure" in signed_out
+
+        local = client.post("/auth/sign-in", json=login).headers["set-cookie"].lower()
+        assert "samesite=lax" in local and "secure" not in local

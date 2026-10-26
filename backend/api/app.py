@@ -164,8 +164,17 @@ def create_app(
         email: str | None = None
         password: str = ""
 
+    def session_cookie_options(request: Request) -> dict:
+        # The deployed app and service are on different sites (vercel.app, railway.app). Browsers
+        # only send a cross-site cookie that is SameSite=None and Secure, and Secure needs HTTPS.
+        # Behind Railway's proxy the request reaches uvicorn as http, so trust its forwarded scheme.
+        forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+        if request.url.scheme == "https" or forwarded == "https":
+            return {"samesite": "none", "secure": True}
+        return {"samesite": "lax", "secure": False}
+
     @app.post("/auth/sign-in")
-    def auth_sign_in(payload: SignInPayload):
+    def auth_sign_in(payload: SignInPayload, request: Request):
         expected_user = (os.environ.get("AUTH_USERNAME") or "demo-account").strip()
         expected_pass = os.environ.get("AUTH_PASSWORD") or "invoice-checker"
         supplied_user = (payload.username or payload.email or "").strip()
@@ -193,9 +202,9 @@ def create_app(
             key=COOKIE_NAME,
             value=token,
             httponly=True,
-            samesite="lax",
             path="/",
             max_age=TOKEN_TTL_SECONDS,
+            **session_cookie_options(request),
         )
         return response
 
@@ -218,9 +227,11 @@ def create_app(
         }
 
     @app.post("/auth/sign-out")
-    def auth_sign_out():
+    def auth_sign_out(request: Request):
         response = JSONResponse({"ok": True})
-        response.delete_cookie(key=COOKIE_NAME, path="/", samesite="lax")
+        response.delete_cookie(
+            key=COOKIE_NAME, path="/", httponly=True, **session_cookie_options(request)
+        )
         return response
 
     @app.get("/health")
