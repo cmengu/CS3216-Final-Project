@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
 from .master_import import normalize, preview, read_tables
-from .storage import MasterListExists, NoMasterList, now
+from .storage import DEFAULT_SESSION_ID, MasterListExists, NoMasterList, now, request_session_id
 
 router = APIRouter(prefix="/master-list")
 MAX_UPLOAD = 5 * 1024 * 1024
@@ -34,19 +34,21 @@ def read_upload(file):
 
 @router.get("")
 def current(request: Request):
-    return current_master(request.app.state.store)
+    return current_master(request.app.state.store, session_id=request_session_id(request))
 
 
-def current_master(store, version=None):
+def current_master(store, version=None, *, session_id: str = DEFAULT_SESSION_ID):
     """The latest master list, or the one saved with this version; None when there is none."""
     if version is None:
-        return store.latest_master_list()
-    return store.master_list_version(version)
+        return store.latest_master_list(session_id=session_id)
+    return store.master_list_version(version, session_id=session_id)
 
 
 @router.get("/versions/{version}")
 def historical(version: str, request: Request):
-    document = current_master(request.app.state.store, version)
+    document = current_master(
+        request.app.state.store, version, session_id=request_session_id(request)
+    )
     if document is None:
         raise HTTPException(404, "The master list used for this check is unavailable.")
     return document
@@ -54,7 +56,7 @@ def historical(version: str, request: Request):
 
 @router.get("/events")
 def events(request: Request):
-    return request.app.state.store.master_list_events()
+    return request.app.state.store.master_list_events(session_id=request_session_id(request))
 
 
 @router.post("/preview")
@@ -109,7 +111,9 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
             "suppliers": document["supplierCount"],
         }
         try:
-            request.app.state.store.add_master_list(document, event, data, replace=replace)
+            request.app.state.store.add_master_list(
+                document, event, data, replace=replace, session_id=request_session_id(request)
+            )
         except MasterListExists:
             raise HTTPException(409, "A master list already exists. Use Replace file.") from None
         except NoMasterList:

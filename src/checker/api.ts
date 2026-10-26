@@ -9,6 +9,48 @@ import type { Outcome, SupplierInvoice } from "./types";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
 
 export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8001";
+export const SESSION_ID_KEY = "ic.session.id.v1";
+
+let activeSessionId: string | null = null;
+
+function clearLegacyBrowserStorage(): void {
+  if (typeof window === "undefined") return;
+  for (const key of ["ic.session.v1", "ic.session.v2", SESSION_ID_KEY]) {
+    try {
+      window.localStorage?.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+    try {
+      window.sessionStorage?.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Return the active in-memory session token/ID when set, or null when using HttpOnly cookie auth.
+ */
+export function getActiveSessionId(): string | null {
+  return activeSessionId;
+}
+
+export function setActiveSessionId(sessionId: string | null): void {
+  clearLegacyBrowserStorage();
+  activeSessionId = sessionId ? sessionId.trim() || null : null;
+  cache = null;
+  reloadInvoices();
+}
+
+export function sessionHeaders(extra?: Record<string, string>): Record<string, string> | undefined {
+  const sid = getActiveSessionId();
+  if (!sid && !extra) return undefined;
+  return {
+    ...(extra ?? {}),
+    ...(sid ? { "X-Invoice-Session": sid } : {}),
+  };
+}
 
 const SERVICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,7 +72,13 @@ const RECHECK_MS = 3_000;
 
 async function read(path: string): Promise<Response> {
   try {
-    return await fetch(`${SERVICE_URL}${path}`, { cache: "no-store", signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+    const headers = sessionHeaders();
+    return await fetch(`${SERVICE_URL}${path}`, {
+      cache: "no-store",
+      credentials: "include",
+      ...(headers ? { headers } : {}),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+    });
   } catch {
     throw new Error(unreachable);
   }
@@ -98,9 +146,15 @@ export class UploadError extends Error {
 export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   const body = new FormData();
   body.append("file", file);
+  const headers = sessionHeaders();
   let response: Response;
   try {
-    response = await fetch(`${SERVICE_URL}/invoices`, { method: "POST", body });
+    response = await fetch(`${SERVICE_URL}/invoices`, {
+      method: "POST",
+      body,
+      credentials: "include",
+      ...(headers ? { headers } : {}),
+    });
   } catch {
     throw new UploadError(unreachable, null);
   }
@@ -118,7 +172,11 @@ export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
 }
 
 /** Where the service keeps the PDF exactly as it was uploaded. */
-export const invoiceFileUrl = (id: string) => `${SERVICE_URL}/invoices/${id}/file`;
+export const invoiceFileUrl = (id: string) => {
+  const sid = getActiveSessionId();
+  const base = `${SERVICE_URL}/invoices/${id}/file`;
+  return sid ? `${base}?session_id=${encodeURIComponent(sid)}` : base;
+};
 
 /**
  * Send a failed invoice's own PDF through the check again. The service keeps the first attempt,
@@ -151,7 +209,8 @@ export async function decideInvoice(id: string, outcome: Outcome | null, reason:
   try {
     response = await fetch(`${SERVICE_URL}/invoices/${id}/outcome`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      headers: sessionHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ outcome, reason }),
       signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });

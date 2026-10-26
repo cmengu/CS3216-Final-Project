@@ -1,6 +1,8 @@
 """Local PDF conversion. Preserve Docling JSON and stable evidence references."""
 
 import hashlib
+import logging
+import os
 from functools import lru_cache
 from importlib.metadata import version
 from pathlib import Path
@@ -10,9 +12,71 @@ from pypdf import PdfReader
 
 from .models import Location, PageRead, ParsedDocument, SourceBlock
 
+_log = logging.getLogger(__name__)
+
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 30
 _conversion_lock = Lock()
+
+
+def detect_ocr_accelerator() -> dict[str, object]:
+    """Detect whether NVIDIA CUDA GPU acceleration is available for Docling and RapidOCR."""
+    requested = os.environ.get("INVOICE_OCR_DEVICE", "auto").strip().lower()
+    default_threads = max(4, min(8, os.cpu_count() or 4))
+    try:
+        num_threads = max(1, int(os.environ.get("INVOICE_OCR_THREADS", str(default_threads))))
+    except ValueError:
+        num_threads = default_threads
+
+    torch_cuda = False
+    gpu_name: str | None = None
+    try:
+        import torch
+
+        torch_cuda = bool(torch.cuda.is_available())
+        if torch_cuda:
+            gpu_name = str(torch.cuda.get_device_name(0))
+    except Exception:
+        torch_cuda = False
+
+    ort_cuda = False
+    try:
+        import onnxruntime as ort
+
+        providers = ort.get_available_providers()
+        ort_cuda = "CUDAExecutionProvider" in providers
+    except Exception:
+        ort_cuda = False
+
+    if requested == "cpu":
+        use_torch_cuda = False
+        use_ort_cuda = False
+        active_device = "cpu"
+    elif requested in ("cuda", "gpu"):
+        use_torch_cuda = torch_cuda
+        use_ort_cuda = ort_cuda
+        active_device = "cuda" if (torch_cuda or ort_cuda) else "cpu"
+    elif requested == "mps":
+        use_torch_cuda = False
+        use_ort_cuda = False
+        active_device = "mps"
+    else:
+        use_torch_cuda = torch_cuda
+        use_ort_cuda = ort_cuda
+        active_device = "cuda" if (torch_cuda or ort_cuda) else "cpu"
+
+    rapidocr_backend = "torch" if (use_torch_cuda and not use_ort_cuda) else "onnxruntime"
+    info: dict[str, object] = {
+        "requested_device": requested,
+        "device": active_device,
+        "gpu_name": gpu_name,
+        "torch_cuda": use_torch_cuda,
+        "ort_cuda": use_ort_cuda,
+        "rapidocr_backend": rapidocr_backend,
+        "num_threads": num_threads,
+    }
+    _log.info("OCR accelerator configured: %s", info)
+    return info
 
 
 def validate_pdf(path: Path) -> tuple[str, int]:
@@ -71,12 +135,47 @@ def _converter(ocr: bool):
     from docling.datamodel.pipeline_options import OcrMode, PdfPipelineOptions, RapidOcrOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
+    accel_info = detect_ocr_accelerator()
+    if accel_info["torch_cuda"]:
+        docling_device = AcceleratorDevice.CUDA
+    elif accel_info["device"] == "mps":
+        docling_device = AcceleratorDevice.MPS
+    else:
+        docling_device = AcceleratorDevice.CPU
+
+    ort_use_cuda = bool(accel_info["ort_cuda"])
+    torch_use_cuda = bool(accel_info["torch_cuda"])
+    use_torch_backend = torch_use_cuda and not ort_use_cuda
+    use_cuda = torch_use_cuda or ort_use_cuda
+    num_threads = int(accel_info["num_threads"])  # type: ignore[arg-type]
+
     options = PdfPipelineOptions()
     options.do_ocr = ocr
     options.do_table_structure = True
     options.generate_parsed_pages = True  # Retain from_ocr flags until metadata is recorded.
-    options.ocr_options = RapidOcrOptions(mode=OcrMode.FULL_PAGE)
-    options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU, num_threads=4)
+    options.ocr_options = RapidOcrOptions(
+        mode=OcrMode.FULL_PAGE,
+        backend="torch" if use_torch_backend else "onnxruntime",
+        rapidocr_params=(
+            {
+                "EngineConfig.torch.use_cuda": True,
+                "Det.use_cuda": True,
+                "Cls.use_cuda": True,
+                "Rec.use_cuda": True,
+            }
+            if use_torch_backend
+            else {
+                "EngineConfig.onnxruntime.use_cuda": use_cuda,
+                "Det.use_cuda": use_cuda,
+                "Cls.use_cuda": use_cuda,
+                "Rec.use_cuda": use_cuda,
+            }
+        ),
+    )
+    options.accelerator_options = AcceleratorOptions(
+        device=docling_device,
+        num_threads=num_threads,
+    )
     options.table_structure_options.do_cell_matching = True
     return DocumentConverter(
         allowed_formats=[InputFormat.PDF],
@@ -86,9 +185,31 @@ def _converter(ocr: bool):
 
 @lru_cache(maxsize=1)
 def _rapid_ocr():
-    from rapidocr import RapidOCR
+    from rapidocr import EngineType, RapidOCR
 
-    return RapidOCR()
+    accel_info = detect_ocr_accelerator()
+    ort_use_cuda = bool(accel_info["ort_cuda"])
+    torch_use_cuda = bool(accel_info["torch_cuda"])
+    if torch_use_cuda and not ort_use_cuda:
+        return RapidOCR(
+            params={
+                "Det.engine_type": EngineType.TORCH,
+                "Cls.engine_type": EngineType.TORCH,
+                "Rec.engine_type": EngineType.TORCH,
+                "EngineConfig.torch.use_cuda": True,
+                "Det.use_cuda": True,
+                "Cls.use_cuda": True,
+                "Rec.use_cuda": True,
+            }
+        )
+    return RapidOCR(
+        params={
+            "EngineConfig.onnxruntime.use_cuda": ort_use_cuda,
+            "Det.use_cuda": ort_use_cuda,
+            "Cls.use_cuda": ort_use_cuda,
+            "Rec.use_cuda": ort_use_cuda,
+        }
+    )
 
 
 def _is_sideways_page(blocks: list[SourceBlock]) -> bool:
@@ -258,8 +379,8 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
     source = PdfReader(path)
     blocks, pages, documents = [], [], []
     page_images: dict[str, str] = {}
-    # CPU models are cached and used serially. Each textless page takes the full-page OCR
-    # branch, so ocr_ran describes an executed stage, not merely enabled configuration.
+    # GPU/CPU models are cached in memory and used serially. Each textless page takes the
+    # full-page OCR branch, so ocr_ran describes an executed stage, not merely configuration.
     with _conversion_lock:
         for index, page in enumerate(source.pages, start=1):
             text = page.extract_text() or ""

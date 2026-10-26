@@ -27,7 +27,7 @@ import { Pill } from "@/components/ui";
 import type { MasterList } from "@/masterList";
 import { CompareDrawer, PayAnywayDialog, RaiseDialog } from "./Dialogs";
 
-async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: string | null = null): Promise<string | null> {
+export async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: string | null = null): Promise<string | null> {
   try {
     rememberInvoice(await decideInvoice(inv.id, outcome, reason));
     return null;
@@ -36,7 +36,7 @@ async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: str
   }
 }
 
-function DecisionBar({ inv, onPayAnyway, onRaise }: { inv: SupplierInvoice; onPayAnyway: () => void; onRaise: () => void }) {
+export function DecisionBar({ inv, onPayAnyway, onRaise, onClosePdf }: { inv: SupplierInvoice; onPayAnyway: () => void; onRaise: () => void; onClosePdf?: () => void }) {
   const d = decision(inv);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,6 +55,11 @@ function DecisionBar({ inv, onPayAnyway, onRaise }: { inv: SupplierInvoice; onPa
             <Pill pill={OUTCOME_PILL[inv.outcome]} />
             <span className="muted">{whenLabel(inv.decidedAt)}</span>
           </div>
+          {onClosePdf ? (
+            <button type="button" className="ic-btn ic-btn--secondary" style={{ color: "var(--ink)" }} onClick={onClosePdf}>
+              Back to invoices
+            </button>
+          ) : null}
           {inv.outcome === "raise_with_supplier" ? (
             <button
               type="button"
@@ -92,6 +97,11 @@ function DecisionBar({ inv, onPayAnyway, onRaise }: { inv: SupplierInvoice; onPa
             )}
             {d.sub ? <span className="muted">{d.sub}</span> : null}
           </div>
+          {onClosePdf ? (
+            <button type="button" className="ic-btn ic-btn--secondary" style={{ color: "var(--ink)" }} onClick={onClosePdf}>
+              Back to invoices
+            </button>
+          ) : null}
           {d.mode === "raise" || d.mode === "anyway" ? (
             <button type="button" className="ic-btn ic-btn--secondary" onClick={onPayAnyway}>
               Pay anyway…
@@ -160,6 +170,7 @@ export function CheckPane({
   activeLine,
   onShow,
   onOpenPdf,
+  onClosePdf,
   pdfOpen,
 }: {
   inv: SupplierInvoice;
@@ -167,6 +178,7 @@ export function CheckPane({
   activeLine: number | null;
   onShow: (n: number) => void;
   onOpenPdf: () => void;
+  onClosePdf?: () => void;
   pdfOpen: boolean;
 }) {
   const [dialog, setDialog] = useState<"pay" | "raise" | "compare" | null>(null);
@@ -194,7 +206,7 @@ export function CheckPane({
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <a className="ic-link ic-link--sm" href={invoiceFileUrl(inv.id)} target="_blank" rel="noreferrer">{inv.fileName}</a>
-            {checkPill(inv).tone !== "good" && !pdfOpen ? (
+            {!pdfOpen ? (
               <button type="button" className="ic-link ic-link--sm" onClick={onOpenPdf} aria-label="Open original PDF preview">Open</button>
             ) : null}
           </div>
@@ -248,7 +260,14 @@ export function CheckPane({
                     const price = line.unitPrice === null ? "—" : `${comparedCurrency ? comparedCurrency + " " : ""}${unit(line.unitPrice)}${priceUnit}`;
                     const total = line.lineTotal === null ? "—" : money(line.lineTotal, cur);
                     return (
-                      <div className="ic-line" role="listitem" key={n} aria-current={activeLine === n ? "true" : undefined}>
+                      <div
+                        className="ic-line"
+                        role="listitem"
+                        key={n}
+                        aria-current={activeLine === n ? "true" : undefined}
+                        onClick={() => onShow(n)}
+                        style={{ cursor: "pointer" }}
+                      >
                         {flagged ? (
                           <span style={{ color: "var(--warn)" }}>
                             <Icon name="warn" size="row" style={{ color: "var(--warn)" }} />
@@ -301,7 +320,7 @@ export function CheckPane({
                         <div className="end">
                           <Pill pill={LINE_PILL[line.result]} />
                           {flagged ? (
-                            <button type="button" className="ic-link ic-link--sm" onClick={() => onShow(n)} aria-label={`Show line ${n} on the PDF`}>
+                            <button type="button" className="ic-link ic-link--sm" onClick={(e) => { e.stopPropagation(); onShow(n); }} aria-label={`Show line ${n} on the PDF`}>
                               Show
                               <Icon name="arrowR" arrow />
                             </button>

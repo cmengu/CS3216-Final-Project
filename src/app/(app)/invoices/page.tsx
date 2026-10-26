@@ -138,15 +138,32 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
   const focus = focusState && focusState.id === selectedId ? focusState : null;
 
   const marks = useMemo(
-    () => (inv ? inv.lines.map((l, i) => ({ l, n: i + 1 })).filter((x) => x.l.result !== "match").map((x) => ({ n: x.n, part: x.l.part, description: x.l.description })) : []),
+    () => (inv ? inv.lines.map((l, i) => ({ n: i + 1, part: l.part, description: l.description })) : []),
     [inv],
   );
   const blocks = useMemo(() => inv?.blocks ?? [], [inv]);
   const pdfOpen = !!inv && pdfId === inv.id;
+  const closePdf = () => {
+    setFocus(null);
+    setPdfId(null);
+  };
+
+  useEffect(() => {
+    if (!pdfOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector(".ic-dialog, .ic-drawer")) {
+        setFocus(null);
+        setPdfId(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pdfOpen]);
+
   const exportCsv = () => download(csvName(), exportReadyToPay(all));
 
   return (
-    <div className={`ic-work${pdfOpen ? "" : " ic-work--no-pdf"}`}>
+    <div className="ic-work ic-work--no-pdf">
       {picker.node}
       <Queue
         decideList={piles.decide}
@@ -169,7 +186,11 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
           inv={inv}
           masterList={masterList}
           activeLine={pdfOpen ? (focus?.n ?? null) : null}
-          onOpenPdf={() => setPdfId(inv.id)}
+          onOpenPdf={() => {
+            setFocus(null);
+            setPdfId(inv.id);
+          }}
+          onClosePdf={closePdf}
           pdfOpen={pdfOpen}
           onShow={(n) => {
             setPdfId(inv.id);
@@ -186,9 +207,18 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
         <AllDecided count={piles.done.length} onUpload={picker.open} onExport={exportCsv} />
       )}
       {inv && pdfOpen ? (
-        <div className="ic-docpane">
-          <PdfView key={inv.id} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} marks={marks} rotations={inv.pageRotations} blocks={blocks} focus={focus} onClose={() => setPdfId(null)} />
-        </div>
+        <PdfView
+          key={`pdf-${inv.id}`}
+          inv={inv}
+          url={invoiceFileUrl(inv.id)}
+          fileName={inv.fileName}
+          marks={marks}
+          rotations={inv.pageRotations}
+          blocks={blocks}
+          focus={focus}
+          onSelectLine={(n) => setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }))}
+          onClose={closePdf}
+        />
       ) : null}
     </div>
   );

@@ -8,6 +8,7 @@ using a key derived from MICROSOFT_CLIENT_SECRET and automatically refreshed whe
 from __future__ import annotations
 
 import base64
+import contextvars
 import hashlib
 import hmac
 import json
@@ -25,9 +26,12 @@ from fastapi.responses import RedirectResponse, Response
 from openai import OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .storage import Store
+from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id, request_session_id
 
 router = APIRouter(tags=["outlook"])
+_ACTIVE_OUTLOOK_SESSION: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "outlook_session_id", default=DEFAULT_SESSION_ID
+)
 
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 OAUTH_SCOPES = "openid profile email offline_access User.Read Mail.Read"
@@ -38,11 +42,20 @@ CREATE TABLE IF NOT EXISTS outlook_oauth_states (
     state TEXT PRIMARY KEY,
     code_verifier TEXT NOT NULL,
     return_to TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    session_id TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS outlook_connections (
     id INTEGER PRIMARY KEY CHECK (id = 1),
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    encrypted_tokens TEXT NOT NULL,
+    connected_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS outlook_session_connections (
+    session_id TEXT PRIMARY KEY,
     email TEXT NOT NULL,
     display_name TEXT NOT NULL,
     encrypted_tokens TEXT NOT NULL,
@@ -209,6 +222,11 @@ def get_outlook_config() -> OutlookConfig:
 def initialize(store: Store) -> None:
     with store.connect() as conn:
         conn.executescript(SCHEMA)
+        present = {row["name"] for row in conn.execute("PRAGMA table_info(outlook_oauth_states)")}
+        if "session_id" not in present:
+            conn.execute(
+                "ALTER TABLE outlook_oauth_states ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
+            )
 
 
 def _keystream(enc_key: bytes, salt: bytes, length: int) -> bytes:
@@ -389,16 +407,52 @@ def _fetch_graph_profile(access_token: str) -> dict[str, Any]:
     return resp.json()
 
 
-def _get_valid_access_token(store: Store, cfg: OutlookConfig) -> str:
+def _read_connection_row(conn, session_id: str):
+    sid = normalize_session_id(session_id)
+    row = conn.execute(
+        "SELECT email, display_name, encrypted_tokens, connected_at "
+        "FROM outlook_session_connections WHERE session_id = ?",
+        (sid,),
+    ).fetchone()
+    if row is None and sid == DEFAULT_SESSION_ID:
+        row = conn.execute(
+            "SELECT email, display_name, encrypted_tokens, connected_at "
+            "FROM outlook_connections WHERE id = 1"
+        ).fetchone()
+    return row
+
+
+def _delete_connection_row(conn, session_id: str) -> None:
+    sid = normalize_session_id(session_id)
+    conn.execute("DELETE FROM outlook_session_connections WHERE session_id = ?", (sid,))
+    if sid == DEFAULT_SESSION_ID:
+        conn.execute("DELETE FROM outlook_connections WHERE id = 1")
+
+
+def _update_connection_tokens(conn, session_id: str, encrypted: str) -> None:
+    sid = normalize_session_id(session_id)
+    updated = conn.execute(
+        "UPDATE outlook_session_connections SET encrypted_tokens = ? WHERE session_id = ?",
+        (encrypted, sid),
+    ).rowcount
+    if not updated and sid == DEFAULT_SESSION_ID:
+        conn.execute(
+            "UPDATE outlook_connections SET encrypted_tokens = ? WHERE id = 1",
+            (encrypted,),
+        )
+
+
+def _get_valid_access_token(
+    store: Store, cfg: OutlookConfig, *, session_id: str | None = None
+) -> str:
+    sid = normalize_session_id(session_id or _ACTIVE_OUTLOOK_SESSION.get())
     if not cfg.configured:
         raise HTTPException(
             status_code=503,
             detail="Microsoft OAuth is not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.",
         )
     with store.connect() as conn:
-        row = conn.execute(
-            "SELECT email, display_name, encrypted_tokens FROM outlook_connections WHERE id = 1"
-        ).fetchone()
+        row = _read_connection_row(conn, sid)
     if row is None:
         raise HTTPException(
             status_code=401,
@@ -409,7 +463,7 @@ def _get_valid_access_token(store: Store, cfg: OutlookConfig) -> str:
         tokens = decrypt_tokens(row["encrypted_tokens"], cfg.client_secret)
     except ValueError as exc:
         with store.connect() as conn:
-            conn.execute("DELETE FROM outlook_connections WHERE id = 1")
+            _delete_connection_row(conn, sid)
         raise HTTPException(
             status_code=401,
             detail="Stored Outlook credentials could not be decrypted. Please reconnect Outlook.",
@@ -424,7 +478,7 @@ def _get_valid_access_token(store: Store, cfg: OutlookConfig) -> str:
 
     if not refresh_token:
         with store.connect() as conn:
-            conn.execute("DELETE FROM outlook_connections WHERE id = 1")
+            _delete_connection_row(conn, sid)
         raise HTTPException(
             status_code=401,
             detail="Outlook access token expired and no refresh token is available. Please reconnect.",
@@ -434,7 +488,7 @@ def _get_valid_access_token(store: Store, cfg: OutlookConfig) -> str:
         refreshed = _refresh_access_token(cfg, refresh_token)
     except HTTPException:
         with store.connect() as conn:
-            conn.execute("DELETE FROM outlook_connections WHERE id = 1")
+            _delete_connection_row(conn, sid)
         raise
 
     new_access = str(refreshed.get("access_token") or "")
@@ -447,10 +501,7 @@ def _get_valid_access_token(store: Store, cfg: OutlookConfig) -> str:
     }
     encrypted = encrypt_tokens(updated_payload, cfg.client_secret)
     with store.connect() as conn:
-        conn.execute(
-            "UPDATE outlook_connections SET encrypted_tokens = ? WHERE id = 1",
-            (encrypted,),
-        )
+        _update_connection_tokens(conn, sid, encrypted)
     return new_access
 
 
@@ -502,6 +553,7 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
         )
 
     store: Store = request.app.state.outlook_store
+    sid = request_session_id(request)
     state = secrets.token_urlsafe(32)
     verifier, challenge = _pkce_pair()
     safe_return = _sanitize_return_to(return_to)
@@ -514,10 +566,10 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
         )
         conn.execute(
             """
-            INSERT INTO outlook_oauth_states (state, code_verifier, return_to, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO outlook_oauth_states (state, code_verifier, return_to, created_at, session_id)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (state, verifier, safe_return, now),
+            (state, verifier, safe_return, now, sid),
         )
 
     query = urlencode(
@@ -551,15 +603,18 @@ def outlook_callback(
     if state:
         with store.connect() as conn:
             row = conn.execute(
-                "SELECT code_verifier, return_to, created_at FROM outlook_oauth_states WHERE state = ?",
+                "SELECT code_verifier, return_to, created_at, session_id "
+                "FROM outlook_oauth_states WHERE state = ?",
                 (state,),
             ).fetchone()
             conn.execute("DELETE FROM outlook_oauth_states WHERE state = ?", (state,))
     else:
         row = None
 
+    sid = DEFAULT_SESSION_ID
     if row is not None:
         return_to = str(row["return_to"] or "/invoices")
+        sid = normalize_session_id(str(row["session_id"] or DEFAULT_SESSION_ID))
 
     if error:
         msg = (error_description or error).strip()
@@ -626,16 +681,30 @@ def outlook_callback(
     with store.connect() as conn:
         conn.execute(
             """
-            INSERT INTO outlook_connections (id, email, display_name, encrypted_tokens, connected_at)
-            VALUES (1, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO outlook_session_connections
+            (session_id, email, display_name, encrypted_tokens, connected_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
                 email = excluded.email,
                 display_name = excluded.display_name,
                 encrypted_tokens = excluded.encrypted_tokens,
                 connected_at = excluded.connected_at
             """,
-            (str(email), str(display_name), encrypted, connected_at),
+            (sid, str(email), str(display_name), encrypted, connected_at),
         )
+        if sid == DEFAULT_SESSION_ID:
+            conn.execute(
+                """
+                INSERT INTO outlook_connections (id, email, display_name, encrypted_tokens, connected_at)
+                VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    email = excluded.email,
+                    display_name = excluded.display_name,
+                    encrypted_tokens = excluded.encrypted_tokens,
+                    connected_at = excluded.connected_at
+                """,
+                (str(email), str(display_name), encrypted, connected_at),
+            )
 
     return _frontend_redirect(cfg, return_to, {"outlook": "connected"})
 
@@ -644,10 +713,9 @@ def outlook_callback(
 def outlook_status(request: Request):
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
+    sid = request_session_id(request)
     with store.connect() as conn:
-        row = conn.execute(
-            "SELECT email, display_name, connected_at FROM outlook_connections WHERE id = 1"
-        ).fetchone()
+        row = _read_connection_row(conn, sid)
     if row is None or not cfg.configured:
         return OutlookStatusResponse(
             configured=cfg.configured,
@@ -668,9 +736,10 @@ def outlook_status(request: Request):
 def outlook_disconnect(request: Request):
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
+    sid = request_session_id(request)
     with store.connect() as conn:
-        conn.execute("DELETE FROM outlook_connections WHERE id = 1")
-        conn.execute("DELETE FROM outlook_oauth_states")
+        _delete_connection_row(conn, sid)
+        conn.execute("DELETE FROM outlook_oauth_states WHERE session_id = ?", (sid,))
     return OutlookStatusResponse(
         configured=cfg.configured,
         connected=False,
@@ -1017,15 +1086,19 @@ def list_outlook_messages(
 ):
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
-    results = _fetch_inbox_messages(
-        store,
-        cfg,
-        limit=limit,
-        only_attachments=only_attachments,
-        search=search,
-        date_from=date_from,
-        date_to=date_to,
-    )
+    token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
+    try:
+        results = _fetch_inbox_messages(
+            store,
+            cfg,
+            limit=limit,
+            only_attachments=only_attachments,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    finally:
+        _ACTIVE_OUTLOOK_SESSION.reset(token)
     return OutlookMessagesResponse(messages=results)
 
 
@@ -1036,28 +1109,31 @@ def scan_outlook_messages(
 ):
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
-
-    summaries = _fetch_inbox_messages(
-        store,
-        cfg,
-        limit=body.limit,
-        only_attachments=False,
-        search="",
-        date_from=body.dateFrom,
-        date_to=body.dateTo,
-    )
-
-    detailed_messages: list[OutlookMessageDetail] = []
-    for summary in summaries:
-        attachments = (
-            _fetch_message_attachments(store, cfg, summary.id) if summary.hasAttachments else []
+    token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
+    try:
+        summaries = _fetch_inbox_messages(
+            store,
+            cfg,
+            limit=body.limit,
+            only_attachments=False,
+            search="",
+            date_from=body.dateFrom,
+            date_to=body.dateTo,
         )
-        detailed_messages.append(
-            OutlookMessageDetail(
-                **summary.model_dump(),
-                attachments=attachments,
+
+        detailed_messages: list[OutlookMessageDetail] = []
+        for summary in summaries:
+            attachments = (
+                _fetch_message_attachments(store, cfg, summary.id) if summary.hasAttachments else []
             )
-        )
+            detailed_messages.append(
+                OutlookMessageDetail(
+                    **summary.model_dump(),
+                    attachments=attachments,
+                )
+            )
+    finally:
+        _ACTIVE_OUTLOOK_SESSION.reset(token)
 
     ai_client = getattr(request.app.state, "outlook_ai_client", None)
     model_used, decisions = classify_emails_with_ai(detailed_messages, client=ai_client)
@@ -1108,18 +1184,21 @@ def scan_outlook_messages(
 def get_outlook_message(request: Request, message_id: str):
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
-
-    msg_data = _graph_get(
-        store,
-        cfg,
-        f"/me/messages/{message_id}",
-        params={
-            "$select": "id,subject,from,receivedDateTime,bodyPreview,body,hasAttachments,webLink",
-        },
-        prefer_text=True,
-    )
-    summary = _parse_message_summary(msg_data)
-    attachments = _fetch_message_attachments(store, cfg, message_id)
+    token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
+    try:
+        msg_data = _graph_get(
+            store,
+            cfg,
+            f"/me/messages/{message_id}",
+            params={
+                "$select": "id,subject,from,receivedDateTime,bodyPreview,body,hasAttachments,webLink",
+            },
+            prefer_text=True,
+        )
+        summary = _parse_message_summary(msg_data)
+        attachments = _fetch_message_attachments(store, cfg, message_id)
+    finally:
+        _ACTIVE_OUTLOOK_SESSION.reset(token)
 
     return OutlookMessageDetail(
         **summary.model_dump(),
@@ -1135,12 +1214,15 @@ def download_outlook_attachment(
 ):
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
-
-    att = _graph_get(
-        store,
-        cfg,
-        f"/me/messages/{message_id}/attachments/{attachment_id}",
-    )
+    token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))
+    try:
+        att = _graph_get(
+            store,
+            cfg,
+            f"/me/messages/{message_id}/attachments/{attachment_id}",
+        )
+    finally:
+        _ACTIVE_OUTLOOK_SESSION.reset(token)
     content_b64 = att.get("contentBytes")
     if not content_b64:
         raise HTTPException(

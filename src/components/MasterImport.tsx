@@ -7,7 +7,7 @@ import { previewMasterList, replaceMasterList, uploadMasterList, type ImportOpti
 
 const ACCEPT = ".csv,.xlsx,.xls";
 
-/** Initial uploads import detected columns; replacements and incomplete mappings need confirmation. */
+/** Preview with AI column mapping and open the mapping dialog so the user only needs to confirm. */
 export function MasterImport({ replace = false, onSaved }: { replace?: boolean; onSaved: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -32,6 +32,20 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
     } finally { setBusy(null); }
   }
 
+  async function loadPreview(chosen: File, reopenModal = false) {
+    setBusy("reading"); setError("");
+    if (!reopenModal) { setPreview(null); setFile(chosen); setMappingOpen(false); }
+    try {
+      const result = await previewMasterList(chosen);
+      const first = result.sheets.find((candidate) => result.required.every((key) => candidate.mapping[key] !== undefined)) ?? result.sheets[0];
+      if (!first) throw new Error("No worksheets with data were found.");
+      setPreview(result); setSheet(first.name); setHeader(first.header); setMapping(first.mapping);
+      setBusy(null); setMappingOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read the file."); setBusy(null);
+    }
+  }
+
   function changeMapping(field: string, value: string) {
     setMapping((old) => {
       const next = { ...old };
@@ -47,22 +61,7 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
       formats="CSV or Excel" accept={ACCEPT} inputLabel="Master list file" state={{ kind: "idle" }}
       onFiles={async ([chosen]) => {
         if (busy || !chosen) return;
-        setBusy("reading"); setError(""); setPreview(null); setFile(chosen); setMappingOpen(false);
-        try {
-          const result = await previewMasterList(chosen);
-          const first = result.sheets.find((candidate) => result.required.every((key) => candidate.mapping[key] !== undefined)) ?? result.sheets[0];
-          if (!first) throw new Error("No worksheets with data were found.");
-          setPreview(result); setSheet(first.name); setHeader(first.header); setMapping(first.mapping);
-          const complete = result.required.every((key) => first.mapping[key] !== undefined);
-          const otherTables = result.sheets.filter((candidate) => result.required.every((key) => candidate.mapping[key] !== undefined));
-          if (!replace && complete && first.mappingSource === "ai" && otherTables.length === 1) {
-            await save(chosen, { sheet: first.name, header: first.header, mapping: first.mapping });
-          } else {
-            setBusy(null); setMappingOpen(true);
-          }
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Could not read the file."); setBusy(null);
-        }
+        await loadPreview(chosen);
       }} />
     {error && !mappingOpen ? <p className="ic-hint ic-hint--error" role="alert">{error}</p> : null}
     {preview ? <>
@@ -87,9 +86,18 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
             {busy === "saving" ? "Importing…" : replace ? "Replace master list" : "Import master list"}
           </button>
         </>}>
-        <p className="ic-hint">{replace ? "Confirm the columns before replacing your current list." : "Check how your spreadsheet columns are matched."}</p>
+        <p className="ic-hint">{replace ? "Confirm the columns before replacing your current list." : "AI matched your spreadsheet columns automatically. Review and confirm to import."}</p>
         {missing.length ? <p className="ic-hint ic-hint--error" role="alert">Choose a column for {missing.map(columnLabel).join(" and ")} to import this file.</p> : null}
-        {selected?.note ? <p className="ic-hint" role="status">{selected.note}</p> : null}
+        {selected?.note || selected?.mappingSource !== "ai" ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            {selected?.note ? <p className="ic-hint" role="status" style={{ margin: 0 }}>{selected.note}</p> : null}
+            {selected?.mappingSource !== "ai" && file ? (
+              <button type="button" className="ic-btn ic-btn--secondary ic-btn--sm" disabled={!!busy} onClick={() => void loadPreview(file, true)}>
+                {busy === "reading" ? "Retrying…" : "Retry AI mapping"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {error ? <p className="ic-hint ic-hint--error" role="alert">{error}</p> : null}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <label>Worksheet <select className="ic-select" disabled={!!busy} value={sheet} onChange={(e) => {

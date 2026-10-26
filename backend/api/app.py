@@ -14,7 +14,7 @@ from pathlib import Path
 from threading import BoundedSemaphore
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ValidationError
@@ -22,13 +22,21 @@ from pydantic import BaseModel, ValidationError
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
 
+from .auth import (
+    COOKIE_NAME,
+    TOKEN_TTL_SECONDS,
+    create_session_token,
+    extract_request_claims,
+    has_invalid_auth_token,
+    is_auth_required,
+)
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
 from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
 from .stages import FixtureStages, Stages
-from .storage import Store, open_store
+from .storage import Store, open_store, request_session_id
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -50,6 +58,22 @@ def _load_dotenv() -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def _request_session_id(request: Request, query_session_id: str | None = None) -> str:
+    return request_session_id(request, query_session_id)
+
+
+def _slot_wait_seconds() -> float:
+    raw = os.environ.get("INVOICE_SLOT_WAIT_SECONDS")
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return 0.0
+    if "pytest" in sys.modules:
+        return 0.0
+    return 45.0
+
+
 def create_app(
     *, storage_dir: Path | None = None, stages: Stages | None = None, reader=read_pdf_bounded
 ) -> FastAPI:
@@ -67,8 +91,16 @@ def create_app(
         )
         initialize_outlook(app.state.outlook_store)
         app.state.stages = stages if stages is not None else _stages_from_environment()
-        app.state.slot = BoundedSemaphore(1)
-        yield
+        try:
+            max_concurrent = max(1, int(os.environ.get("INVOICE_MAX_CONCURRENT_UPLOADS", "1")))
+        except ValueError:
+            max_concurrent = 1
+        app.state.slot = BoundedSemaphore(max_concurrent)
+        try:
+            yield
+        finally:
+            if hasattr(app.state.store, "pool"):
+                app.state.store.pool.close()
 
     cors_origins = [
         "http://localhost:3000",
@@ -86,13 +118,6 @@ def create_app(
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
     app.include_router(outlook_router)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_origin_regex=cors_origin_regex,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
 
     @app.middleware("http")
     async def advertised_size(request, call_next):
@@ -103,10 +128,36 @@ def create_app(
                     return JSONResponse({"detail": "Upload exceeds 20 MiB"}, status_code=413)
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
+        path = request.url.path
+        protected = path.startswith(
+            ("/invoices", "/master-list", "/outlook", "/auth/outlook/login")
+        )
+        if protected and request.method != "OPTIONS":
+            if has_invalid_auth_token(request):
+                return JSONResponse(
+                    {"detail": "Invalid or expired session"},
+                    status_code=401,
+                    headers={"Cache-Control": "no-store"},
+                )
+            if is_auth_required() and extract_request_claims(request) is None:
+                return JSONResponse(
+                    {"detail": "Authentication required"},
+                    status_code=401,
+                    headers={"Cache-Control": "no-store"},
+                )
         response = await call_next(request)
-        if request.url.path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
+        if path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_origin_regex=cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
 
     class SignInPayload(BaseModel):
         username: str | None = None
@@ -127,30 +178,68 @@ def create_app(
                 {"ok": False, "error": "invalid", "detail": "Invalid username or password"},
                 status_code=401,
             )
+        session_id = str(uuid4())
+        token = create_session_token(expected_user, session_id)
+        response = JSONResponse(
+            {
+                "ok": True,
+                "session_id": token,
+                "user": {
+                    "email": expected_user,
+                },
+            }
+        )
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=token,
+            httponly=True,
+            samesite="lax",
+            path="/",
+            max_age=TOKEN_TTL_SECONDS,
+        )
+        return response
+
+    @app.get("/auth/me")
+    def auth_me(request: Request):
+        claims = extract_request_claims(request)
+        if claims is None:
+            return JSONResponse(
+                {"ok": False, "authenticated": False, "detail": "Authentication required"},
+                status_code=401,
+            )
+        token = create_session_token(claims["username"], claims["session_id"])
         return {
             "ok": True,
+            "authenticated": True,
+            "session_id": token,
             "user": {
-                "email": expected_user,
-                "provider": "password",
+                "email": claims["username"],
             },
         }
 
+    @app.post("/auth/sign-out")
+    def auth_sign_out():
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(key=COOKIE_NAME, path="/", samesite="lax")
+        return response
+
     @app.get("/health")
-    def health():
+    def health(request: Request):
         selected = app.state.stages
+        sid = _request_session_id(request)
         return {
             "status": "ok",
             "mode": selected.mode if selected else "unconfigured",
             "processing_configured": selected is not None
             and (
                 not isinstance(selected, UploadedMasterStages)
-                or current_master(app.state.store) is not None
+                or current_master(app.state.store, session_id=sid) is not None
             ),
             "contract": "proposed-v1",
         }
 
     @app.post("/invoices", response_model=SavedInvoice, status_code=201)
-    def upload(file: UploadFile, force_ocr: bool = False):
+    def upload(request: Request, file: UploadFile, force_ocr: bool = False):
         selected = app.state.stages
         if selected is None:
             file.file.close()
@@ -159,7 +248,13 @@ def create_app(
                 "Extraction/check adapters are unconfigured. Set INVOICE_MODE=fixture for known "
                 "dummy PDFs, or INVOICE_MODE=live with a model and uploaded master list.",
             )
-        if not app.state.slot.acquire(blocking=False):
+        wait_seconds = _slot_wait_seconds()
+        acquired = (
+            app.state.slot.acquire(blocking=True, timeout=wait_seconds)
+            if wait_seconds > 0
+            else app.state.slot.acquire(blocking=False)
+        )
+        if not acquired:
             file.file.close()
             raise HTTPException(
                 429,
@@ -167,13 +262,14 @@ def create_app(
                 headers={"Retry-After": "5"},
             )
         store = app.state.store
+        session_id = _request_session_id(request)
         invoice_id = str(uuid4())
         path = store.path(invoice_id)
         inserted = False
         try:
             if isinstance(selected, UploadedMasterStages):
                 try:
-                    selected = selected.bind(store)
+                    selected = selected.bind(store, session_id=session_id)
                 except ValueError as exc:
                     raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
@@ -191,7 +287,12 @@ def create_app(
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             store.insert(
-                invoice_id, filename, document_hash, selected.mode, selected.price_sheet_version
+                invoice_id,
+                filename,
+                document_hash,
+                selected.mode,
+                selected.price_sheet_version,
+                session_id=session_id,
             )
             inserted = True
             stage = "reading"
@@ -219,8 +320,9 @@ def create_app(
                 # Persist failures without logging document text, provider response bodies or keys.
                 log.warning("Invoice %s failed (%s)", invoice_id, type(exc).__name__)
                 store.update(invoice_id, "failed", error=f"{stage}: {_failure_reason(exc)}")
-                return JSONResponse(store.get(invoice_id).model_dump(mode="json"), status_code=422)
-            return store.get(invoice_id)
+                failed_saved = store.get(invoice_id, session_id=session_id)
+                return JSONResponse(failed_saved.model_dump(mode="json"), status_code=422)
+            return store.get(invoice_id, session_id=session_id)
         finally:
             file.file.close()
             if not inserted:
@@ -228,19 +330,25 @@ def create_app(
             app.state.slot.release()
 
     @app.get("/invoices", response_model=list[InvoiceSummary])
-    def invoices(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
-        return app.state.store.list(limit, offset)
+    def invoices(
+        request: Request,
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ):
+        session_id = _request_session_id(request)
+        return app.state.store.list(limit, offset, session_id=session_id)
 
     @app.get("/invoices/{invoice_id}", response_model=SavedInvoice)
-    def invoice(invoice_id: UUID):
-        saved = app.state.store.get(str(invoice_id))
+    def invoice(invoice_id: UUID, request: Request, session_id: str | None = None):
+        sid = _request_session_id(request, session_id)
+        saved = app.state.store.get(str(invoice_id), session_id=sid)
         if saved is None:
             raise HTTPException(404, "Invoice not found")
         return saved
 
     @app.get("/invoices/{invoice_id}/file")
-    def invoice_file(invoice_id: UUID):
-        saved = invoice(invoice_id)
+    def invoice_file(invoice_id: UUID, request: Request, session_id: str | None = None):
+        saved = invoice(invoice_id, request, session_id)
         path = app.state.store.path(str(invoice_id))
         if not path.is_file():
             raise HTTPException(404, "Original PDF is unavailable")
@@ -252,15 +360,16 @@ def create_app(
         )
 
     @app.put("/invoices/{invoice_id}/outcome", response_model=SavedInvoice)
-    def decide(invoice_id: UUID, request: OutcomeRequest):
+    def decide(invoice_id: UUID, request_body: OutcomeRequest, request: Request):
         """Save the AP clerk's decision, or clear it with a null outcome. The clerk alone decides."""
-        saved = invoice(invoice_id)
-        reason = (request.reason or "").strip() or None
-        refusal = _outcome_refusal(saved, request.outcome, reason)
+        sid = _request_session_id(request)
+        saved = invoice(invoice_id, request, sid)
+        reason = (request_body.reason or "").strip() or None
+        refusal = _outcome_refusal(saved, request_body.outcome, reason)
         if refusal:
             raise HTTPException(*refusal)
-        app.state.store.decide(saved.id, request.outcome, reason)
-        return app.state.store.get(saved.id)
+        app.state.store.decide(saved.id, request_body.outcome, reason, session_id=sid)
+        return app.state.store.get(saved.id, session_id=sid)
 
     return app
 

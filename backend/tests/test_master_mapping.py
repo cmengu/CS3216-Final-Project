@@ -154,3 +154,94 @@ def test_header_fallback_does_not_guess_between_tables():
     assert (
         fallback_layout([["Name", "Price"], ["Bolt", "2"], ["Name", "Price"], ["Nut", "3"]]) is None
     )
+
+
+def test_local_ollama_mapping_promotes_description_to_name(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    calls = []
+
+    def fake_ollama(**kwargs):
+        calls.append(kwargs["model"])
+        return Layouts(
+            sheets=[
+                Layout(
+                    sheet=0,
+                    header=1,
+                    columns=[
+                        Column(field="item", column=0),
+                        Column(field="description", column=1),
+                        Column(field="price", column=2),
+                    ],
+                    note="",
+                )
+            ]
+        )
+
+    monkeypatch.setattr("extract.local_pipeline._call_ollama_structured", fake_ollama)
+    sheets = [
+        {
+            "name": "Master prices",
+            "rows": [
+                ["Title row"],
+                ["Part Code", "Description", "Agreed Unit Price"],
+                ["SKU-1", "Hex Bolt M8", "1.50"],
+            ],
+        }
+    ]
+    result = suggest_layouts(sheets, model="gemma4:e4b")
+    assert calls == ["gemma4:e4b"]
+    assert result.sheets[0].header == 1
+    by_field = {c.field: c.column for c in result.sheets[0].columns}
+    assert by_field == {"name": 1, "item": 0, "description": 1, "price": 2}
+
+
+def test_local_ollama_gatekeeper_escalates_to_challenger(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    calls = []
+
+    def fake_ollama(**kwargs):
+        calls.append((kwargs["model"], kwargs["user_prompt"]))
+        if len(calls) == 1:
+            return Layouts(
+                sheets=[
+                    Layout(
+                        sheet=0,
+                        header=0,
+                        columns=[
+                            Column(field="name", column=0),
+                            Column(field="price", column=2),
+                        ],
+                        note="",
+                    )
+                ]
+            )
+        return Layouts(
+            sheets=[
+                Layout(
+                    sheet=0,
+                    header=0,
+                    columns=[
+                        Column(field="supplier", column=0),
+                        Column(field="name", column=1),
+                        Column(field="price", column=2),
+                    ],
+                    note="",
+                )
+            ]
+        )
+
+    monkeypatch.setattr("extract.local_pipeline._call_ollama_structured", fake_ollama)
+    sheets = [
+        {
+            "name": "Prices",
+            "rows": [
+                ["Supplier name", "Description", "Agreed unit price"],
+                ["Acme Corp", "Steel Washer", "0.25"],
+            ],
+        }
+    ]
+    result = suggest_layouts(sheets, model="gemma4:e4b")
+    assert [m for m, _ in calls] == ["gemma4:e4b", "qwen3.5:4b"]
+    assert "GATEKEEPER CRITIQUE" in calls[1][1]
+    by_field = {c.field: c.column for c in result.sheets[0].columns}
+    assert by_field == {"supplier": 0, "name": 1, "price": 2}

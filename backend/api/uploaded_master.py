@@ -16,6 +16,7 @@ from .csv_live import (
     normalized_unit,
 )
 from .master_list import current_master
+from .storage import DEFAULT_SESSION_ID
 
 
 class UploadedPriceSheet(PriceSheet):
@@ -202,8 +203,8 @@ class UploadedMasterStages:
         self.model = model
         self.client = client
 
-    def bind(self, store):
-        document = current_master(store)
+    def bind(self, store, *, session_id: str = DEFAULT_SESSION_ID):
+        document = current_master(store, session_id=session_id)
         if document is None:
             raise ValueError("Upload a master list before checking invoices.")
         return LiveStages(UploadedPriceSheet(document), model=self.model, client=self.client)

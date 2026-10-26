@@ -36,7 +36,6 @@ function MasterListView() {
   const [supplier, setSupplier] = useState("");
   const [replace, setReplace] = useState(false);
   const [mappingOpen, setMappingOpen] = useState(false);
-  const [mappingDismissed, setMappingDismissed] = useState(false);
   const replaceOpen = replace || params.get("replace") === "1";
   const uploaded = params.get("uploaded") === "1";
 
@@ -156,9 +155,9 @@ function MasterListView() {
         </div>
       </section>
       {masterList.columnMapping ? <ColumnMappings
-        open={mappingOpen || (uploaded && !mappingDismissed)}
+        open={mappingOpen}
         selection={masterList.columnMapping}
-        onClose={() => { setMappingOpen(false); setMappingDismissed(true); }}
+        onClose={() => setMappingOpen(false)}
       /> : null}
     </div>
   );

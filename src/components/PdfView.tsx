@@ -1,7 +1,7 @@
 "use client";
 
 /*
- * The original PDF, rendered with pdf.js, with flagged lines highlighted. A highlight is placed
+ * The original PDF, rendered with pdf.js, with the selected line highlighted. A highlight is placed
  * from the reader's blocks (ParsedDocument.blocks[].locations): the block whose text holds the
  * line's part number (else its description) gives the page and horizontal extent. When the PDF's
  * own text layer has that part number, the highlight is narrowed to that row; otherwise it covers
@@ -9,7 +9,19 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-import type { SourceBlock } from "@/checker/types";
+import {
+  checkPill,
+  lineAttention,
+  linesPill,
+  money,
+  orderedLines,
+  statusPill,
+  taxLabel,
+} from "@/checker/present";
+import type { SourceBlock, SupplierInvoice } from "@/checker/types";
+import { decide, DecisionBar } from "@/components/invoices/CheckPane";
+import { PayAnywayDialog, RaiseDialog } from "@/components/invoices/Dialogs";
+import { Pill } from "@/components/ui";
 import { blockFor } from "./pdfEvidence";
 import { wholeItemRow } from "./pdfRow";
 import { projectBox, textRotation } from "./pdfRotation";
@@ -98,14 +110,18 @@ async function placeMarks(doc: PDFDocumentProxy, marks: Mark[], blocks: SourceBl
 }
 
 export function PdfView({
+  inv,
   url,
   fileName,
   marks,
   blocks,
   focus,
   rotations,
+  onSelectLine,
   onClose,
 }: {
+  inv?: SupplierInvoice;
+  onSelectLine?: (n: number) => void;
   onClose?: () => void;
   rotations?: Record<number, number>;
   url: string;
@@ -122,6 +138,7 @@ export function PdfView({
   const [page, setPage] = useState(1);
   const [placed, setPlaced] = useState<{ boxes: Box[]; pages: Record<number, number> }>({ boxes: [], pages: {} });
   const [sizes, setSizes] = useState<PageSize[]>([]);
+  const [dialog, setDialog] = useState<"pay" | "raise" | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const canvases = useRef<(HTMLCanvasElement | null)[]>([]);
 
@@ -133,7 +150,7 @@ export function PdfView({
       try {
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-        const loading = pdfjs.getDocument({ url });
+        const loading = pdfjs.getDocument({ url, withCredentials: true });
         task = loading;
         const loaded = await loading.promise;
         if (!live) return;
@@ -182,7 +199,8 @@ export function PdfView({
     return () => ro.disconnect();
   }, []);
 
-  const scaleFor = useCallback((w: number) => (width ? ((width - 40) / w) * ZOOMS[zoom] : 1), [width, zoom]);
+  const margin = inv ? 120 : 40;
+  const scaleFor = useCallback((w: number) => (width ? (Math.max(240, width - margin) / w) * ZOOMS[zoom] : 1), [width, zoom, margin]);
 
   // Render pages whenever the scale changes.
   useEffect(() => {
@@ -217,9 +235,9 @@ export function PdfView({
     // Rectangles share viewport coordinates; offsetTop may use an ancestor outside the pane.
     const top = pane.scrollTop + rect.top - outer.top - pane.clientTop;
     const left = pane.scrollLeft + rect.left - outer.left - pane.clientLeft;
-    const margin = highlight ? Math.min(80, pane.clientHeight / 4) : 20;
+    const pad = highlight ? Math.min(80, pane.clientHeight / 4) : 20;
     pane.scrollTo({
-      top: Math.max(0, top - margin),
+      top: Math.max(0, top - pad),
       left: Math.max(0, left - (highlight ? Math.max(20, (pane.clientWidth - rect.width) / 2) : 0)),
       behavior: "smooth",
     });
@@ -251,6 +269,159 @@ export function PdfView({
   };
 
   const n = doc?.numPages ?? 0;
+  const zoomPct = Math.round((sizes[page - 1] ? scaleFor(sizes[page - 1].w) : ZOOMS[zoom]) * 100);
+
+  const canvasNodes = (
+    <div className="ic-doc-scroll" ref={scroller} onScroll={onScroll}>
+      {error ? <p className="muted" style={{ textAlign: "center" }}>{error}</p> : null}
+      {!doc && !error ? <p className="muted" style={{ textAlign: "center" }}>Loading…</p> : null}
+      {doc
+        ? sizes.map((s, i) => {
+            const scale = scaleFor(s.w);
+            return (
+              <div key={i} className="ic-pdfpage" data-page={i + 1} style={{ width: s.w * scale, height: s.h * scale }}>
+                <canvas
+                  ref={(c) => {
+                    canvases.current[i] = c;
+                  }}
+                  style={{ width: s.w * scale, height: s.h * scale }}
+                  aria-label={`Page ${i + 1} of ${fileName}`}
+                  role="img"
+                />
+                {placed.boxes
+                  .filter((b) => b.page === i + 1 && focus?.n === b.n)
+                  .map((b) => (
+                    <div
+                      key={b.n}
+                      data-line={b.n}
+                      className={`ic-hl${focus?.n === b.n ? " ic-hl--focus" : ""}`}
+                      style={{ left: screenBox(s, b).left * scale, top: screenBox(s, b).top * scale, width: screenBox(s, b).width * scale, height: screenBox(s, b).height * scale }}
+                    />
+                  ))}
+              </div>
+            );
+          })
+        : null}
+    </div>
+  );
+
+  if (inv) {
+    const pill = linesPill(inv);
+    const subtitle = [inv.number, inv.fileName].filter(Boolean).join(" · ");
+    return (
+      <div className="ic-pdfmodal-scrim" onClick={onClose}>
+        <section
+          className="ic-pdfmodal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Invoice PDF"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <header className="ic-pdfmodal-head">
+            <div className="ic-pdfmodal-title">
+              <div className="ic-pdfmodal-title-row">
+                <span className="ic-pdfmodal-supplier">
+                  {inv.state === "failed" ? inv.fileName : (inv.supplier ?? inv.fileName)}
+                </span>
+                <Pill pill={inv.outcome ? statusPill(inv) : checkPill(inv)} />
+              </div>
+              <span className="muted">{subtitle}</span>
+            </div>
+            <div className="ic-pdfmodal-tools">
+              <button className="ic-icobtn" type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => goTo(page - 1)}>
+                <Icon name="chevL" />
+              </button>
+              <span className="num ic-pdfmodal-page" aria-live="polite">
+                {n ? `Page ${page} of ${n}` : "Loading…"}
+              </span>
+              <button className="ic-icobtn" type="button" aria-label="Next page" disabled={!n || page >= n} onClick={() => goTo(page + 1)}>
+                <Icon name="chev" />
+              </button>
+              <span className="sep" aria-hidden="true" />
+              <button className="ic-icobtn" type="button" aria-label="Zoom out" disabled={zoom === 0} onClick={() => setZoom((z) => Math.max(0, z - 1))}>
+                <Icon name="minus" />
+              </button>
+              <span className="num ic-pdfmodal-zoom">{zoomPct}%</span>
+              <button className="ic-icobtn" type="button" aria-label="Zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}>
+                <Icon name="plus" />
+              </button>
+              {onClose ? (
+                <button className="ic-pdfmodal-close" type="button" onClick={onClose} aria-label="Close PDF preview">
+                  <Icon name="x" />
+                  <span>Close</span>
+                  <kbd>Esc</kbd>
+                </button>
+              ) : null}
+            </div>
+          </header>
+
+          <div className="ic-pdfmodal-body">
+            <aside className="ic-pdfmodal-side" aria-label="Invoice lines">
+              <div className="ic-pdfmodal-side-h">
+                <h2>Lines</h2>
+                {pill ? <Pill pill={pill} /> : null}
+              </div>
+              <p className="muted ic-pdfmodal-sub">Pick a line to highlight it on the invoice.</p>
+              <div className="ic-pdfmodal-lines" role="list">
+                {orderedLines(inv).map(({ line, n: lineNum }) => {
+                  const flagged = line.result !== "match";
+                  const active = focus?.n === lineNum;
+                  const total = line.lineTotal === null ? "—" : money(line.lineTotal, null);
+                  return (
+                    <button
+                      type="button"
+                      key={lineNum}
+                      role="listitem"
+                      className="ic-pdfmodal-line"
+                      aria-current={active ? "true" : undefined}
+                      onClick={() => onSelectLine?.(lineNum)}
+                    >
+                      <span className="ico">
+                        {flagged ? (
+                          <Icon name="warn" style={{ color: "var(--warn)" }} />
+                        ) : (
+                          <Icon name="tick" style={{ color: "var(--good)", strokeWidth: 2 }} />
+                        )}
+                      </span>
+                      <span className="lbl">
+                        <span>
+                          {lineNum} · {line.description.trim() || line.part || "No description"}
+                        </span>
+                        {flagged && active ? (
+                          <span className="ic-pdfmodal-line-note">{lineAttention(line, inv.currency)}</span>
+                        ) : null}
+                      </span>
+                      <span className="amt num">{total}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ic-sum ic-pdfmodal-totals">
+                <span className="muted">Subtotal</span>
+                <span className="num" style={{ textAlign: "right" }}>
+                  {inv.subtotal === null ? "—" : money(inv.subtotal, null)}
+                </span>
+                <span className="muted">{taxLabel(inv.taxRate)}</span>
+                <span className="num" style={{ textAlign: "right" }}>
+                  {inv.tax === null ? "—" : money(inv.tax, null)}
+                </span>
+                <span className="t">Total</span>
+                <span className="num t" style={{ textAlign: "right" }}>
+                  {inv.total === null ? "—" : money(inv.total, inv.currency)}
+                </span>
+              </div>
+            </aside>
+            <div className="ic-pdfmodal-stage">{canvasNodes}</div>
+          </div>
+
+          <DecisionBar inv={inv} onPayAnyway={() => setDialog("pay")} onRaise={() => setDialog("raise")} onClosePdf={onClose} />
+          <PayAnywayDialog inv={inv} open={dialog === "pay"} onClose={() => setDialog(null)} onSubmit={(reason) => decide(inv, "ready_to_pay_anyway", reason)} />
+          <RaiseDialog inv={inv} open={dialog === "raise"} onClose={() => setDialog(null)} onRecord={() => decide(inv, "raise_with_supplier")} />
+        </section>
+      </div>
+    );
+  }
+
   return (
     <section className="ic-doc" aria-label="Invoice PDF">
       <div className="ic-doc-bar">
@@ -284,37 +455,7 @@ export function PdfView({
         </a>
         {onClose ? <button className="ic-icobtn" type="button" onClick={onClose} aria-label="Close PDF preview"><Icon name="x" /></button> : null}
       </div>
-      <div className="ic-doc-scroll" ref={scroller} onScroll={onScroll}>
-        {error ? <p className="muted" style={{ textAlign: "center" }}>{error}</p> : null}
-        {!doc && !error ? <p className="muted" style={{ textAlign: "center" }}>Loading…</p> : null}
-        {doc
-          ? sizes.map((s, i) => {
-              const scale = scaleFor(s.w);
-              return (
-                <div key={i} className="ic-pdfpage" data-page={i + 1} style={{ width: s.w * scale, height: s.h * scale }}>
-                  <canvas
-                    ref={(c) => {
-                      canvases.current[i] = c;
-                    }}
-                    style={{ width: s.w * scale, height: s.h * scale }}
-                    aria-label={`Page ${i + 1} of ${fileName}`}
-                    role="img"
-                  />
-                  {placed.boxes
-                    .filter((b) => b.page === i + 1)
-                    .map((b) => (
-                      <div
-                        key={b.n}
-                        data-line={b.n}
-                        className={`ic-hl${focus?.n === b.n ? " ic-hl--focus" : ""}`}
-                        style={{ left: screenBox(s, b).left * scale, top: screenBox(s, b).top * scale, width: screenBox(s, b).width * scale, height: screenBox(s, b).height * scale }}
-                      />
-                    ))}
-                </div>
-              );
-            })
-          : null}
-      </div>
+      {canvasNodes}
     </section>
   );
 }

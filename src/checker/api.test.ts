@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { decideInvoice, decisionFailure, getInvoice, listInvoices, retryInvoice, uploadFailure, uploadInvoice, uploadProblem } from "./api";
+import {
+  decideInvoice,
+  decisionFailure,
+  getInvoice,
+  invoiceFileUrl,
+  listInvoices,
+  retryInvoice,
+  setActiveSessionId,
+  uploadFailure,
+  uploadInvoice,
+  uploadProblem,
+} from "./api";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 
 const id = "11111111-1111-1111-1111-111111111111";
@@ -194,5 +205,31 @@ describe("decideInvoice", () => {
       "The invoice is still being checked; decide once the check has finished.",
     );
     expect(decisionFailure(500)).toBe("The checking service had a problem. Try again in a moment.");
+  });
+});
+
+describe("session isolation headers and URLs", () => {
+  it("attaches X-Invoice-Session header and session_id query param when a session is active", async () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    vi.stubGlobal("window", { sessionStorage: storage, localStorage: storage });
+
+    setActiveSessionId("sess-user-42");
+    expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file\\?session_id=sess-user-42$`));
+
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      new Response(JSON.stringify(saved("Supplier", "0.00")), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await uploadInvoice(new File(["%PDF"], "upload.pdf", { type: "application/pdf" }));
+    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({ "X-Invoice-Session": "sess-user-42" });
+
+    setActiveSessionId(null);
+    expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file$`));
   });
 });

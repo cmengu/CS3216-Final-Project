@@ -1,51 +1,103 @@
 /*
- * Sign-in backed by POST /auth/sign-in (configured via AUTH_USERNAME and AUTH_PASSWORD in backend/.env).
+ * Sign-in backed by POST /auth/sign-in and verified via GET /auth/me using an HttpOnly session cookie (ic_session).
  */
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SERVICE_URL } from "@/checker/api";
+import { SERVICE_URL, SESSION_ID_KEY, setActiveSessionId } from "@/checker/api";
+import { resetUploadsSession } from "@/checker/uploads";
+import { resetMasterListSession } from "@/masterList";
 
 export interface User {
   email: string;
-  provider: "password" | "google" | "microsoft";
 }
 
 export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" };
 
-const KEY = "ic.session.v2";
 const DEFAULT_USERNAME = process.env.NEXT_PUBLIC_AUTH_USERNAME ?? "demo-account";
 const DEFAULT_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD ?? "invoice-checker";
 const listeners = new Set<() => void>();
-let cached: { raw: string | null; user: User | null } = { raw: null, user: null };
 
-function store(user: User | null) {
-  try {
-    if (user) localStorage.setItem(KEY, JSON.stringify(user));
-    else localStorage.removeItem(KEY);
-  } catch {
-    /* storage blocked */
+let sessionUser: User | null | undefined = undefined;
+let checkingSession: Promise<User | null> | null = null;
+
+function purgeLegacyStorage() {
+  if (typeof window === "undefined") return;
+  for (const key of ["ic.session.v1", "ic.session.v2", SESSION_ID_KEY]) {
+    try {
+      window.localStorage?.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+    try {
+      window.sessionStorage?.removeItem(key);
+    } catch {
+      /* ignore */
+    }
   }
+}
+
+function setSessionState(user: User | null) {
+  purgeLegacyStorage();
+  sessionUser = user;
+  setActiveSessionId(null);
+  resetUploadsSession();
+  resetMasterListSession();
   listeners.forEach((l) => l());
 }
 
-/** The person signed in, or null. */
-export function currentUser(): User | null {
+/** Verify the browser's HttpOnly ic_session cookie against GET /auth/me. */
+export async function refreshAuthSession(): Promise<User | null> {
   if (typeof window === "undefined") return null;
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(KEY);
-  } catch {
-    raw = null;
-  }
-  if (raw !== cached.raw) {
+  purgeLegacyStorage();
+  if (checkingSession) return checkingSession;
+
+  let pending: Promise<User | null> | null = null;
+  pending = (async () => {
     try {
-      cached = { raw, user: raw ? (JSON.parse(raw) as User) : null };
+      const resp = await fetch(`${SERVICE_URL}/auth/me`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (resp.ok) {
+        const data = (await resp.json()) as {
+          ok?: boolean;
+          authenticated?: boolean;
+          user?: { email?: string };
+        };
+        if (data.authenticated && data.user?.email) {
+          const verified: User = { email: data.user.email };
+          sessionUser = verified;
+          listeners.forEach((l) => l());
+          return verified;
+        }
+      }
+      sessionUser = null;
+      listeners.forEach((l) => l());
+      return null;
     } catch {
-      cached = { raw, user: null };
+      if (sessionUser === undefined) {
+        sessionUser = null;
+        listeners.forEach((l) => l());
+      }
+      return sessionUser ?? null;
+    } finally {
+      if (checkingSession === pending) {
+        checkingSession = null;
+      }
     }
-  }
-  return cached.user;
+  })();
+
+  checkingSession = pending;
+  return pending;
+}
+
+/** The person signed in, null when signed out, or undefined while checking the session cookie. */
+export function currentUser(): User | null | undefined {
+  if (typeof window === "undefined") return undefined;
+  return sessionUser;
 }
 
 export async function signIn(username: string, password: string): Promise<SignInResult> {
@@ -55,23 +107,25 @@ export async function signIn(username: string, password: string): Promise<SignIn
   try {
     const resp = await fetch(`${SERVICE_URL}/auth/sign-in`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: trimmed, password }),
       signal: AbortSignal.timeout(5_000),
     });
     if (resp.ok) {
-      const data = (await resp.json()) as { ok: boolean; user?: User };
-      if (data.ok && data.user) {
-        store(data.user);
-        return { ok: true, user: data.user };
+      const data = (await resp.json()) as { ok: boolean; user?: { email?: string } };
+      if (data.ok && data.user?.email) {
+        const user: User = { email: data.user.email };
+        setSessionState(user);
+        return { ok: true, user };
       }
     }
     return { ok: false, error: "invalid" };
   } catch {
-    // Fallback if backend is unreachable (e.g., offline frontend test environment)
+    // Fallback if backend is unreachable in an offline frontend test environment
     if (trimmed.toLowerCase() === DEFAULT_USERNAME.toLowerCase() && password === DEFAULT_PASSWORD) {
-      const user: User = { email: DEFAULT_USERNAME, provider: "password" };
-      store(user);
+      const user: User = { email: DEFAULT_USERNAME };
+      setSessionState(user);
       return { ok: true, user };
     }
     return { ok: false, error: "invalid" };
@@ -87,22 +141,29 @@ export async function signInWithMicrosoft(): Promise<SignInResult> {
 }
 
 export async function signOut(): Promise<void> {
-  store(null);
+  try {
+    await fetch(`${SERVICE_URL}/auth/sign-out`, {
+      method: "POST",
+      credentials: "include",
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    /* ignore network error on sign-out */
+  }
+  setSessionState(null);
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) l();
-  };
-  window.addEventListener("storage", onStorage);
+  if (typeof window !== "undefined" && sessionUser === undefined && !checkingSession) {
+    void refreshAuthSession();
+  }
   return () => {
     listeners.delete(l);
-    window.removeEventListener("storage", onStorage);
   };
 }
 
-/** The signed-in person, kept current. Undefined until the browser has read the session. */
+/** The signed-in person, kept current. Undefined until the browser has verified the session cookie. */
 export function useUser(): User | null | undefined {
   return useSyncExternalStore(subscribe, currentUser, () => undefined);
 }

@@ -14,7 +14,13 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from fastapi import Request
+
+from .auth import extract_request_claims, is_auth_required
 from .contracts import InvoiceSummary, SavedInvoice
+
+DEFAULT_SESSION_ID = "default"
+_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 INTERRUPTED = "Processing was interrupted by a service restart; upload again to retry"
 # The AP clerk's decision. Added after the first release, so older databases gain the columns.
@@ -27,6 +33,36 @@ SUMMARY = (
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_session_id(session_id: str | None) -> str:
+    if not session_id:
+        return DEFAULT_SESSION_ID
+    cleaned = session_id.strip()
+    if not cleaned or len(cleaned) > 128:
+        return DEFAULT_SESSION_ID
+    return cleaned
+
+
+def request_session_id(request: Request, query_session_id: str | None = None) -> str:
+    claims = extract_request_claims(request, query_session_id)
+    if claims is not None:
+        return normalize_session_id(claims["session_id"])
+    if is_auth_required():
+        return DEFAULT_SESSION_ID
+    candidates = (
+        request.headers.get("x-invoice-session"),
+        query_session_id,
+        request.query_params.get("session_id"),
+        request.cookies.get("ic_session"),
+    )
+    for raw in candidates:
+        if not raw:
+            continue
+        cleaned = raw.strip()
+        if _SESSION_TOKEN_RE.match(cleaned):
+            return normalize_session_id(cleaned)
+    return DEFAULT_SESSION_ID
 
 
 def open_store(directory: Path):
@@ -45,6 +81,7 @@ class NoMasterList(Exception):
 
 def _saved(row: dict, invoice_id: str) -> SavedInvoice:
     data = dict(row)
+    data.pop("session_id", None)
     data["check"] = data.pop("check_result")
     for key in ("document", "invoice", "check"):
         value = data[key]
@@ -80,14 +117,32 @@ class Store:
             for column in OUTCOME_COLUMNS:
                 if column not in present:
                     db.execute(f"ALTER TABLE invoices ADD COLUMN {column} TEXT")
+            if "session_id" not in present:
+                db.execute(
+                    "ALTER TABLE invoices ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
+                )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS invoice_session_time "
+                "ON invoices(session_id, created_at DESC, id DESC)"
+            )
             db.execute("""CREATE TABLE IF NOT EXISTS master_lists (
                 id TEXT PRIMARY KEY, created_at TEXT NOT NULL, document TEXT NOT NULL,
                 event TEXT NOT NULL, source BLOB NOT NULL
             )""")
 
+            present = {row["name"] for row in db.execute("PRAGMA table_info(master_lists)")}
+            if "session_id" not in present:
+                db.execute(
+                    "ALTER TABLE master_lists ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
+                )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS master_lists_session_idx "
+                "ON master_lists(session_id, created_at DESC)"
+            )
+
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.database, timeout=10)
+        db = sqlite3.connect(self.database, timeout=30.0)
         db.row_factory = sqlite3.Row
         try:
             with db:
@@ -107,14 +162,24 @@ class Store:
     def path(self, invoice_id: str):
         return self.files / f"{invoice_id}.pdf"
 
-    def insert(self, invoice_id, filename, document_hash, mode, price_sheet_version):
+    def insert(
+        self,
+        invoice_id,
+        filename,
+        document_hash,
+        mode,
+        price_sheet_version,
+        *,
+        session_id: str = DEFAULT_SESSION_ID,
+    ):
         at = now()
+        sid = normalize_session_id(session_id)
         with self.connect() as db:
             db.execute(
                 """INSERT INTO invoices
-                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version)
-                VALUES (?,?,?,'reading',?,?,?,?)""",
-                (invoice_id, filename, document_hash, mode, at, at, price_sheet_version),
+                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id)
+                VALUES (?,?,?,'reading',?,?,?,?,?)""",
+                (invoice_id, filename, document_hash, mode, at, at, price_sheet_version, sid),
             )
 
     def update(self, invoice_id, status, *, document=None, invoice=None, check=None, error=None):
@@ -134,65 +199,131 @@ class Store:
                 ),
             )
 
-    def decide(self, invoice_id: str, outcome: str | None, reason: str | None):
+    def decide(
+        self,
+        invoice_id: str,
+        outcome: str | None,
+        reason: str | None,
+        *,
+        session_id: str | None = None,
+    ):
         """Save or clear the outcome. The decision time is the service's clock, never the caller's."""
+        decided_at = now() if outcome else None
         with self.connect() as db:
-            db.execute(
-                "UPDATE invoices SET outcome=?, outcome_reason=?, decided_at=? WHERE id=?",
-                (outcome, reason, now() if outcome else None, invoice_id),
-            )
+            if session_id is None:
+                db.execute(
+                    "UPDATE invoices SET outcome=?, outcome_reason=?, decided_at=? WHERE id=?",
+                    (outcome, reason, decided_at, invoice_id),
+                )
+            else:
+                sid = normalize_session_id(session_id)
+                db.execute(
+                    "UPDATE invoices SET outcome=?, outcome_reason=?, decided_at=? "
+                    "WHERE id=? AND session_id=?",
+                    (outcome, reason, decided_at, invoice_id, sid),
+                )
 
-    def get(self, invoice_id: str) -> SavedInvoice | None:
+    def get(self, invoice_id: str, *, session_id: str | None = None) -> SavedInvoice | None:
         with self.connect() as db:
-            row = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
-        return None if row is None else _saved(dict(row), invoice_id)
+            if session_id is None:
+                row = db.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+            else:
+                sid = normalize_session_id(session_id)
+                row = db.execute(
+                    "SELECT * FROM invoices WHERE id=? AND session_id=?",
+                    (invoice_id, sid),
+                ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data.pop("session_id", None)
+        data["check"] = data.pop("check_result")
+        for key in ("document", "invoice", "check"):
+            data[key] = json.loads(data[key]) if data[key] else None
+        return SavedInvoice(**data, file_url=f"/invoices/{invoice_id}/file")
 
-    def list(self, limit: int, offset: int) -> list[InvoiceSummary]:
+    def list(
+        self, limit: int, offset: int, *, session_id: str | None = None
+    ) -> list[InvoiceSummary]:
         with self.connect() as db:
-            rows = db.execute(
-                f"""SELECT {SUMMARY} FROM invoices
-                ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
-                (limit, offset),
-            ).fetchall()
+            if session_id is None:
+                rows = db.execute(
+                    """SELECT id,filename,document_hash,status,mode,created_at,
+                    updated_at,error,price_sheet_version,outcome,outcome_reason,decided_at
+                    FROM invoices
+                    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
+                    (limit, offset),
+                ).fetchall()
+            else:
+                sid = normalize_session_id(session_id)
+                rows = db.execute(
+                    """SELECT id,filename,document_hash,status,mode,created_at,
+                    updated_at,error,price_sheet_version,outcome,outcome_reason,decided_at
+                    FROM invoices
+                    WHERE session_id=?
+                    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
+                    (sid, limit, offset),
+                ).fetchall()
         return [InvoiceSummary(**dict(row)) for row in rows]
 
-    def latest_master_list(self) -> dict | None:
+    def latest_master_list(self, *, session_id: str = DEFAULT_SESSION_ID) -> dict | None:
         with self.connect() as db:
             row = db.execute(
-                "SELECT document FROM master_lists ORDER BY rowid DESC LIMIT 1"
+                "SELECT document FROM master_lists WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
+                (normalize_session_id(session_id),),
             ).fetchone()
         return _loaded(row["document"]) if row else None
 
-    def master_list_version(self, version: str) -> dict | None:
+    def master_list_version(
+        self, version: str, *, session_id: str = DEFAULT_SESSION_ID
+    ) -> dict | None:
         """The newest saved master list with this version, or None."""
         with self.connect() as db:
             row = db.execute(
-                "SELECT document FROM master_lists WHERE json_extract(document, '$.version') = ? "
+                "SELECT document FROM master_lists WHERE session_id=? AND json_extract(document, '$.version') = ? "
                 "ORDER BY rowid DESC LIMIT 1",
-                (version,),
+                (normalize_session_id(session_id), version),
             ).fetchone()
         return _loaded(row["document"]) if row else None
 
-    def master_list_events(self) -> list[dict]:
+    def master_list_events(self, *, session_id: str = DEFAULT_SESSION_ID) -> list[dict]:
         with self.connect() as db:
-            rows = db.execute("SELECT event FROM master_lists ORDER BY rowid DESC").fetchall()
+            rows = db.execute(
+                "SELECT event FROM master_lists WHERE session_id=? ORDER BY rowid DESC",
+                (normalize_session_id(session_id),),
+            ).fetchall()
         return [_loaded(row["event"]) for row in rows]
 
-    def add_master_list(self, document: dict, event: dict, source: bytes, *, replace: bool):
+    def add_master_list(
+        self,
+        document: dict,
+        event: dict,
+        source: bytes,
+        *,
+        replace: bool,
+        session_id: str = DEFAULT_SESSION_ID,
+    ):
         """Save one version. The first upload must find none; a replacement must find one."""
         with self.connect() as db:
             # One transaction serialises replacements and keeps the version order.
             db.execute("BEGIN IMMEDIATE")
-            exists = db.execute("SELECT 1 FROM master_lists LIMIT 1").fetchone() is not None
+            exists = (
+                db.execute(
+                    "SELECT 1 FROM master_lists WHERE session_id=? LIMIT 1",
+                    (normalize_session_id(session_id),),
+                ).fetchone()
+                is not None
+            )
             _check_state(exists, replace)
             db.execute(
-                "INSERT INTO master_lists VALUES (?,?,?,?,?)",
+                "INSERT INTO master_lists (id,created_at,document,event,source,session_id) VALUES (?,?,?,?,?,?)",
                 (
                     document["id"],
                     document["uploadedAt"],
                     json.dumps(document),
                     json.dumps(event),
                     source,
+                    normalize_session_id(session_id),
                 ),
             )
 
@@ -216,6 +347,8 @@ CREATE TABLE IF NOT EXISTS {schema}.invoices (
     outcome TEXT, outcome_reason TEXT, decided_at TEXT
 );
 CREATE INDEX IF NOT EXISTS invoice_time ON {schema}.invoices (created_at DESC, id DESC);
+ALTER TABLE {schema}.invoices ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS invoice_session_time ON {schema}.invoices (session_id, created_at DESC, id DESC);
 CREATE TABLE IF NOT EXISTS {schema}.invoice_files (
     id TEXT PRIMARY KEY REFERENCES {schema}.invoices(id) ON DELETE CASCADE,
     content BYTEA NOT NULL
@@ -224,6 +357,8 @@ CREATE TABLE IF NOT EXISTS {schema}.master_lists (
     seq BIGSERIAL PRIMARY KEY, id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL,
     document JSONB NOT NULL, event JSONB NOT NULL, source BYTEA NOT NULL
 );
+ALTER TABLE {schema}.master_lists ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS master_lists_session_idx ON {schema}.master_lists (session_id, seq DESC);
 """
 
 
@@ -235,12 +370,13 @@ class PostgresStore:
     """
 
     def __init__(self, url: str, directory: Path, *, schema: str = SCHEMA):
-        from psycopg.rows import dict_row
-        from psycopg_pool import ConnectionPool
-
         # The name is put into SQL text, so only a plain lowercase identifier is accepted.
         if not SCHEMA_NAME.fullmatch(schema):
             raise ValueError(f"Invalid Postgres schema name: {schema!r}")
+
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
         self.schema = schema
         self.directory = directory.resolve()
         self.files = self.directory / "files"
@@ -281,16 +417,34 @@ class PostgresStore:
                 local.write_bytes(row["content"])
         return local
 
-    def insert(self, invoice_id, filename, document_hash, mode, price_sheet_version):
+    def insert(
+        self,
+        invoice_id,
+        filename,
+        document_hash,
+        mode,
+        price_sheet_version,
+        *,
+        session_id: str = DEFAULT_SESSION_ID,
+    ):
         # The upload has already been written to path(); keep the bytes with the row.
         at = now()
         content = self.path(invoice_id).read_bytes()
         with self.connect() as db:
             db.execute(
                 f"""INSERT INTO {self.schema}.invoices
-                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version)
-                VALUES (%s,%s,%s,'reading',%s,%s,%s,%s)""",
-                (invoice_id, filename, document_hash, mode, at, at, price_sheet_version),
+                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id)
+                VALUES (%s,%s,%s,'reading',%s,%s,%s,%s,%s)""",
+                (
+                    invoice_id,
+                    filename,
+                    document_hash,
+                    mode,
+                    at,
+                    at,
+                    price_sheet_version,
+                    normalize_session_id(session_id),
+                ),
             )
             db.execute(
                 f"INSERT INTO {self.schema}.invoice_files (id, content) VALUES (%s, %s)",
@@ -311,63 +465,107 @@ class PostgresStore:
                 (status, now(), error, blob(document), blob(invoice), blob(check), invoice_id),
             )
 
-    def decide(self, invoice_id: str, outcome: str | None, reason: str | None):
+    def decide(
+        self,
+        invoice_id: str,
+        outcome: str | None,
+        reason: str | None,
+        *,
+        session_id: str | None = None,
+    ):
+        params = (outcome, reason, now() if outcome else None, invoice_id)
+        clause = ""
+        if session_id is not None:
+            clause = " AND session_id=%s"
+            params += (normalize_session_id(session_id),)
         with self.connect() as db:
             db.execute(
-                f"""UPDATE {self.schema}.invoices SET outcome=%s, outcome_reason=%s, decided_at=%s
-                WHERE id=%s""",
-                (outcome, reason, now() if outcome else None, invoice_id),
+                f"UPDATE {self.schema}.invoices SET outcome=%s, outcome_reason=%s, decided_at=%s WHERE id=%s{clause}",
+                params,
             )
 
-    def get(self, invoice_id: str) -> SavedInvoice | None:
+    def get(self, invoice_id: str, *, session_id: str | None = None) -> SavedInvoice | None:
+        clause = "" if session_id is None else " AND session_id=%s"
+        params = (
+            (invoice_id,) if session_id is None else (invoice_id, normalize_session_id(session_id))
+        )
         with self.connect() as db:
             row = db.execute(
-                f"SELECT * FROM {self.schema}.invoices WHERE id=%s", (invoice_id,)
+                f"SELECT * FROM {self.schema}.invoices WHERE id=%s{clause}", params
             ).fetchone()
         return None if row is None else _saved(row, invoice_id)
 
-    def list(self, limit: int, offset: int) -> list[InvoiceSummary]:
+    def list(
+        self, limit: int, offset: int, *, session_id: str | None = None
+    ) -> list[InvoiceSummary]:
+        clause = "" if session_id is None else " WHERE session_id=%s"
+        params = (
+            (limit, offset)
+            if session_id is None
+            else (normalize_session_id(session_id), limit, offset)
+        )
         with self.connect() as db:
             rows = db.execute(
-                f"""SELECT {SUMMARY} FROM {self.schema}.invoices
-                ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s""",
-                (limit, offset),
+                f"SELECT {SUMMARY} FROM {self.schema}.invoices{clause} ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
+                params,
             ).fetchall()
         return [InvoiceSummary(**row) for row in rows]
 
-    def latest_master_list(self) -> dict | None:
+    def latest_master_list(self, *, session_id: str = DEFAULT_SESSION_ID) -> dict | None:
         with self.connect() as db:
             row = db.execute(
-                f"SELECT document FROM {self.schema}.master_lists ORDER BY seq DESC LIMIT 1"
+                f"SELECT document FROM {self.schema}.master_lists WHERE session_id=%s ORDER BY seq DESC LIMIT 1",
+                (normalize_session_id(session_id),),
             ).fetchone()
         return row["document"] if row else None
 
-    def master_list_version(self, version: str) -> dict | None:
+    def master_list_version(
+        self, version: str, *, session_id: str = DEFAULT_SESSION_ID
+    ) -> dict | None:
         """The newest saved master list with this version, or None."""
         with self.connect() as db:
             row = db.execute(
-                f"SELECT document FROM {self.schema}.master_lists WHERE document->>'version' = %s "
+                f"SELECT document FROM {self.schema}.master_lists WHERE session_id=%s AND document->>'version' = %s "
                 "ORDER BY seq DESC LIMIT 1",
-                (version,),
+                (normalize_session_id(session_id), version),
             ).fetchone()
         return row["document"] if row else None
 
-    def master_list_events(self) -> list[dict]:
+    def master_list_events(self, *, session_id: str = DEFAULT_SESSION_ID) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT event FROM {self.schema}.master_lists ORDER BY seq DESC"
+                f"SELECT event FROM {self.schema}.master_lists WHERE session_id=%s ORDER BY seq DESC",
+                (normalize_session_id(session_id),),
             ).fetchall()
         return [row["event"] for row in rows]
 
-    def add_master_list(self, document: dict, event: dict, source: bytes, *, replace: bool):
+    def add_master_list(
+        self,
+        document: dict,
+        event: dict,
+        source: bytes,
+        *,
+        replace: bool,
+        session_id: str = DEFAULT_SESSION_ID,
+    ):
         from psycopg.types.json import Jsonb
 
         with self.connect() as db, db.transaction():
             db.execute(f"LOCK TABLE {self.schema}.master_lists IN SHARE ROW EXCLUSIVE MODE")
-            exists = db.execute(f"SELECT 1 FROM {self.schema}.master_lists LIMIT 1").fetchone()
+            exists = db.execute(
+                f"SELECT 1 FROM {self.schema}.master_lists WHERE session_id=%s LIMIT 1",
+                (normalize_session_id(session_id),),
+            ).fetchone()
             _check_state(exists is not None, replace)
             db.execute(
-                f"""INSERT INTO {self.schema}.master_lists (id, created_at, document, event, source)
-                VALUES (%s,%s,%s,%s,%s)""",
-                (document["id"], document["uploadedAt"], Jsonb(document), Jsonb(event), source),
+                f"""INSERT INTO {self.schema}.master_lists (id, created_at, document, event, source, session_id)
+                VALUES (%s,%s,%s,%s,%s,%s)""",
+                (
+                    document["id"],
+                    document["uploadedAt"],
+                    Jsonb(document),
+                    Jsonb(event),
+                    source,
+                    normalize_session_id(session_id),
+                ),
             )

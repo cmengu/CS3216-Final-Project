@@ -3,6 +3,26 @@
 Written 11 October 2026 for whoever continues, person or AI assistant. Update this file when you
 stop, so the next reader starts from the truth.
 
+## Merge follow-up, 26 October 2026
+
+Merged origin/main at `4840bc2` into `feat/gpu-ocr-and-session-isolation` at `ed1a4c5`.
+Resolved six backend conflicts, combining Postgres persistence/deployment/CI with the branch's
+signed login cookies, session isolation, GPU detection, OCR reuse and extraction normalization.
+Both database implementations scope invoices and master lists by session. Outlook keeps a
+separate local SQLite store when invoice storage uses Postgres. Existing rows remain in their
+original session, or `default` for pre-session databases. See B-19 in
+`docs/review/2026-10-26-backend.md` for decisions and validation.
+
+239 backend tests and 114 frontend tests passed; build, TypeScript and backend lint/format
+passed. Frontend lint has one existing unused-prop warning. Eight backend tests were skipped:
+real OCR/model and database integration. Actual GPU processing and Postgres integration were
+not run. Main's locked Linux PyTorch source defaults to CPU for Railway; GPU servers need
+compatible CUDA packages. Configure explicit frontend origins after this merge, since CORS
+no longer permits every HTTP origin. Nothing has been pushed or deployed by this merge.
+Chrome passed real login, mapped CSV import, fixture invoice upload/check, PDF popup rendering,
+refresh persistence, separate-session visibility, mobile layout and sign-out against an isolated
+fixture backend, with no page errors. Hosted application data was not modified.
+
 ## Implemented, 23 October 2026
 
 Master-list upload now imports an unambiguous detected first list automatically and shows

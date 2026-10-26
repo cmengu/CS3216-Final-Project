@@ -364,6 +364,305 @@ def test_live_mode_uses_uploaded_list_not_env_path(tmp_path, monkeypatch):
         assert client.get("/invoices").json() == []
 
 
+def test_session_isolation_prevents_other_sessions_from_viewing_or_deciding_documents(tmp_path):
+    stages = FixtureStages(DATA)
+    app = create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    with TestClient(app) as client:
+        alice_headers = {"X-Invoice-Session": "session-alice"}
+        bob_headers = {"X-Invoice-Session": "session-bob"}
+
+        alice_doc = client.post(
+            "/invoices",
+            headers=alice_headers,
+            files={
+                "file": (
+                    "invoice-01.pdf",
+                    (DATA / "invoice-01.pdf").read_bytes(),
+                    "application/pdf",
+                )
+            },
+        ).json()
+        bob_doc = client.post(
+            "/invoices",
+            headers=bob_headers,
+            files={
+                "file": (
+                    "invoice-02.pdf",
+                    (DATA / "invoice-02.pdf").read_bytes(),
+                    "application/pdf",
+                )
+            },
+        ).json()
+
+        # Each session only lists its own uploaded documents
+        alice_list = client.get("/invoices", headers=alice_headers).json()
+        bob_list = client.get("/invoices", headers=bob_headers).json()
+        assert [row["id"] for row in alice_list] == [alice_doc["id"]]
+        assert [row["id"] for row in bob_list] == [bob_doc["id"]]
+
+        # Alice cannot read, download, or decide Bob's invoice
+        assert client.get(f"/invoices/{bob_doc['id']}", headers=alice_headers).status_code == 404
+        assert (
+            client.get(f"/invoices/{bob_doc['id']}/file", headers=alice_headers).status_code == 404
+        )
+        assert (
+            client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-alice").status_code
+            == 404
+        )
+        assert (
+            client.put(
+                f"/invoices/{bob_doc['id']}/outcome",
+                headers=alice_headers,
+                json={"outcome": "raise_with_supplier"},
+            ).status_code
+            == 404
+        )
+
+        # Bob can download via session_id query param and decide his own invoice
+        assert (
+            client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-bob").status_code == 200
+        )
+        assert (
+            client.put(
+                f"/invoices/{bob_doc['id']}/outcome",
+                headers=bob_headers,
+                json={"outcome": "raise_with_supplier"},
+            ).status_code
+            == 200
+        )
+
+
+def test_concurrent_multi_user_uploads_queue_and_isolate_by_session(tmp_path, monkeypatch):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setenv("INVOICE_SLOT_WAIT_SECONDS", "10")
+
+    def slow_reader(path, *, force_ocr=False):
+        time.sleep(0.05)
+        return lightweight_reader(path, force_ocr=force_ocr)
+
+    stages = FixtureStages(DATA)
+    app = create_app(storage_dir=tmp_path, stages=stages, reader=slow_reader)
+    pdf_bytes = (DATA / "invoice-01.pdf").read_bytes()
+
+    with TestClient(app) as client:
+
+        def upload_for_session(idx: int):
+            sid = f"concurrent-session-{idx}"
+            resp = client.post(
+                "/invoices",
+                headers={"X-Invoice-Session": sid},
+                files={"file": (f"user-{idx}.pdf", pdf_bytes, "application/pdf")},
+            )
+            return sid, resp.status_code, resp.json()
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(upload_for_session, range(4)))
+
+        for sid, status_code, body in results:
+            assert status_code == 201
+            listed = client.get("/invoices", headers={"X-Invoice-Session": sid}).json()
+            assert [row["id"] for row in listed] == [body["id"]]
+
+
+def test_gpu_accelerator_detection_prefers_cuda_and_falls_back_to_cpu(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from read.reader import detect_ocr_accelerator
+
+    monkeypatch.setenv("INVOICE_OCR_DEVICE", "cpu")
+    cpu_info = detect_ocr_accelerator()
+    assert cpu_info["device"] == "cpu"
+    assert cpu_info["torch_cuda"] is False
+    assert cpu_info["ort_cuda"] is False
+    assert cpu_info["num_threads"] >= 1
+
+    # Simulate an NVIDIA RTX 4070 with CUDA available in both PyTorch and ONNX Runtime
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            get_device_name=lambda idx: "NVIDIA GeForce RTX 4070",
+        )
+    )
+    fake_ort = SimpleNamespace(
+        get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_ort)
+
+    monkeypatch.setenv("INVOICE_OCR_DEVICE", "auto")
+    cuda_info = detect_ocr_accelerator()
+    assert cuda_info["device"] == "cuda"
+    assert cuda_info["torch_cuda"] is True
+    assert cuda_info["ort_cuda"] is True
+    assert cuda_info["gpu_name"] == "NVIDIA GeForce RTX 4070"
+
+
+def test_session_isolation_for_master_list_and_outlook(tmp_path, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+
+    monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id-123")
+    monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "client-secret-xyz")
+    monkeypatch.setenv("MICROSOFT_REDIRECT_URI", "http://localhost:8001/auth/outlook/callback")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+
+    monkeypatch.setattr(
+        "api.outlook._exchange_code_for_tokens",
+        lambda cfg, code, verifier: {
+            "access_token": "alice-access-token",
+            "refresh_token": "alice-refresh-token",
+            "expires_in": 3600,
+        },
+    )
+    monkeypatch.setattr(
+        "api.outlook._fetch_graph_profile",
+        lambda token: {
+            "displayName": "Alice Wong",
+            "mail": "alice@company.example",
+        },
+    )
+
+    alice_headers = {"X-Invoice-Session": "session-alice"}
+    bob_headers = {"X-Invoice-Session": "session-bob"}
+
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        # 1. Master list isolation: Alice uploads a master list; Bob sees None and empty events
+        alice_csv = b"name,price,quantity\nBolt,1.20,10\n"
+        bob_csv = b"name,price,quantity\nWasher,0.50,100\n"
+        csv_options = '{"sheet":"CSV","header":0,"mapping":{"name":0,"price":1,"quantity":2}}'
+
+        res_alice = client.post(
+            "/master-list",
+            headers=alice_headers,
+            files={"file": ("alice-prices.csv", alice_csv, "text/csv")},
+            data={"options": csv_options},
+        )
+        assert res_alice.status_code == 201
+        alice_master = res_alice.json()
+        assert alice_master["file"] == "alice-prices.csv"
+
+        assert client.get("/master-list", headers=bob_headers).json() is None
+        assert client.get("/master-list/events", headers=bob_headers).json() == []
+        assert (
+            client.get(
+                f"/master-list/versions/{alice_master['version']}",
+                headers=bob_headers,
+            ).status_code
+            == 404
+        )
+
+        # Bob can upload his own initial master list with POST (not blocked by Alice's list)
+        res_bob = client.post(
+            "/master-list",
+            headers=bob_headers,
+            files={"file": ("bob-prices.csv", bob_csv, "text/csv")},
+            data={"options": csv_options},
+        )
+        assert res_bob.status_code == 201
+        assert client.get("/master-list", headers=bob_headers).json()["file"] == "bob-prices.csv"
+        assert (
+            client.get("/master-list", headers=alice_headers).json()["file"] == "alice-prices.csv"
+        )
+
+        # 2. Outlook OAuth isolation: Alice connects Outlook; Bob remains disconnected
+        login_res = client.get(
+            "/auth/outlook/login?return_to=/invoices&session_id=session-alice",
+            follow_redirects=False,
+        )
+        assert login_res.status_code == 302
+        state = parse_qs(urlparse(login_res.headers["location"]).query)["state"][0]
+
+        cb_res = client.get(
+            f"/auth/outlook/callback?code=code-123&state={state}",
+            follow_redirects=False,
+        )
+        assert cb_res.status_code == 302
+
+        alice_status = client.get("/outlook/status", headers=alice_headers).json()
+        bob_status = client.get("/outlook/status", headers=bob_headers).json()
+        assert alice_status["connected"] is True
+        assert alice_status["email"] == "alice@company.example"
+        assert bob_status["connected"] is False
+        assert bob_status["email"] is None
+
+        # Bob disconnecting does not disconnect Alice
+        client.post("/outlook/disconnect", headers=bob_headers)
+        assert client.get("/outlook/status", headers=alice_headers).json()["connected"] is True
+
+
+def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.setenv("AUTH_USERNAME", "demo-account")
+    monkeypatch.setenv("AUTH_PASSWORD", "invoice-checker")
+
+    app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
+    with TestClient(app) as client:
+        # 1. Protected endpoints reject unauthenticated requests and unsigned headers
+        assert client.get("/invoices").status_code == 401
+        assert client.get("/master-list").status_code == 401
+        assert client.get("/outlook/status").status_code == 401
+        assert (
+            client.get("/invoices", headers={"X-Invoice-Session": "forged-plain-uuid"}).status_code
+            == 401
+        )
+        assert (
+            client.get(
+                "/invoices", headers={"Cookie": "ic_session=ic1.forged.signature"}
+            ).status_code
+            == 401
+        )
+        assert client.get("/auth/me").status_code == 401
+
+        # 2. Invalid credentials rejected
+        bad_login = client.post(
+            "/auth/sign-in", json={"username": "demo-account", "password": "wrong"}
+        )
+        assert bad_login.status_code == 401
+
+        # 3. Valid credentials set an HttpOnly signed cookie and omit provider="password"
+        good_login = client.post(
+            "/auth/sign-in", json={"username": "demo-account", "password": "invoice-checker"}
+        )
+        assert good_login.status_code == 200
+        body = good_login.json()
+        assert body["ok"] is True
+        assert body["user"] == {"email": "demo-account"}
+        assert "provider" not in body["user"]
+        set_cookie = good_login.headers.get("set-cookie", "")
+        assert "ic_session=ic1." in set_cookie
+        assert "HttpOnly" in set_cookie
+
+        # 4. Subsequent requests use the HttpOnly cookie automatically
+        me_res = client.get("/auth/me")
+        assert me_res.status_code == 200
+        assert me_res.json()["authenticated"] is True
+        assert me_res.json()["user"] == {"email": "demo-account"}
+
+        upload_res = client.post(
+            "/invoices",
+            files={
+                "file": (
+                    "invoice-01.pdf",
+                    (DATA / "invoice-01.pdf").read_bytes(),
+                    "application/pdf",
+                )
+            },
+        )
+        assert upload_res.status_code == 201
+        assert len(client.get("/invoices").json()) == 1
+
+        # 5. Sign-out clears the cookie and revokes access
+        out_res = client.post("/auth/sign-out")
+        assert out_res.status_code == 200
+        assert client.get("/auth/me").status_code == 401
+        assert client.get("/invoices").status_code == 401
+
+
 def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "INVOICE_ALLOWED_ORIGIN_REGEX", r"https://invoice-checker-[a-z0-9-]+-team\.vercel\.app"
@@ -375,6 +674,7 @@ def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, mon
                 "/health",
                 headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
             )
+            assert response.headers.get("access-control-allow-credentials") == "true"
             return response.headers.get("access-control-allow-origin") == origin
 
         assert allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app")
