@@ -111,6 +111,7 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
   const router = useRouter();
   const [seg, setSeg] = useState<"decide" | "done">("decide");
   const [q, setQ] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pdfId, setPdfId] = useState<string | null>(null);
   const [focusState, setFocus] = useState<{ id: string; n: number; seq: number } | null>(null);
   const known = () => invoices ?? [];
@@ -163,9 +164,13 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
   const exportCsv = () => download(csvName(), exportReadyToPay(all));
 
   return (
-    <div className="ic-work ic-work--no-pdf">
+    <div className={`ic-work ic-work--no-pdf${sidebarCollapsed ? " ic-work--sidebar-collapsed" : ""}`}>
       {picker.node}
-      <Queue
+      {sidebarCollapsed ? (
+        <aside id="invoice-sidebar" className="ic-sidebar-collapsed" aria-label="Invoice navigation">
+          <button type="button" className="ic-icobtn" onClick={() => setSidebarCollapsed(false)} aria-label="Expand invoice sidebar" aria-expanded={false} aria-controls="invoice-sidebar" title="Expand sidebar"><Icon name="chev" /></button>
+        </aside>
+      ) : <Queue
         decideList={piles.decide}
         doneList={piles.done}
         seg={seg}
@@ -179,19 +184,14 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
         onOutlook={onOutlook}
         loadError={invoices === null ? invoiceError : null}
         onRetryLoad={reloadInvoices}
-      />
+        onCollapse={() => setSidebarCollapsed(true)}
+      />}
       {inv ? (
         <CheckPane
           key={inv.id}
           inv={inv}
           masterList={masterList}
           activeLine={pdfOpen ? (focus?.n ?? null) : null}
-          onOpenPdf={() => {
-            setFocus(null);
-            setPdfId(inv.id);
-          }}
-          onClosePdf={closePdf}
-          pdfOpen={pdfOpen}
           onShow={(n) => {
             setPdfId(inv.id);
             setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }));

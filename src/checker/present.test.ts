@@ -59,7 +59,7 @@ const under = line({ quantity: 4, unitPrice: 10, sheetPrice: 15, difference: -5,
 describe("statuses", () => {
   it("names the check result, then the outcome once decided", () => {
     expect(checkPill(inv({}))).toEqual({ text: "Matches", tone: "good" });
-    expect(checkPill(inv({ lines: [over, line({})], overchargeTotal: 159.6 }))).toEqual({ text: "Price differs", tone: "warn" });
+    expect(checkPill(inv({ lines: [over, line({})], overchargeTotal: 159.6 }))).toEqual({ text: "1 out of 2 differs", tone: "warn" });
     expect(checkPill(inv({ lines: [line({ result: "unknown_part" })] }))).toEqual({ text: "Not on master list", tone: "warn" });
     expect(checkPill(inv({ lines: [line({ result: "needs_person", reason: "Line total doesn't add up" })], overchargeTotal: null }))).toEqual({ text: "Needs you", tone: "warn" });
     expect(checkPill(inv({ state: "failed", error: "reading: x" }))).toEqual({ text: "Couldn't read", tone: "warn" });
@@ -92,7 +92,7 @@ describe("queue and line wording", () => {
   it("puts flagged lines first and keeps line numbers", () => {
     const i = inv({ lines: [line({}), over] });
     expect(orderedLines(i).map((x) => x.n)).toEqual([2, 1]);
-    expect(linesPill(i)).toEqual({ text: "1 of 2 differ", tone: "warn" });
+    expect(linesPill(i)).toEqual({ text: "1 out of 2 differs", tone: "warn" });
     expect(linesPill(inv({}))).toEqual({ text: "1 match", tone: "good" });
   });
 

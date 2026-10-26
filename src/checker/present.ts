@@ -23,7 +23,6 @@ export const money = (n: number, cur: string | null | undefined) => `${cur ? cur
 /** A unit price, keeping up to four decimals: 0.0047, 68.25. */
 export const unit = (n: number) => n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 /** "+6.00" / "-20.00" for a per-unit difference. */
-export const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "-" : ""}${unit(Math.abs(n))}`;
 
 /* ---------------------------------------------------------------- statuses ---- */
 
@@ -62,6 +61,7 @@ export function checkPill(inv: SupplierInvoice): Pill {
   if (inv.state === "checking") return { text: "Checking…", tone: "neutral" };
   if (inv.state === "failed") return { text: "Couldn't read", tone: "warn" };
   const w = worst(inv);
+  if (w === "price_mismatch") return { text: `${inv.lines.filter((l) => l.result === "price_mismatch").length} out of ${inv.lines.length} differs`, tone: "warn" };
   if (w) return LINE_PILL[w];
   if (!totalKnown(inv) || !inv.lines.length) return LINE_PILL.needs_person;
   return LINE_PILL.match;
@@ -140,7 +140,7 @@ export function orderedLines(inv: SupplierInvoice): { line: InvoiceLine; n: numb
 export function linesPill(inv: SupplierInvoice): Pill | null {
   if (!inv.lines.length) return null;
   const n = problemLines(inv).length;
-  return n ? { text: `${n} of ${inv.lines.length} differ`, tone: "warn" } : { text: `${inv.lines.length} match`, tone: "good" };
+  return n ? { text: `${n} out of ${inv.lines.length} differs`, tone: "warn" } : { text: `${inv.lines.length} match`, tone: "good" };
 }
 
 /** "Tax 9%" from a rate sent as 0.09 or 9. */

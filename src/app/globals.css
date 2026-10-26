@@ -258,7 +258,10 @@ a { color: var(--accent); }
 /* Daily workspace */
 .ic-work { flex: none; height: calc(100vh - var(--header-height)); display: grid; grid-template-columns: minmax(380px, 460px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
 .ic-queue { min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 20px 16px 0; border-right: 1px solid var(--line); background: var(--surface); }
-.ic-queue-h { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+.ic-queue-h { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ic-queue-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ic-queue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ic-queue-actions .ic-btn { flex: 1; min-width: 0; }
 .ic-queue-h h1 { margin: 0; font-size: 18px; font-weight: 600; }
 .ic-queue-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 4px; padding-bottom: 16px; }
 .ic-qcard { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid transparent; border-radius: var(--radius-control); color: var(--ink); text-decoration: none; }
@@ -291,7 +294,7 @@ a { color: var(--accent); }
 /* PDF Popup Modal */
 .ic-pdfmodal-scrim { position: fixed; inset: 0; z-index: 45; background: rgba(42, 28, 21, 0.32); display: flex; align-items: center; justify-content: center; padding: 20px 24px; }
 .ic-pdfmodal { width: min(1400px, calc(100vw - 44px)); height: min(900px, calc(100vh - 36px)); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 64px rgba(42, 28, 21, 0.22); display: flex; flex-direction: column; overflow: hidden; }
-.ic-pdfmodal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.ic-pdfmodal-head { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .ic-pdfmodal-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ic-pdfmodal-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ic-pdfmodal-supplier { font-size: 18px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
@@ -393,4 +396,11 @@ a { color: var(--accent); }
 @media (max-width: 760px) {
   .ic-outlook-split { grid-template-columns: minmax(0, 1fr); max-height: none; }
   .ic-outlook-list { max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line); padding-right: 0; padding-bottom: 10px; }
+}
+
+.ic-work.ic-work--sidebar-collapsed { grid-template-columns: 48px minmax(0, 1fr); }
+.ic-sidebar-collapsed { display: flex; justify-content: center; align-items: flex-start; padding-top: 20px; border-right: 1px solid var(--line); background: var(--surface); }
+@media (max-width: 700px) {
+  .ic-work.ic-work--sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .ic-sidebar-collapsed { justify-content: flex-start; padding: 8px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
 }
