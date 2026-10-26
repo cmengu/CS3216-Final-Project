@@ -12,9 +12,15 @@ export default function Root() {
   const error = useMasterListError();
   const router = useRouter();
   useEffect(() => {
-    if (user === undefined || ml === undefined) return;
-    router.replace(!user ? "/sign-in" : !ml ? "/master-list" : "/invoices");
+    if (user === undefined) return;
+    if (user === null) {
+      router.replace("/sign-in");
+      return;
+    }
+    if (ml === undefined) return;
+    router.replace(!ml ? "/master-list" : "/invoices");
   }, [user, ml, router]);
+  if (!user) return null;
   if (error) return <div className="ic-page"><p role="alert">{error}</p><button className="ic-btn" onClick={() => void refreshMasterList()}>Retry</button></div>;
   return null;
 }

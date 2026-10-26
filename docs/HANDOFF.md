@@ -3,6 +3,32 @@
 Written 11 October 2026 for whoever continues, person or AI assistant. Update this file when you
 stop, so the next reader starts from the truth.
 
+## Local sign-in redirect fix, 26 October 2026
+
+The home page now redirects unsigned/expired sessions to sign-in without waiting for the
+protected master-list request. Previously, a 401 left the master undefined and trapped the
+user at a misleading connection error. Genuine signed-in service failures retain Retry.
+Chrome verified missing/invalid sessions and retry recovery; 114 frontend tests, TypeScript
+and targeted lint passed. See S-40 in `docs/review/2026-10-26-screens.md`. The local dev server
+at http://127.0.0.1:3000 has loaded the change; the API is at http://127.0.0.1:8001. No data or
+credentials were modified. This follow-up is included on the feature branch; deployment to
+the Ubuntu server still requires updating its checkout and rebuilding/restarting the app.
+
+## Live model benchmark, 26 October 2026
+
+Benchmarked all 14 mock PDFs / 58 lines at `2c4f9b7` with identical hash-verified OCR and the
+uploaded-master checker. One fresh inference pass each: OpenAI gpt-6-luna (reasoning none)
+versus Ollama gemma4:e4b with qwen3.5:4b corrections. Both completed all invoices and caught
+all seven intentional price errors. Line classifications: OpenAI 57/58, Ollama 58/58.
+OpenAI additionally sent F04_01 line 2 for review after assigning the wrong item code.
+Mean extraction/check times excluding OCR: 6.293 s versus 4.474 s (88.102 / 62.640 s total).
+These small, previously tuned synthetic samples are not a general accuracy estimate; both
+providers also populated one unprinted subtotal. Windows policy blocked fresh local OCR;
+seven cached documents and seven from an isolated Ubuntu benchmark session were shared by
+both providers. Existing user data and .env files were untouched. See B-20 in
+`docs/review/2026-10-26-model-benchmark.md`; raw local reports are in ignored
+`backend/runtime/model-benchmark-20261026/`. Production code was not changed.
+
 ## Merge follow-up, 26 October 2026
 
 Merged origin/main at `4840bc2` into `feat/gpu-ocr-and-session-isolation` at `ed1a4c5`.
@@ -18,7 +44,7 @@ passed. Frontend lint has one existing unused-prop warning. Eight backend tests 
 real OCR/model and database integration. Actual GPU processing and Postgres integration were
 not run. Main's locked Linux PyTorch source defaults to CPU for Railway; GPU servers need
 compatible CUDA packages. Configure explicit frontend origins after this merge, since CORS
-no longer permits every HTTP origin. Nothing has been pushed or deployed by this merge.
+no longer permits every HTTP origin. No hosted deployment of this merge has been verified.
 Chrome passed real login, mapped CSV import, fixture invoice upload/check, PDF popup rendering,
 refresh persistence, separate-session visibility, mobile layout and sign-out against an isolated
 fixture backend, with no page errors. Hosted application data was not modified.
