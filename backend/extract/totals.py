@@ -22,8 +22,12 @@ def fill_missing_totals(record):
     """Apply the configured display/check defaults without replacing printed values."""
     if record.tax is None:
         record.tax = "0.00"
-    if record.subtotal is None and record.lines and all(
-        line.line_total is not None for line in record.lines
+    if (
+        record.subtotal is None
+        and record.lines
+        and all(line.line_total is not None for line in record.lines)
     ):
-        record.subtotal = format(sum((Decimal(line.line_total) for line in record.lines), Decimal(0)), "f")
+        record.subtotal = format(
+            sum((Decimal(line.line_total) for line in record.lines), Decimal(0)), "f"
+        )
     return record
