@@ -3,6 +3,18 @@
 Written 11 October 2026 for whoever continues, person or AI assistant. Update this file when you
 stop, so the next reader starts from the truth.
 
+## Localhost cookie fix, 26 October 2026
+
+Both servers remained healthy, but Chrome at localhost:3000 rejected the session flow to
+the configured 127.0.0.1:8001 API. Local loopback API URLs now match the page hostname, so
+localhost and 127.0.0.1 logins both retain HttpOnly SameSite=Lax cookies. Sign-in verifies
+the cookie before accepting a session and no longer uses a browser-only offline credential
+fallback. Remote/proxy URLs are unchanged. Chrome verified real login, master reads,
+refresh and logout on both hosts; 119 frontend tests, TypeScript and targeted lint passed.
+See S-41 in `docs/review/2026-10-26-screens.md`. Refresh and sign in again to load the fix.
+This follow-up is local and has not yet been committed or pushed. No invoice/master data
+or .env files were modified.
+
 ## Local sign-in redirect fix, 26 October 2026
 
 The home page now redirects unsigned/expired sessions to sign-in without waiting for the

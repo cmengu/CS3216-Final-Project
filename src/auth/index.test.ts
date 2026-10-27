@@ -6,6 +6,20 @@ afterEach(() => {
 });
 
 describe("HttpOnly cookie authentication", () => {
+  it("does not accept sign-in when the browser cannot use the session cookie", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/auth/sign-in")
+      ? new Response(JSON.stringify({ ok: true, user: { email: "demo-account" } }), { status: 200 })
+      : new Response(JSON.stringify({ authenticated: false }), { status: 401 })));
+    expect(await signIn("demo-account", "invoice-checker")).toEqual({ ok: false, error: "invalid" });
+    expect(currentUser()).toBeFalsy();
+  });
+
+  it("does not invent a signed-in user when the backend is unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network"); }));
+    expect(await signIn("demo-account", "invoice-checker")).toEqual({ ok: false, error: "invalid" });
+    expect(currentUser()).toBeFalsy();
+  });
+
   it("authenticates via POST /auth/sign-in with credentials: include, purges legacy localStorage, and never stores provider=password", async () => {
     const localMap = new Map<string, string>([
       ["ic.session.v1", '{"email":"you@company.com","provider":"google"}'],

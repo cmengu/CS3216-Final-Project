@@ -14,8 +14,6 @@ export interface User {
 
 export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" };
 
-const DEFAULT_USERNAME = process.env.NEXT_PUBLIC_AUTH_USERNAME ?? "demo-account";
-const DEFAULT_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD ?? "invoice-checker";
 const listeners = new Set<() => void>();
 
 let sessionUser: User | null | undefined = undefined;
@@ -115,19 +113,27 @@ export async function signIn(username: string, password: string): Promise<SignIn
     if (resp.ok) {
       const data = (await resp.json()) as { ok: boolean; user?: { email?: string } };
       if (data.ok && data.user?.email) {
-        const user: User = { email: data.user.email };
+        // A successful password response does not prove the browser accepted its cookie.
+        const verified = await fetch(`${SERVICE_URL}/auth/me`, {
+          credentials: "include",
+          cache: "no-store",
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!verified.ok) return { ok: false, error: "invalid" };
+        const session = (await verified.json()) as {
+          authenticated?: boolean;
+          user?: { email?: string };
+        };
+        if (!session.authenticated || session.user?.email !== data.user.email) {
+          return { ok: false, error: "invalid" };
+        }
+        const user: User = { email: session.user.email };
         setSessionState(user);
         return { ok: true, user };
       }
     }
     return { ok: false, error: "invalid" };
   } catch {
-    // Fallback if backend is unreachable in an offline frontend test environment
-    if (trimmed.toLowerCase() === DEFAULT_USERNAME.toLowerCase() && password === DEFAULT_PASSWORD) {
-      const user: User = { email: DEFAULT_USERNAME };
-      setSessionState(user);
-      return { ok: true, user };
-    }
     return { ok: false, error: "invalid" };
   }
 }

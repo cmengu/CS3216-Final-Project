@@ -7,8 +7,12 @@ import { useEffect, useState } from "react";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 import type { Outcome, SupplierInvoice } from "./types";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
+import { resolveServiceUrl } from "./service-url";
 
-export const SERVICE_URL = process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8001";
+export const SERVICE_URL = resolveServiceUrl(
+  process.env.NEXT_PUBLIC_INVOICE_API ?? "http://127.0.0.1:8001",
+  typeof window === "undefined" ? undefined : window.location?.hostname,
+);
 export const SESSION_ID_KEY = "ic.session.id.v1";
 
 let activeSessionId: string | null = null;
