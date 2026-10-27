@@ -404,3 +404,19 @@ a { color: var(--accent); }
   .ic-work.ic-work--sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
   .ic-sidebar-collapsed { justify-content: flex-start; padding: 8px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+.ic-line-comparison { max-width: 100%; overflow-x: auto; }
+.ic-line-comparison table { border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.ic-line-comparison th, .ic-line-comparison td { padding: 6px 24px 6px 0; text-align: left; white-space: nowrap; }
+.ic-line-comparison thead th { font-size: 13px; color: var(--ink2); font-weight: 500; border-bottom: 1px solid var(--line); }
+.ic-line-comparison tbody th { font-weight: 700; }
+.ic-line-comparison td { color: var(--ink); }
+.ic-line-comparison td.ic-price-diff { color: #dc2626; }
+
+.ic-pdfmodal-item { border-radius: 8px; padding-bottom: 10px; }
+.ic-pdfmodal-item[aria-current="true"] { background: var(--panel2); }
+.ic-pdfmodal-line { grid-template-columns: 18px minmax(0, 1fr); }
+.ic-pdfmodal-item .ic-line-comparison { margin: 0 10px 0 36px; }
+.ic-pdfmodal-item .ic-line-comparison table { font-size: 12px; }
+.ic-pdfmodal-item .ic-line-comparison th, .ic-pdfmodal-item .ic-line-comparison td { padding: 5px 8px 5px 0; }
+.ic-pdfmodal-item .ic-line-comparison thead th { font-size: 11px; }

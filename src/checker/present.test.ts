@@ -78,7 +78,9 @@ describe("queue and line wording", () => {
   it("says how much over or under", () => {
     expect(queueAttention(inv({ lines: [over, line({})], overchargeTotal: 159.6 }))).toBe("SGD 159.60 over");
     expect(queueAttention(inv({ lines: [under] }))).toBe("SGD 20.00 under");
-    expect(queueAttention(inv({ lines: [over], overchargeTotal: null }))).toBe("1 line over");
+    expect(queueAttention(inv({ lines: [over], overchargeTotal: null }))).toBe("SGD 159.60 over");
+    expect(queueAttention(inv({ currency: "USD", lines: [line({ result: "price_mismatch", difference: 3, overcharge: 36 })], overchargeTotal: null }))).toBe("USD 36.00 over");
+    expect(queueAttention(inv({ lines: [line({ ...over, overcharge: null })], overchargeTotal: null }))).toBe("1 line over");
     expect(queueAttention(inv({}))).toBeNull();
   });
 

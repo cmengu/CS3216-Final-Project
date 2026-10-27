@@ -87,6 +87,11 @@ export function queueAttention(inv: SupplierInvoice): string | null {
   const over = inv.lines.filter(overSheet);
   if (over.length) {
     if (inv.overchargeTotal != null && inv.overchargeTotal > 0) return `${money(inv.overchargeTotal, cur)} over`;
+    // Invoice arithmetic may prevent a total, while individual line amounts remain confirmed.
+    if (over.every((l) => l.overcharge != null && Number.isFinite(l.overcharge))) {
+      const amount = over.reduce((sum, l) => sum + lineOverBy(l), 0);
+      if (amount > 0) return `${money(amount, cur)} over`;
+    }
     return `${over.length} line${over.length === 1 ? "" : "s"} over`;
   }
   const under = inv.lines.reduce((a, l) => a + lineUnder(l), 0);

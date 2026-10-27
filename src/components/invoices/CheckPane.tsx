@@ -7,7 +7,6 @@ import {
   decision,
   failureSentence,
   lineAttention,
-  lineDelta,
   money,
   OUTCOME_PILL,
   orderedLines,
@@ -21,6 +20,7 @@ import type { Outcome, SupplierInvoice } from "@/checker/types";
 import { Icon } from "@/components/icons";
 import { Pill } from "@/components/ui";
 import type { MasterList } from "@/masterList";
+import { PriceComparison } from "./PriceComparison";
 import { PayAnywayDialog, RaiseDialog } from "./Dialogs";
 
 export async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: string | null = null): Promise<string | null> {
@@ -220,7 +220,6 @@ export function CheckPane({
                 <div role="list" aria-label="Invoice lines">
                   {orderedLines(inv).map(({ line, n }) => {
                     const flagged = line.result !== "match";
-                    const delta = lineDelta(line, cur);
                     const quantityUnit = line.unit?.toUpperCase() === "M3" ? "m³" : line.unit;
                     const qty = line.quantity === null ? null : `${line.quantity.toLocaleString("en-SG")}${quantityUnit ? " " + quantityUnit : ""}`;
                     const priceUnit = quantityUnit ? ` / ${quantityUnit}` : "";
@@ -249,41 +248,16 @@ export function CheckPane({
                           <span className="ic-line-title">
                             {n}. {line.description.trim() || line.part || "No description"}
                           </span>
-                          {flagged && line.part ? (
-                            <span className="ic-line-code">
-                              {line.part}
-                            </span>
-                          ) : null}
-                          {flagged ? <span className="ic-attn">{lineAttention(line, cur)}</span> : null}
-                          <div className="cmp">
-                            {flagged ? (
-                              <>
-                                {line.unitPrice !== null ? (
-                                  <span>
-                                    Invoice unit price: <b>{price}</b>
-                                  </span>
-                                ) : null}
-                                {line.sheetPrice !== null ? (
-                                  <span>
-                                    Master unit price: <b>{cur ? cur + " " : ""}{unit(line.sheetPrice)}{priceUnit}</b>
-                                  </span>
-                                ) : null}
-                                {qty ? <span>Qty: <b>{qty}</b></span> : null}
-                                <span>Total: <b>{total}</b></span>
-                                {delta ? (
-                                  <span>
-                                    <b style={{ color: "var(--warn)" }}>{delta}</b>
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : (
-                              <>
-                                {qty ? <span>Qty: <b>{qty}</b></span> : null}
-                                <span>Unit price: <b>{price}</b></span>
-                                <span>Total: <b>{total}</b></span>
-                              </>
-                            )}
-                          </div>
+                          {flagged && line.result !== "price_mismatch" ? <span className="ic-attn">{lineAttention(line, cur)}</span> : null}
+                          {flagged ? (
+                            <PriceComparison line={line} currency={cur} number={n} />
+                          ) : (
+                            <div className="cmp">
+                              {qty ? <span>Qty: <b>{qty}</b></span> : null}
+                              <span>Unit price: <b>{price}</b></span>
+                              <span>Total price: <b>{total}</b></span>
+                            </div>
+                          )}
                         </div>
                         <div className="end">
                             <button type="button" className="ic-link ic-link--sm" onClick={(e) => { e.stopPropagation(); onShow(n); }} aria-label={`Show line ${n} on the PDF`}>
