@@ -13,6 +13,7 @@ from pathlib import Path
 
 from extract.context import CheckingInvoice, CheckingLine
 from extract.invoice import extract_with_usage, refine_with_usage
+from extract.totals import fill_missing_totals, ground_total_only_invoice
 from read.models import ParsedDocument
 from schema import InvoiceRecord
 
@@ -496,6 +497,7 @@ class LiveStages:
         record = result.record
         if not isinstance(record, CheckingInvoice):
             raise ValueError("Live extraction returned no checking context")
+        fill_missing_totals(ground_total_only_invoice(record, document.markdown))
         critique = self.sheet.verify_extraction(record)
         if critique:
             try:
@@ -508,6 +510,8 @@ class LiveStages:
                     record_type=CheckingInvoice,
                     extra_instructions=CONTEXT_PROMPT,
                 ).record
+                if isinstance(refined, CheckingInvoice):
+                    fill_missing_totals(ground_total_only_invoice(refined, document.markdown))
                 if isinstance(refined, CheckingInvoice) and len(
                     self.sheet.verify_extraction(refined)
                 ) <= len(critique):

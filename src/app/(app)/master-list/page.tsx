@@ -80,7 +80,7 @@ function MasterListView() {
         <div className="ic-titleblock">
           <h1 className="ic-h1">Master list</h1>
           <p className="muted" style={{ fontSize: 14 }}>
-            {masterList.file} · {masterList.items.length} items · {masterList.supplierCount} suppliers · Uploaded {whenLabel(masterList.uploadedAt)}
+            {masterList.file} · Uploaded {whenLabel(masterList.uploadedAt)}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -107,6 +107,7 @@ function MasterListView() {
           <table className="ic-grid">
             <thead>
               <tr>
+                <th scope="col" className="r">No.</th>
                 <th>Supplier</th>
                 <th>PO</th>
                 <th>Item</th>
@@ -123,6 +124,7 @@ function MasterListView() {
               {shown.length ? (
                 shown.map((i, n) => (
                   <tr key={`${i.supplier}-${i.po}-${i.item}-${n}`}>
+                    <td className="r num">{n + 1}</td>
                     <td>{i.supplier}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{i.po}</td>
                     <td className="mono" style={{ whiteSpace: "nowrap", fontSize: 13 }}>
@@ -145,7 +147,7 @@ function MasterListView() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="muted">
+                  <td colSpan={11} className="muted">
                     {q || supplier ? "No items match." : "The master list has no items."}
                   </td>
                 </tr>

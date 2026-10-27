@@ -10,12 +10,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import {
-  lineAttention,
-  money,
   orderedLines,
-  taxLabel,
 } from "@/checker/present";
 import type { SourceBlock, SupplierInvoice } from "@/checker/types";
+import { PriceComparison } from "./invoices/PriceComparison";
 import { blockFor } from "./pdfEvidence";
 import { wholeItemRow } from "./pdfRow";
 import { projectBox, textRotation } from "./pdfRotation";
@@ -350,12 +348,10 @@ export function PdfView({
                 {orderedLines(inv).map(({ line, n: lineNum }) => {
                   const flagged = line.result !== "match";
                   const active = focus?.n === lineNum;
-                  const total = line.lineTotal === null ? "—" : money(line.lineTotal, null);
                   return (
+                    <div key={lineNum} role="listitem" className="ic-pdfmodal-item" aria-current={active ? "true" : undefined}>
                     <button
                       type="button"
-                      key={lineNum}
-                      role="listitem"
                       className="ic-pdfmodal-line"
                       aria-current={active ? "true" : undefined}
                       onClick={() => onSelectLine?.(lineNum)}
@@ -371,28 +367,12 @@ export function PdfView({
                         <span>
                           {lineNum} · {line.description.trim() || line.part || "No description"}
                         </span>
-                        {flagged && active ? (
-                          <span className="ic-pdfmodal-line-note">{lineAttention(line, inv.currency)}</span>
-                        ) : null}
                       </span>
-                      <span className="amt num">{total}</span>
                     </button>
+                    <PriceComparison line={line} currency={inv.currency} number={lineNum} />
+                    </div>
                   );
                 })}
-              </div>
-              <div className="ic-sum ic-pdfmodal-totals">
-                <span className="muted">Subtotal</span>
-                <span className="num" style={{ textAlign: "right" }}>
-                  {inv.subtotal === null ? "—" : money(inv.subtotal, null)}
-                </span>
-                <span className="muted">{taxLabel(inv.taxRate)}</span>
-                <span className="num" style={{ textAlign: "right" }}>
-                  {inv.tax === null ? "—" : money(inv.tax, null)}
-                </span>
-                <span className="t">Total</span>
-                <span className="num t" style={{ textAlign: "right" }}>
-                  {inv.total === null ? "—" : money(inv.total, inv.currency)}
-                </span>
               </div>
             </aside>
             <div className="ic-pdfmodal-stage">{canvasNodes}</div>

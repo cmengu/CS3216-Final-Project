@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { money, OUTCOME_PILL, queueAttention, shortDate, statusPill, whenLabel } from "@/checker/present";
+import { OUTCOME_PILL, queueAttention, shortDate, statusPill, whenLabel } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
 import { dismissNotice, type QueueItem, type UploadNotice } from "@/checker/uploads";
 import { Icon } from "@/components/icons";
@@ -19,7 +19,6 @@ function Card({ inv, current, done }: { inv: SupplierInvoice; current: boolean; 
       </span>
       <span className="r2 muted">
         <span>{inv.number ?? (inv.supplier ? inv.fileName : "")}</span>
-        <span className="num">{inv.total !== null ? money(inv.total, inv.currency) : ""}</span>
       </span>
       <span className="r3">
         {done && inv.outcome ? (
