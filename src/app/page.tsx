@@ -114,6 +114,14 @@ type Stage = 0 | 1 | 2;
 
 const css = (vars: Record<string, string | number>) => vars as CSSProperties;
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const isNarrow = () => window.matchMedia("(max-width: 960px)").matches;
+/** The line on screen a step has to pass to become the active one. */
+const readingLine = () => window.innerHeight * (isNarrow() ? 0.74 : 0.5);
+/** The point of a step that is compared with the reading line. */
+const stepAnchor = (el: HTMLElement) => {
+  const r = el.getBoundingClientRect();
+  return isNarrow() ? r.top + 40 : r.top + r.height / 2;
+};
 
 export default function LandingPage() {
   const user = useUser();
@@ -130,36 +138,61 @@ export default function LandingPage() {
   const sample = SAMPLES.find((s) => s.id === sampleId) ?? SAMPLES[0];
 
   // The stage follows the scroll position: a step is active once its text passes the reading line.
+  // A click on a step sets it at once and holds it while the page scrolls there, so it never lags behind.
+  const lock = useRef<Stage | null>(null);
+  const idle = useRef(0);
+  const release = useRef<() => void>(() => {});
+
   useEffect(() => {
     let raf = 0;
     const update = () => {
       raf = 0;
-      const narrow = window.matchMedia("(max-width: 960px)").matches;
-      const line = window.innerHeight * (narrow ? 0.74 : 0.5);
       let next: Stage = 0;
       steps.current.forEach((el, i) => {
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        const anchor = narrow ? r.top + 40 : r.top + r.height / 2;
-        if (anchor <= line) next = i as Stage;
+        if (el && stepAnchor(el) <= readingLine() + 4) next = i as Stage;
       });
       setStage(next);
     };
     const queue = () => {
       if (!raf) raf = requestAnimationFrame(update);
     };
-    window.addEventListener("scroll", queue, { passive: true });
+    const onScroll = () => {
+      if (lock.current === null) return queue();
+      window.clearTimeout(idle.current);
+      idle.current = window.setTimeout(() => release.current(), 160);
+    };
+    release.current = () => {
+      lock.current = null;
+      queue();
+    };
+    const letGo = () => release.current();
+    window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", queue);
+    window.addEventListener("wheel", letGo, { passive: true });
+    window.addEventListener("touchstart", letGo, { passive: true });
+    window.addEventListener("keydown", letGo);
     queue();
     return () => {
-      window.removeEventListener("scroll", queue);
+      window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", queue);
+      window.removeEventListener("wheel", letGo);
+      window.removeEventListener("touchstart", letGo);
+      window.removeEventListener("keydown", letGo);
+      window.clearTimeout(idle.current);
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
 
   const goTo = (i: Stage) => {
-    steps.current[i]?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
+    lock.current = i;
+    setStage(i);
+    window.clearTimeout(idle.current);
+    idle.current = window.setTimeout(() => release.current(), 250);
+    const el = steps.current[i];
+    if (!el) return;
+    // Land a little past the reading line, so the step is unambiguously the active one.
+    const top = i === 0 ? 0 : Math.max(0, window.scrollY + stepAnchor(el) - (readingLine() - 24));
+    window.scrollTo({ top, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
   return (
@@ -306,7 +339,13 @@ function InvoiceCard({
 
       <div className="lp-foot" aria-live="polite">
         {!checked ? (
-          <span className="lp-hint">Waiting to be checked</span>
+          <span className="lp-arrived">
+            <span className="lp-hint">Not checked yet</span>
+            <button type="button" className="ic-btn ic-btn--primary" onClick={() => onStage(1)}>
+              Check this invoice
+              <Icon name="arrowR" arrow />
+            </button>
+          </span>
         ) : stage === 1 ? (
           <span className="lp-sum" key={sample.id}>
             <span className={`ic-pill ic-pill--${sample.result === "ready" ? "good" : "warn"}`}>{sample.summary}</span>
@@ -403,7 +442,7 @@ function Sheet({ sample, checked }: { sample: Sample; checked: boolean }) {
       </div>
 
       <div className="lp-find" data-live={live} data-result={sample.result}>
-        <span className="lp-find-idle">Findings appear here.</span>
+        <span className="lp-find-idle">Nothing checked yet. Findings appear here.</span>
         <div className="lp-find-body">
           {sample.result === "raise" ? (
             <div className="lp-cmp">

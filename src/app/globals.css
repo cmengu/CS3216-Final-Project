@@ -516,6 +516,7 @@ a { color: var(--accent); }
 
 .lp-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 76px; padding: 0 20px; }
 .lp-hint { color: var(--ink2); }
+.lp-arrived { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; animation: lp-fade 0.4s var(--ease) both; }
 .lp-sum, .lp-done, .lp-actions { display: inline-flex; align-items: center; gap: 12px; }
 .lp-sum { animation: lp-fade 0.5s var(--ease) calc(3 * var(--step) + 80ms) both; }
 .lp-done, .lp-actions { animation: lp-fade 0.4s var(--ease) both; }
