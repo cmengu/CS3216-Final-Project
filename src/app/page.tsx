@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { useUser } from "@/auth";
-import { Icon } from "@/components/icons";
+import { Icon, type IconName } from "@/components/icons";
 import { useMasterList } from "@/masterList";
 
 // TODO: replace with the real contact address before launch.
 const CONTACT_EMAIL = "hello@invoicechecker.com";
 
 /* ---------------------------------------------------------------------------
-   The sample invoices are real lines from data/mock_invoice_dataset (synthetic).
-   Check times are the 26 Oct 2026 benchmark (docs/review/2026-10-26-model-benchmark.md).
+   Sample invoices are real lines from data/mock_invoice_dataset (synthetic).
+   Check times are from the 26 Oct 2026 benchmark (docs/review/2026-10-26-model-benchmark.md).
+   The card has a fixed size: every sample and every stage fills the same boxes, so nothing moves.
    --------------------------------------------------------------------------- */
 
 type Verdict = "match" | "over" | "person";
@@ -22,11 +23,8 @@ type Line = {
   qty: string;
   invoice: string;
   verdict: Verdict;
-  /** Over lines: the sheet price, with the share of the invoice price that is over it (for the bar). */
-  sheet?: string;
-  sheetShare?: number;
   pill?: string;
-  note?: string;
+  short?: string;
 };
 
 type Sample = {
@@ -37,7 +35,8 @@ type Sample = {
   currency: string;
   time: string;
   lines: Line[];
-  more?: number;
+  more?: string;
+  totals: { subtotal: string; tax: string; rate: string; total: string };
   result: Result;
   summary: string;
 };
@@ -52,17 +51,9 @@ const SAMPLES: Sample[] = [
     time: "5.4 s",
     result: "raise",
     summary: "Over by SGD 159.60",
+    totals: { subtotal: "3,213.09", tax: "289.18", rate: "9%", total: "3,502.27" },
     lines: [
-      {
-        name: "1 inch SS hose, 237 mm",
-        qty: "28 LG",
-        invoice: "74.25",
-        verdict: "over",
-        sheet: "68.25",
-        sheetShare: 91.9,
-        pill: "Over by SGD 159.60",
-        note: "5% discount applied",
-      },
+      { name: "1 inch SS hose, 237 mm", qty: "28 LG", invoice: "74.25", verdict: "over", pill: "Over by SGD 159.60", short: "Over" },
       { name: "1 inch SS hose, 195 mm", qty: "18 LG", invoice: "72.40", verdict: "match" },
     ],
   },
@@ -75,15 +66,9 @@ const SAMPLES: Sample[] = [
     time: "6.2 s",
     result: "person",
     summary: "1 line needs you",
+    totals: { subtotal: "629.60", tax: "56.66", rate: "9%", total: "686.26" },
     lines: [
-      {
-        name: "Engineer, first hour",
-        qty: "1 HR",
-        invoice: "142.50",
-        verdict: "person",
-        pill: "Needs you",
-        note: "A14L-0156-0001#24R",
-      },
+      { name: "Engineer, first hour", qty: "1 HR", invoice: "142.50", verdict: "person", pill: "Needs you", short: "Needs you" },
       { name: "Power supply", qty: "1 PCE", invoice: "312.60", verdict: "match" },
       { name: "Engineer, extra hours", qty: "2 HR", invoice: "87.25", verdict: "match" },
     ],
@@ -97,67 +82,37 @@ const SAMPLES: Sample[] = [
     time: "8.4 s",
     result: "ready",
     summary: "All lines match",
-    more: 4,
+    more: "5 more lines",
+    totals: { subtotal: "642.75", tax: "0.00", rate: "0%", total: "642.75" },
     lines: [
       { name: "Freight", qty: "2.4 M3", invoice: "111.35", verdict: "match" },
       { name: "Emergency bunker surcharge", qty: "2.4 M3", invoice: "18.34", verdict: "match" },
-      { name: "General rate increase", qty: "2.4 M3", invoice: "23.58", verdict: "match" },
     ],
   },
 ];
 
-type TileKind = "ok" | "caught" | "person";
-type Tile = { id: string; layout: string; kind: TileKind; seconds: number; text: string };
+type Kind = "ok" | "caught" | "person";
+type Cell = { kind: Kind; text: string; sec: number };
+type BoardRow = { layout: string; clean: Cell; changed: Cell };
 
-/** The 14 mock invoices of the benchmark, in file order (_01 clean, _02 with one planted price error). */
-const TILES: Tile[] = [
-  { id: "F01_01", layout: "Freight", kind: "ok", seconds: 8.42, text: "All 7 lines match" },
-  { id: "F01_02", layout: "Freight", kind: "caught", seconds: 5.41, text: "Over by SGD 20.96" },
-  { id: "F02_01", layout: "Hose", kind: "ok", seconds: 5.3, text: "Both lines match" },
-  { id: "F02_02", layout: "Hose", kind: "caught", seconds: 5.43, text: "Over by SGD 159.60" },
-  { id: "F03_01", layout: "Tools", kind: "ok", seconds: 4.97, text: "Both lines match" },
-  { id: "F03_02", layout: "Tools", kind: "caught", seconds: 3.71, text: "Over by SGD 25.00" },
-  { id: "F04_01", layout: "Service", kind: "person", seconds: 6.17, text: "1 line sent to a person, not guessed" },
-  { id: "F04_02", layout: "Service", kind: "caught", seconds: 5.53, text: "Under by SGD 21.00" },
-  { id: "F05_01", layout: "Proforma", kind: "ok", seconds: 3.96, text: "Both lines match" },
-  { id: "F05_02", layout: "Proforma", kind: "caught", seconds: 3.53, text: "Over by USD 36.00" },
-  { id: "F06_01", layout: "Steel", kind: "ok", seconds: 18.99, text: "All 11 lines match" },
-  { id: "F06_02", layout: "Steel", kind: "caught", seconds: 8.13, text: "Over by USD 72.00" },
-  { id: "F07_01", layout: "Hardware", kind: "ok", seconds: 3.94, text: "Both lines match" },
-  { id: "F07_02", layout: "Hardware", kind: "caught", seconds: 4.61, text: "Under by SGD 20.00" },
+/** The 14 mock invoices of the benchmark: each layout once clean and once with one price changed. */
+const BOARD: BoardRow[] = [
+  { layout: "Freight", clean: { kind: "ok", text: "All 7 lines match", sec: 8.42 }, changed: { kind: "caught", text: "Over by SGD 20.96", sec: 5.41 } },
+  { layout: "Hose", clean: { kind: "ok", text: "Both lines match", sec: 5.3 }, changed: { kind: "caught", text: "Over by SGD 159.60", sec: 5.43 } },
+  { layout: "Tools", clean: { kind: "ok", text: "Both lines match", sec: 4.97 }, changed: { kind: "caught", text: "Over by SGD 25.00", sec: 3.71 } },
+  { layout: "Service", clean: { kind: "person", text: "1 line left to a person", sec: 6.17 }, changed: { kind: "caught", text: "Under by SGD 21.00", sec: 5.53 } },
+  { layout: "Proforma", clean: { kind: "ok", text: "Both lines match", sec: 3.96 }, changed: { kind: "caught", text: "Over by USD 36.00", sec: 3.53 } },
+  { layout: "Steel", clean: { kind: "ok", text: "All 11 lines match", sec: 18.99 }, changed: { kind: "caught", text: "Over by USD 72.00", sec: 8.13 } },
+  { layout: "Hardware", clean: { kind: "ok", text: "Both lines match", sec: 3.94 }, changed: { kind: "caught", text: "Under by SGD 20.00", sec: 4.61 } },
 ];
 const MAX_SECONDS = 19;
-const MEAN_SECONDS = 6.3;
-const LAYOUTS = ["Freight", "Hose", "Tools", "Service", "Proforma", "Steel", "Hardware"];
+const PLANTED = BOARD.length;
+const CELL_ICON: Record<Kind, IconName> = { ok: "check", caught: "warn", person: "people" };
 
 const STAGE_LABELS = ["Drop in", "Check", "Decide"] as const;
+type Stage = 0 | 1 | 2;
 
 const css = (vars: Record<string, string | number>) => vars as CSSProperties;
-
-/** True once the element has been on screen. */
-function useSeen(ref: RefObject<HTMLElement | null>) {
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") {
-      setSeen(true);
-      return;
-    }
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
-          setSeen(true);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.35 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [ref]);
-  return seen;
-}
-
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export default function LandingPage() {
@@ -167,31 +122,43 @@ export default function LandingPage() {
   const workspaceHref = signedIn ? (ml === null ? "/master-list" : "/invoices") : "/sign-in";
   const ctaLabel = signedIn ? "Open workspace" : "Sign in to workspace";
 
-  const [stage, setStage] = useState<0 | 1 | 2>(0);
+  const [stage, setStage] = useState<Stage>(0);
   const [sampleId, setSampleId] = useState<Sample["id"]>("hose");
   const [decided, setDecided] = useState<Record<string, boolean>>({});
   const steps = useRef<(HTMLElement | null)[]>([]);
 
   const sample = SAMPLES.find((s) => s.id === sampleId) ?? SAMPLES[0];
 
-  // The stage follows the step that sits on the reading line as the page scrolls.
+  // The stage follows the scroll position: a step is active once its text passes the reading line.
   useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const narrow = window.matchMedia("(max-width: 960px)").matches;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) setStage(Number(e.target.getAttribute("data-step")) as 0 | 1 | 2);
-        }
-      },
-      { rootMargin: narrow ? "-74% 0px -20% 0px" : "-42% 0px -42% 0px" },
-    );
-    steps.current.forEach((el) => el && obs.observe(el));
-    return () => obs.disconnect();
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const narrow = window.matchMedia("(max-width: 960px)").matches;
+      const line = window.innerHeight * (narrow ? 0.74 : 0.5);
+      let next: Stage = 0;
+      steps.current.forEach((el, i) => {
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const anchor = narrow ? r.top + 40 : r.top + r.height / 2;
+        if (anchor <= line) next = i as Stage;
+      });
+      setStage(next);
+    };
+    const queue = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", queue, { passive: true });
+    window.addEventListener("resize", queue);
+    queue();
+    return () => {
+      window.removeEventListener("scroll", queue);
+      window.removeEventListener("resize", queue);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
-  const goTo = (i: 0 | 1 | 2) => {
-    setStage(i);
+  const goTo = (i: Stage) => {
     steps.current[i]?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "center" });
   };
 
@@ -212,7 +179,13 @@ export default function LandingPage() {
 
       <main>
         <div className="lp-story">
-          <section className="lp-step lp-step--0" ref={(el) => { steps.current[0] = el; }} data-step="0" aria-labelledby="lp-h1">
+          <section
+            className="lp-step lp-step--0"
+            ref={(el) => {
+              steps.current[0] = el;
+            }}
+            aria-labelledby="lp-h1" data-step="0"
+          >
             <h1 id="lp-h1" className="lp-h1">
               Know before you pay.
             </h1>
@@ -240,14 +213,26 @@ export default function LandingPage() {
             />
           </div>
 
-          <section className="lp-step" ref={(el) => { steps.current[1] = el; }} data-step="1" aria-labelledby="lp-h2a">
+          <section
+            className="lp-step"
+            ref={(el) => {
+              steps.current[1] = el;
+            }}
+            aria-labelledby="lp-h2a" data-step="1"
+          >
             <h2 id="lp-h2a" className="lp-h2">
               Every line. Checked.
             </h2>
             <p className="lp-lead">Over the sheet price? Amber. Not sure? It asks you.</p>
           </section>
 
-          <section className="lp-step" ref={(el) => { steps.current[2] = el; }} data-step="2" aria-labelledby="lp-h2b">
+          <section
+            className="lp-step"
+            ref={(el) => {
+              steps.current[2] = el;
+            }}
+            aria-labelledby="lp-h2b" data-step="2"
+          >
             <h2 id="lp-h2b" className="lp-h2">
               Decide in one click.
             </h2>
@@ -256,7 +241,6 @@ export default function LandingPage() {
         </div>
 
         <Proof />
-
         <Close workspaceHref={workspaceHref} ctaLabel={ctaLabel} />
       </main>
 
@@ -278,19 +262,17 @@ function InvoiceCard({
   decided,
   onDecide,
 }: {
-  stage: 0 | 1 | 2;
+  stage: Stage;
   sample: Sample;
   onSample: (id: Sample["id"]) => void;
-  onStage: (i: 0 | 1 | 2) => void;
+  onStage: (i: Stage) => void;
   decided: boolean;
   onDecide: (v: boolean) => void;
 }) {
   const checked = stage > 0;
-  const n = sample.lines.length;
-  const summaryTone = sample.result === "ready" ? "good" : "warn";
 
   return (
-    <div className="lp-card" data-checked={checked} data-result={sample.result}>
+    <div className="lp-card" data-result={sample.result}>
       <div className="lp-progress" role="group" aria-label="Steps">
         {STAGE_LABELS.map((label, i) => (
           <button
@@ -299,7 +281,7 @@ function InvoiceCard({
             className="lp-prog"
             aria-pressed={stage === i}
             data-done={stage > i}
-            onClick={() => onStage(i as 0 | 1 | 2)}
+            onClick={() => onStage(i as Stage)}
           >
             {label}
           </button>
@@ -315,27 +297,63 @@ function InvoiceCard({
           ))}
         </div>
         <span className="lp-file">
-          <Icon name={stage === 0 ? "mail" : "doc"} />
-          <span key={stage === 0 ? "in" : "file"} className="lp-file-name">
-            {stage === 0 ? "New from Outlook" : sample.file}
-          </span>
+          <Icon name={checked ? "doc" : "mail"} />
+          <span>{checked ? sample.file : "New from Outlook"}</span>
         </span>
       </div>
 
-      <div className="lp-sheet">
+      <Sheet key={sample.id} sample={sample} checked={checked} />
+
+      <div className="lp-foot" aria-live="polite">
+        {!checked ? (
+          <span className="lp-hint">Waiting to be checked</span>
+        ) : stage === 1 ? (
+          <span className="lp-sum" key={sample.id}>
+            <span className={`ic-pill ic-pill--${sample.result === "ready" ? "good" : "warn"}`}>{sample.summary}</span>
+            <small>Checked in {sample.time}</small>
+          </span>
+        ) : (
+          <Decide sample={sample} decided={decided} onDecide={onDecide} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The invoice sheet and the findings under it. Mounted once per sample, so it starts unchecked and
+ * the verdicts play in when it goes live. Rows never change size; only colour, opacity and scale move.
+ */
+function Sheet({ sample, checked }: { sample: Sample; checked: boolean }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setArmed(true));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, []);
+  const live = checked && armed;
+
+  return (
+    <>
+      <div className="lp-sheet" data-live={live}>
         <div className="lp-sheet-head">
           <b>{sample.supplier}</b>
           <span>
-            {sample.currency} · {n + (sample.more ?? 0)} lines
+            {sample.currency} · {sample.lines.length + (sample.more ? 5 : 0)} lines
           </span>
         </div>
 
-        <div className="lp-lines" key={`${sample.id}-${checked ? "c" : "d"}`} style={css({ "--n": n })}>
-          {checked ? <span className="lp-beam" aria-hidden="true" /> : null}
+        <div className="lp-rows">
+          {live ? <span className="lp-beam" aria-hidden="true" /> : null}
           {sample.lines.map((l, i) => (
-            <div key={l.name} className="lp-row" data-v={checked ? l.verdict : "idle"} style={css({ "--i": i })}>
+            <div key={l.name} className="lp-row" data-v={l.verdict} style={css({ "--i": i })}>
               <span className="lp-mark" aria-hidden="true">
-                {checked ? <Icon name={l.verdict === "match" ? "check" : l.verdict === "over" ? "warn" : "people"} /> : null}
+                <Icon name={l.verdict === "match" ? "check" : l.verdict === "over" ? "warn" : "people"} />
               </span>
               <span className="lp-name">
                 {l.name}
@@ -343,73 +361,79 @@ function InvoiceCard({
               </span>
               <span className="lp-price">{l.invoice}</span>
               <span className="lp-verdict">
-                {checked ? (
-                  <span className={`ic-pill${l.verdict === "match" ? " ic-pill--good" : " ic-pill--warn"}`}>
-                    {l.pill ?? "Matches"}
-                  </span>
-                ) : (
-                  <span className="lp-wait" aria-hidden="true" />
-                )}
+                <span className="lp-wait" aria-hidden="true" />
+                <span className={`ic-pill ${l.verdict === "match" ? "ic-pill--good" : "ic-pill--warn"}`} aria-hidden={!live}>
+                  <span className="lp-long">{l.pill ?? "Matches"}</span>
+                  <span className="lp-short">{l.short ?? "Matches"}</span>
+                </span>
               </span>
-              {checked && l.verdict === "over" ? <OverBars line={l} /> : null}
-              {checked && l.verdict === "person" ? <Smudge line={l} /> : null}
             </div>
           ))}
           {sample.more ? (
-            <div className="lp-more" data-v={checked ? "match" : "idle"} style={css({ "--i": n })}>
+            <div className="lp-row lp-row--more" data-v="match" style={css({ "--i": sample.lines.length })}>
               <span className="lp-mark" aria-hidden="true">
-                {checked ? <Icon name="check" /> : null}
+                <Icon name="check" />
               </span>
-              <span>{sample.more} more lines</span>
-              {checked ? <span className="ic-pill ic-pill--good">Match</span> : null}
+              <span className="lp-name">{sample.more}</span>
+              <span className="lp-price" />
+              <span className="lp-verdict">
+                <span className="lp-wait" aria-hidden="true" />
+                <span className="ic-pill ic-pill--good" aria-hidden={!live}>
+                  Match
+                </span>
+              </span>
             </div>
           ) : null}
         </div>
+
+        <dl className="lp-totals">
+          <div>
+            <dt>Subtotal</dt>
+            <dd>{sample.totals.subtotal}</dd>
+          </div>
+          <div>
+            <dt>Tax {sample.totals.rate}</dt>
+            <dd>{sample.totals.tax}</dd>
+          </div>
+          <div>
+            <dt>Total {sample.currency}</dt>
+            <dd>{sample.totals.total}</dd>
+          </div>
+        </dl>
       </div>
 
-      <div className="lp-foot" aria-live="polite">
-        {stage === 0 ? (
-          <span className="lp-hint">Waiting to be checked</span>
-        ) : (
-          <span className="lp-sum">
-            <span className={`ic-pill ic-pill--${summaryTone}`}>{sample.summary}</span>
-            <small>Checked in {sample.time}</small>
-          </span>
-        )}
-        {stage === 2 ? <Decide sample={sample} decided={decided} onDecide={onDecide} /> : null}
+      <div className="lp-find" data-live={live} data-result={sample.result}>
+        <span className="lp-find-idle">Findings appear here.</span>
+        <div className="lp-find-body">
+          {sample.result === "raise" ? (
+            <div className="lp-cmp">
+              <span className="lp-cmp-k">Invoice</span>
+              <span className="lp-cmp-bar">
+                <i style={{ width: "91.9%" }} />
+                <i className="over" style={{ width: "8.1%" }} />
+              </span>
+              <b>74.25</b>
+              <span className="lp-cmp-k">Sheet</span>
+              <span className="lp-cmp-bar">
+                <i style={{ width: "91.9%" }} />
+              </span>
+              <b>68.25</b>
+              <small className="lp-cmp-note">5% discount applied</small>
+            </div>
+          ) : sample.result === "person" ? (
+            <div className="lp-smudge">
+              <code>A14L-0156-0001#24R</code>
+              <span>Part code unclear on the scan. Nothing guessed.</span>
+            </div>
+          ) : (
+            <div className="lp-allgood">
+              <Icon name="check" />
+              Every line matches the sheet.
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-}
-
-/** Invoice price against sheet price, drawn from zero. The part over the sheet is amber. */
-function OverBars({ line }: { line: Line }) {
-  const share = line.sheetShare ?? 100;
-  return (
-    <div className="lp-cmp">
-      <span className="lp-cmp-k">Invoice</span>
-      <span className="lp-cmp-bar">
-        <i style={{ width: `${share}%` }} />
-        <i className="over" style={{ width: `${100 - share}%` }} />
-      </span>
-      <b>{line.invoice}</b>
-      <span className="lp-cmp-k">Sheet</span>
-      <span className="lp-cmp-bar">
-        <i style={{ width: `${share}%` }} />
-      </span>
-      <b>{line.sheet}</b>
-      {line.note ? <small className="lp-cmp-note">{line.note}</small> : null}
-    </div>
-  );
-}
-
-/** A part code the scan could not make out: shown smudged, left to a person. */
-function Smudge({ line }: { line: Line }) {
-  return (
-    <div className="lp-smudge">
-      <code>{line.note}</code>
-      <span>Part code unclear on the scan. Nothing guessed.</span>
-    </div>
+    </>
   );
 }
 
@@ -418,9 +442,7 @@ function Decide({ sample, decided, onDecide }: { sample: Sample; decided: boolea
     const ready = sample.result === "ready";
     return (
       <span className="lp-done">
-        <span className={`ic-pill ${ready ? "ic-pill--good" : "ic-pill--warn"}`}>
-          {ready ? "Ready to pay" : "Raise with supplier"}
-        </span>
+        <span className={`ic-pill ${ready ? "ic-pill--good" : "ic-pill--warn"}`}>{ready ? "Ready to pay" : "Raise with supplier"}</span>
         <small>{ready ? "Added to the CSV" : "Dispute note ready"}</small>
         <button type="button" className="ic-link ic-link--sm" onClick={() => onDecide(false)}>
           <Icon name="undo" />
@@ -431,10 +453,12 @@ function Decide({ sample, decided, onDecide }: { sample: Sample; decided: boolea
   }
   if (sample.result === "ready") {
     return (
-      <button type="button" className="ic-btn ic-btn--primary" onClick={() => onDecide(true)}>
-        Ready to pay
-        <Icon name="check" />
-      </button>
+      <span className="lp-actions">
+        <button type="button" className="ic-btn ic-btn--primary" onClick={() => onDecide(true)}>
+          Ready to pay
+          <Icon name="check" />
+        </button>
+      </span>
     );
   }
   return (
@@ -455,89 +479,86 @@ function Decide({ sample, decided, onDecide }: { sample: Sample; decided: boolea
 
 function Proof() {
   const ref = useRef<HTMLDivElement | null>(null);
-  const seen = useSeen(ref);
-  const [pick, setPick] = useState<Tile | null>(null);
+  const [play, setPlay] = useState(false);
+  const [found, setFound] = useState(PLANTED);
+
+  // Everything is drawn in its final state. Scrolling the board into view only replays it.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined" || reducedMotion()) return;
+    const obs = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) {
+          setPlay(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin: "0px 0px -15% 0px", threshold: 0 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // The counter climbs as each changed invoice lands.
+  useEffect(() => {
+    if (!play) return;
+    const timers: number[] = [window.setTimeout(() => setFound(0), 0)];
+    BOARD.forEach((_, r) => {
+      timers.push(window.setTimeout(() => setFound(r + 1), r * 260 + 130 + 200 + 450));
+    });
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [play]);
 
   return (
     <section className="lp-proof" aria-labelledby="lp-proof-h">
       <div className="lp-proof-in" ref={ref}>
-        <h2 id="lp-proof-h" className="lp-h2">
-          Seven price errors. Seven caught.
-        </h2>
-
-        <div className="lp-proof-grid">
-          <div>
-            <div className={`lp-tiles${seen ? " in" : ""}`} role="group" aria-label="The 14 mock invoices">
-              {TILES.map((t, i) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="lp-tile"
-                  data-kind={t.kind}
-                  data-on={pick?.id === t.id}
-                  style={css({ "--d": `${Math.floor(i / 2) * 110 + (i % 2) * 70}ms` })}
-                  onMouseEnter={() => setPick(t)}
-                  onFocus={() => setPick(t)}
-                  onClick={() => setPick(t)}
-                  aria-label={`${t.layout} invoice ${t.id.endsWith("01") ? "one" : "two"}: ${t.text}`}
-                >
-                  <span className="lp-tile-lines" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <span className="lp-tile-badge" aria-hidden="true">
-                    <Icon name={t.kind === "ok" ? "check" : t.kind === "caught" ? "warn" : "people"} />
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="lp-tile-names" aria-hidden="true">
-              {LAYOUTS.map((l) => (
-                <span key={l}>{l}</span>
-              ))}
-            </div>
-            <ul className="lp-legend">
-              <li data-kind="ok">All lines match</li>
-              <li data-kind="caught">Price error caught</li>
-              <li data-kind="person">Left to a person</li>
-            </ul>
-            <p className="lp-caption" aria-live="polite">
-              {pick ? (
-                <>
-                  <b>
-                    {pick.layout} {pick.id.endsWith("01") ? "1" : "2"}
-                  </b>{" "}
-                  {pick.text}. Checked in {pick.seconds.toFixed(1)} s.
-                </>
-              ) : (
-                <>
-                  <b>7 of 7</b> price errors caught. <b>0</b> false alarms. Tap an invoice.
-                </>
-              )}
-            </p>
-          </div>
-
-          <div>
-            <div className={`lp-bars${seen ? " in" : ""}`} role="img" aria-label="Seconds to check each of the 14 invoices. Most take under 9 seconds.">
-              {TILES.map((t, i) => (
-                <span
-                  key={t.id}
-                  className="lp-bar"
-                  data-on={pick?.id === t.id}
-                  style={css({ "--h": `${(t.seconds / MAX_SECONDS) * 100}%`, "--i": i })}
-                />
-              ))}
-              <span className="lp-avg" style={css({ "--avg": `${(MEAN_SECONDS / MAX_SECONDS) * 100}%` })}>
-                <small>Average {MEAN_SECONDS} s</small>
-              </span>
-            </div>
-            <p className="lp-caption lp-caption--bars">Seconds to check each invoice.</p>
-          </div>
+        <div className="lp-proof-top">
+          <h2 id="lp-proof-h" className="lp-h2">
+            7 wrong prices hidden. 7 found.
+          </h2>
+          <p className="lp-lead">14 mock invoices: each of 7 layouts once clean, once with one price changed.</p>
         </div>
 
+        <div className={`lp-board${play ? " play" : ""}`} role="table" aria-label="Result for each mock invoice">
+          <div className="lp-board-row lp-board-head" role="row">
+            <span role="columnheader">Layout</span>
+            <span role="columnheader">Clean invoice</span>
+            <span role="columnheader">One price changed</span>
+          </div>
+          {BOARD.map((row, r) => (
+            <div key={row.layout} className="lp-board-row" role="row">
+              <span className="lp-board-name" role="rowheader">
+                {row.layout}
+              </span>
+              {([row.clean, row.changed] as Cell[]).map((c, k) => (
+                <div key={k} className="lp-cell" role="cell" data-kind={c.kind} style={css({ "--d": `${r * 260 + k * 130 + 200}ms`, "--w": `${(c.sec / MAX_SECONDS) * 100}%` })}>
+                  <span className="lp-cell-badge" aria-hidden="true">
+                    <Icon name={CELL_ICON[c.kind]} />
+                  </span>
+                  <span className="lp-cell-text">{c.text}</span>
+                  <span className="lp-cell-sec">{c.sec.toFixed(1)} s</span>
+                  <span className="lp-cell-bar" aria-hidden="true">
+                    <i />
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <p className="lp-score" aria-live="polite">
+          <span>
+            <b>{found} of {PLANTED}</b> wrong prices found
+          </span>
+          <span>
+            <b>0</b> false alarms
+          </span>
+          <span>
+            Average <b>6.3 s</b> per invoice
+          </span>
+        </p>
         <p className="lp-fine">
-          Measured 26 Oct 2026 on 14 synthetic mock invoices, 58 lines. Check time excludes reading the scan.
+          Bar length is seconds to check, out of {MAX_SECONDS}. Measured 26 Oct 2026 on 14 synthetic mock invoices, 58 lines. Check time excludes reading the scan.
         </p>
       </div>
     </section>
