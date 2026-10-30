@@ -246,3 +246,17 @@ describe("outlook client", () => {
     }
   });
 });
+
+
+it("protects Outlook scan and disconnect with the browser request header", async () => {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    expect(init?.credentials).toBe("include");
+    expect(init?.method).toBe("POST");
+    expect(init?.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
+    return Response.json({ configured: true, connected: false, messages: [] });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  expect((await disconnectOutlook()).ok).toBe(true);
+  expect((await scanOutlookMessages()).ok).toBe(true);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});

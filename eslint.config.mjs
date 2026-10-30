@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Agent worktrees and copied sample files are not this app's source.
     ".claude/**",
     "public/samples/**",
+    // Generated third-party archive worker, copied from node_modules.
+    "public/archive/**",
     // Python dependencies and generated invoice artifacts are not frontend source.
     "backend/.venv/**",
     "backend/runtime/**",

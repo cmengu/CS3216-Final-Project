@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,6 +104,12 @@ class Store:
         self.database = self.directory / "invoices.sqlite3"
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""CREATE TABLE IF NOT EXISTS revoked_sessions (
+                session_id TEXT PRIMARY KEY, expires_at BIGINT NOT NULL
+            )""")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS revoked_session_expiry ON revoked_sessions(expires_at)"
+            )
             db.execute("""CREATE TABLE IF NOT EXISTS invoices (
                 id TEXT PRIMARY KEY, filename TEXT NOT NULL, document_hash TEXT NOT NULL,
                 status TEXT NOT NULL, mode TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -149,6 +156,25 @@ class Store:
                 yield db
         finally:
             db.close()
+
+    def revoke_session(self, session_id: str, expires_at: int) -> None:
+        with self.connect() as db:
+            db.execute("DELETE FROM revoked_sessions WHERE expires_at <= ?", (int(time.time()),))
+            db.execute(
+                "INSERT INTO revoked_sessions (session_id, expires_at) VALUES (?, ?) "
+                "ON CONFLICT(session_id) DO UPDATE SET expires_at=MAX(revoked_sessions.expires_at, excluded.expires_at)",
+                (session_id, expires_at),
+            )
+
+    def is_session_revoked(self, session_id: str) -> bool:
+        with self.connect() as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM revoked_sessions WHERE session_id=? AND expires_at>?",
+                    (session_id, int(time.time())),
+                ).fetchone()
+                is not None
+            )
 
     def recover(self):
         # Completed rows are never reprocessed on startup.
@@ -339,6 +365,10 @@ SCHEMA = "invoice_checker"
 SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 POSTGRES_TABLES = """
 CREATE SCHEMA IF NOT EXISTS {schema};
+CREATE TABLE IF NOT EXISTS {schema}.revoked_sessions (
+    session_id TEXT PRIMARY KEY, expires_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS revoked_session_expiry ON {schema}.revoked_sessions(expires_at);
 CREATE TABLE IF NOT EXISTS {schema}.invoices (
     id TEXT PRIMARY KEY, filename TEXT NOT NULL, document_hash TEXT NOT NULL,
     status TEXT NOT NULL, mode TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -396,6 +426,28 @@ class PostgresStore:
     def connect(self):
         with self.pool.connection() as db:
             yield db
+
+    def revoke_session(self, session_id: str, expires_at: int) -> None:
+        with self.connect() as db:
+            db.execute(
+                f"DELETE FROM {self.schema}.revoked_sessions WHERE expires_at <= %s",
+                (int(time.time()),),
+            )
+            db.execute(
+                f"INSERT INTO {self.schema}.revoked_sessions AS revoked (session_id, expires_at) VALUES (%s, %s) "
+                "ON CONFLICT(session_id) DO UPDATE SET expires_at=GREATEST(revoked.expires_at, excluded.expires_at)",
+                (session_id, expires_at),
+            )
+
+    def is_session_revoked(self, session_id: str) -> bool:
+        with self.connect() as db:
+            return (
+                db.execute(
+                    f"SELECT 1 FROM {self.schema}.revoked_sessions WHERE session_id=%s AND expires_at>%s",
+                    (session_id, int(time.time())),
+                ).fetchone()
+                is not None
+            )
 
     def recover(self):
         with self.connect() as db:

@@ -32,8 +32,9 @@ let saveQueue: Promise<unknown> = Promise.resolve();
 const SYNC_KEY = `ic.master-list.changed:${SERVICE_URL}`;
 function emit() { listeners.forEach((listener) => listener()); }
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = sessionHeaders(options?.headers as Record<string, string> | undefined, !!options?.method && options.method !== "GET");
   const response = await fetch(`${SERVICE_URL}/master-list${path}`, {
-    ...options, credentials: "include", ...(sessionHeaders() ? { headers: sessionHeaders(options?.headers as Record<string, string> | undefined) } : {}), cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(15_000),
+    ...options, credentials: "include", ...(headers ? { headers } : {}), cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(15_000),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Master list request failed.");

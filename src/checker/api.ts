@@ -43,11 +43,12 @@ export function setActiveSessionId(sessionId: string | null): void {
   reloadInvoices();
 }
 
-export function sessionHeaders(extra?: Record<string, string>): Record<string, string> | undefined {
+export function sessionHeaders(extra?: Record<string, string>, mutation = false): Record<string, string> | undefined {
   const sid = getActiveSessionId();
-  if (!sid && !extra) return undefined;
+  if (!sid && !extra && !mutation) return undefined;
   return {
     ...(extra ?? {}),
+    ...(mutation ? { "X-Requested-With": "InvoiceChecker" } : {}),
     ...(sid ? { "X-Invoice-Session": sid } : {}),
   };
 }
@@ -106,8 +107,8 @@ export async function getInvoice(id: string): Promise<SupplierInvoice> {
 
 /** One sentence for a file that must not be sent at all. Null means it may be sent. */
 export function uploadProblem(file: { name: string; size: number }): string | null {
-  if (!file.name.toLowerCase().endsWith(".pdf")) return "Only PDF files can be checked.";
-  if (file.size > MAX_BYTES) return "That PDF is over the 20 MB limit.";
+  if (!/\.(pdf|xml)$/i.test(file.name)) return "Only PDF or Vietnamese HDon XML invoices can be checked.";
+  if (file.size > MAX_BYTES) return "That invoice is over the 20 MB limit.";
   return null;
 }
 
@@ -119,7 +120,7 @@ export function uploadFailure(status: number, detail?: unknown): string | null {
   if (status === 201) return null;
   if (status === 429) return "Another invoice is being checked. Try again in a moment.";
   if (status === 503) return "The checking service is not ready.";
-  if (status === 413) return "That PDF is over the 20 MB limit.";
+  if (status === 413) return "That invoice is over the 20 MB limit.";
   if (status === 422 || status === 415 || status === 400) {
     return typeof detail === "string" && detail ? `This file could not be checked. ${detail}` : "This invoice could not be checked.";
   }
@@ -140,13 +141,13 @@ export class UploadError extends Error {
 }
 
 /**
- * Send one PDF. A 201 is the checked invoice. A 422 that carries a saved record is an invoice
+ * Send one PDF or XML invoice. A 201 is the checked invoice. A 422 that carries a saved record is an invoice
  * the service kept but could not check; it is returned too, so its page can say why.
  */
 export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
   const body = new FormData();
   body.append("file", file);
-  const headers = sessionHeaders();
+  const headers = sessionHeaders(undefined, true);
   let response: Response;
   try {
     response = await fetch(`${SERVICE_URL}/invoices`, {
@@ -186,7 +187,7 @@ export async function retryInvoice(inv: SupplierInvoice): Promise<SupplierInvoic
   const response = await read(`/invoices/${inv.id}/file`);
   if (response.status === 404) throw new Error("The original PDF is no longer kept, so it cannot be checked again. Upload it again.");
   if (!response.ok) throw new Error(broken);
-  const file = new File([await response.blob()], inv.fileName, { type: "application/pdf" });
+  const file = new File([await response.blob()], inv.fileName, { type: /\.xml$/i.test(inv.fileName) ? "application/xml" : "application/pdf" });
   return uploadInvoice(file);
 }
 
@@ -210,7 +211,7 @@ export async function decideInvoice(id: string, outcome: Outcome | null, reason:
     response = await fetch(`${SERVICE_URL}/invoices/${id}/outcome`, {
       method: "PUT",
       credentials: "include",
-      headers: sessionHeaders({ "Content-Type": "application/json" }),
+      headers: sessionHeaders({ "Content-Type": "application/json" }, true),
       body: JSON.stringify({ outcome, reason }),
       signal: AbortSignal.timeout(READ_TIMEOUT_MS),
     });

@@ -2,12 +2,14 @@
 
 An order-tracking app for a small food supplier that shows each staff role only what that role may see.
 
-The team's current product is the **Invoice Checker**: it reads a supplier's invoice PDF, fills
+The team's current product is the **Invoice Checker**: it reads a supplier's PDF or Vietnamese HDon XML invoice, fills
 the agreed fields, and checks each line against a price sheet. The [backend](backend/README.md)
 holds the reader, the service, the price check and the scorer, with invented invoices in
 `data/dummy/`. It runs on replayed answers (`INVOICE_MODE=fixture`) or on the real steps
 (`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
 defaults to `http://127.0.0.1:8001`. The earlier PO demo remains below.
+
+Upload individual PDFs/XMLs (up to 20 MiB each) or ZIP/RAR archives (up to 50 MiB). Archives are unpacked locally in the browser, including invoices inside folders, then checked one at a time. Expanded archives are limited to 100 MiB and 1,000 entries. Password-protected and nested archives are not unpacked. Other file types are skipped with a notice. XML uses structured fields directly, without OCR/model extraction; it requires live mode and a master list. The original XML remains available for line review and download.
 
 **Continuing the work? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md):** where it stands and what is next.
 Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).

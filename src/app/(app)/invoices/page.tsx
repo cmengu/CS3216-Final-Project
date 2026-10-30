@@ -8,6 +8,7 @@ import { exportReadyToPay, whenLabel } from "@/checker/present";
 import { csvName } from "@/checker/review";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
+import { INVOICE_ACCEPT } from "@/checker/upload-formats";
 import { enqueue, useUploads } from "@/checker/uploads";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
@@ -15,9 +16,10 @@ import { AllDecided, CheckPane } from "@/components/invoices/CheckPane";
 import { OutlookDialog } from "@/components/invoices/OutlookDialog";
 import { Queue } from "@/components/invoices/Queue";
 import { PdfView } from "@/components/PdfView";
+import { XmlView } from "@/components/XmlView";
 import { download, Dropzone, Notice, useFilePicker } from "@/components/ui";
 
-const PDF = "application/pdf,.pdf";
+
 
 function MasterPanel() {
   const { masterList } = useApp();
@@ -79,9 +81,9 @@ function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <Icon name="doc" size="row" />
                       <span style={{ flex: 1, fontWeight: i === 0 ? 600 : 400 }}>{it.name}</span>
-                      <span className="muted">{it.status === "checking" ? "Checking…" : "Waiting"}</span>
+                      <span className="muted">{it.status === "checking" ? "Checking…" : it.status === "unpacking" ? "Unpacking…" : "Waiting"}</span>
                     </div>
-                    {it.status === "checking" ? (
+                    {it.status !== "waiting" ? (
                       <div className="ic-progress ic-progress--full">
                         <span />
                       </div>
@@ -92,10 +94,10 @@ function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
               <p className="muted" style={{ margin: 0 }}>
                 Each invoice takes up to a minute. You can leave this page.
               </p>
-              <Dropzone size="sm" title="Drop more PDFs, or" hint="" accept={PDF} multiple inputLabel="More invoice PDFs" onFiles={add} />
+              <Dropzone size="sm" title="Drop more invoices or archives, or" hint="" accept={INVOICE_ACCEPT} multiple inputLabel="More invoices or archives" onFiles={add} />
             </>
           ) : (
-            <Dropzone title="Drop invoice PDFs here" hint="Up to 20 MB each." accept={PDF} multiple inputLabel="Invoice PDFs" onFiles={add} />
+            <Dropzone title="Drop invoices or archives here" hint="PDF or XML up to 20 MB each. ZIP or RAR up to 50 MB; 100 MB unpacked." accept={INVOICE_ACCEPT} multiple inputLabel="Invoice PDFs, XMLs or archives" onFiles={add} />
           )}
         </div>
         <MasterPanel />
@@ -115,7 +117,7 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
   const [pdfId, setPdfId] = useState<string | null>(null);
   const [focusState, setFocus] = useState<{ id: string; n: number; seq: number } | null>(null);
   const known = () => invoices ?? [];
-  const picker = useFilePicker(PDF, true, (files) => enqueue(files, known));
+  const picker = useFilePicker(INVOICE_ACCEPT, true, (files) => enqueue(files, known));
 
   const piles = useMemo(() => summarize(invoices ?? []).piles, [invoices]);
   const all = invoices ?? [];
@@ -206,7 +208,9 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
       ) : (
         <AllDecided count={piles.done.length} onUpload={picker.open} onExport={exportCsv} />
       )}
-      {inv && pdfOpen ? (
+      {inv && pdfOpen && /\.xml$/i.test(inv.fileName) ? (
+        <XmlView key={`xml-${inv.id}`} inv={inv} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} focus={focus} onSelectLine={(n) => setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }))} onClose={closePdf} />
+      ) : inv && pdfOpen ? (
         <PdfView
           key={`pdf-${inv.id}`}
           inv={inv}

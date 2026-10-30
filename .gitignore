@@ -63,3 +63,6 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 /backend/artifacts/
+
+# Generated from libarchive.js during install/build.
+/public/archive/
