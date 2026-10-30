@@ -10,12 +10,12 @@ import { resetMasterListSession } from "@/masterList";
 
 export interface User {
   email: string;
+  id?: string;
+  role?: "admin" | "member";
 }
 
-export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" };
+export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" | "unreachable" | "limited"; message?: string };
 
-const DEFAULT_USERNAME = process.env.NEXT_PUBLIC_AUTH_USERNAME ?? "demo-account";
-const DEFAULT_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD ?? "invoice-checker";
 const listeners = new Set<() => void>();
 
 let sessionUser: User | null | undefined = undefined;
@@ -65,10 +65,10 @@ export async function refreshAuthSession(): Promise<User | null> {
         const data = (await resp.json()) as {
           ok?: boolean;
           authenticated?: boolean;
-          user?: { email?: string };
+          user?: User;
         };
         if (data.authenticated && data.user?.email) {
-          const verified: User = { email: data.user.email };
+          const verified: User = data.user;
           sessionUser = verified;
           listeners.forEach((l) => l());
           return verified;
@@ -113,22 +113,20 @@ export async function signIn(username: string, password: string): Promise<SignIn
       signal: AbortSignal.timeout(5_000),
     });
     if (resp.ok) {
-      const data = (await resp.json()) as { ok: boolean; user?: { email?: string } };
+      const data = (await resp.json()) as { ok: boolean; user?: User };
       if (data.ok && data.user?.email) {
-        const user: User = { email: data.user.email };
+        const user: User = data.user;
         setSessionState(user);
         return { ok: true, user };
       }
     }
-    return { ok: false, error: "invalid" };
-  } catch {
-    // Fallback if backend is unreachable in an offline frontend test environment
-    if (trimmed.toLowerCase() === DEFAULT_USERNAME.toLowerCase() && password === DEFAULT_PASSWORD) {
-      const user: User = { email: DEFAULT_USERNAME };
-      setSessionState(user);
-      return { ok: true, user };
+    if (resp.status === 429) {
+      const retry = resp.headers.get("Retry-After");
+      return { ok: false, error: "limited", message: `Too many sign-in attempts. ${retry ? `Try again in ${retry} seconds.` : "Please wait and try again."}` };
     }
     return { ok: false, error: "invalid" };
+  } catch {
+    return { ok: false, error: "unreachable" };
   }
 }
 
@@ -168,4 +166,17 @@ function subscribe(l: () => void) {
 /** The signed-in person, kept current. Undefined until the browser has verified the session cookie. */
 export function useUser(): User | null | undefined {
   return useSyncExternalStore(subscribe, currentUser, () => undefined);
+}
+
+
+export async function setupAdministrator(token: string, username: string, password: string): Promise<void> {
+  const { accountRequest } = await import("./accounts");
+  const result = await accountRequest<{ user: User }>("/auth/setup", { method: "POST", body: JSON.stringify({ token, username, password }) });
+  setSessionState(result.user);
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const { accountRequest } = await import("./accounts");
+  await accountRequest("/auth/password", { method: "PUT", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+  setSessionState(null);
 }

@@ -86,15 +86,27 @@ async function read(path: string): Promise<Response> {
 }
 
 export async function listInvoices(): Promise<SupplierInvoice[]> {
-  const ids: string[] = [];
+  const summaries: (Partial<ServiceInvoice> & { id: string })[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const response = await read(`/invoices?limit=${PAGE}&offset=${offset}`);
     if (!response.ok) throw new Error(broken);
-    const rows = (await response.json()) as { id: string }[];
-    ids.push(...rows.map((row) => row.id));
+    const rows = await response.json() as (Partial<ServiceInvoice> & { id: string })[];
+    summaries.push(...rows);
     if (rows.length < PAGE) break;
   }
-  return Promise.all(ids.map((id) => getInvoice(id)));
+  const found: SupplierInvoice[] = new Array(summaries.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(8, summaries.length) }, async () => {
+    while (next < summaries.length) {
+      const index = next++;
+      const summary = summaries[index];
+      const previous = cache?.find(invoice => invoice.id === summary.id);
+      if (previous && summary.updated_at && previous.serverUpdatedAt === summary.updated_at) found[index] = previous;
+      else if (summary.status && ["queued", "reading", "extracting", "checking"].includes(summary.status)) found[index] = toSupplierInvoice({ ...summary, invoice: null, check: null, document: null } as ServiceInvoice);
+      else found[index] = await getInvoice(summary.id);
+    }
+  }));
+  return found;
 }
 
 export async function getInvoice(id: string): Promise<SupplierInvoice> {
@@ -289,6 +301,11 @@ export function useInvoices(): { invoices: SupplierInvoice[] | null; error: stri
       live = false;
     };
   }, [revision]);
+  useEffect(() => {
+    if (!invoices?.some(invoice => invoice.state === "checking")) return;
+    const timer = setTimeout(() => setRevision(value => value + 1), RECHECK_MS);
+    return () => clearTimeout(timer);
+  }, [invoices, revision]);
   return { invoices, error };
 }
 
@@ -331,4 +348,28 @@ export function useRemoteInvoice(id: string): {
     };
   }, [id]);
   return { invoice, error, loading, replace: setInvoice };
+}
+
+export interface BatchReceipt {
+  id: string;
+  invoices: SupplierInvoice[];
+  duplicates: { filename: string; existing_id: string | null }[];
+}
+
+/** Accept the complete batch before any browser-independent checking is promised. */
+export async function uploadInvoiceBatch(files: File[]): Promise<BatchReceipt> {
+  const body = new FormData();
+  for (const file of files) body.append("files", file);
+  let response: Response;
+  try {
+    response = await fetch(`${SERVICE_URL}/invoice-batches`, {
+      method: "POST", body, credentials: "include", headers: sessionHeaders(undefined, true),
+    });
+  } catch { throw new UploadError("The batch could not be uploaded. Keep this page open and try again.", null); }
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result || !Array.isArray(result.invoices)) {
+    const detail = typeof result?.detail === "string" ? result.detail : "The batch could not be accepted. Try again.";
+    throw new UploadError(detail, response.status, detail, Number(response.headers.get("Retry-After")) || null);
+  }
+  return { id: result.id, invoices: (result.invoices as ServiceInvoice[]).map(toSupplierInvoice), duplicates: result.duplicates ?? [] };
 }

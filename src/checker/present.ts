@@ -58,7 +58,7 @@ function worst(inv: SupplierInvoice): InvoiceLine["result"] | null {
 
 /** The invoice's check status, before any decision. */
 export function checkPill(inv: SupplierInvoice): Pill {
-  if (inv.state === "checking") return { text: "Checking…", tone: "neutral" };
+  if (inv.state === "checking") return { text: inv.queued ? "Queued" : "Checking…", tone: "neutral" };
   if (inv.state === "failed") return { text: "Couldn't read", tone: "warn" };
   const w = worst(inv);
   if (w === "price_mismatch") return { text: `${inv.lines.filter((l) => l.result === "price_mismatch").length} out of ${inv.lines.length} differs`, tone: "warn" };

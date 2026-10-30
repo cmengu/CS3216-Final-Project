@@ -38,6 +38,7 @@ export interface ServiceInvoice {
   status: string;
   mode: string;
   created_at: string;
+  updated_at?: string;
   price_sheet_version: string | null;
   error: string | null;
   /** Absent from a service that does not save decisions yet. */
@@ -76,7 +77,7 @@ const numberOf = (value: string | null | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const IN_PROGRESS = ["reading", "extracting", "checking"];
+const IN_PROGRESS = ["queued", "reading", "extracting", "checking"];
 
 const stateOf = (status: string): CheckState => {
   if (status === "completed") return "checked";
@@ -121,6 +122,8 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     };
   });
   return {
+    queued: saved.status === "queued",
+    serverUpdatedAt: saved.updated_at,
     id: saved.id,
     fileName: saved.filename,
     documentHash: saved.document_hash ?? null,

@@ -69,7 +69,7 @@ function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
       <div className="ic-split">
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {uploads.notices.map((n) => (
-            <Notice key={n.key} tone="warn">
+            <Notice key={n.key} tone={n.kind === "queued" ? undefined : "warn"}>
               {n.text}
             </Notice>
           ))}
@@ -81,7 +81,7 @@ function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <Icon name="doc" size="row" />
                       <span style={{ flex: 1, fontWeight: i === 0 ? 600 : 400 }}>{it.name}</span>
-                      <span className="muted">{it.status === "checking" ? "Checking…" : it.status === "unpacking" ? "Unpacking…" : "Waiting"}</span>
+                      <span className="muted">{it.status === "uploading" ? "Uploading…" : it.status === "unpacking" ? "Unpacking…" : "Waiting"}</span>
                     </div>
                     {it.status !== "waiting" ? (
                       <div className="ic-progress ic-progress--full">
@@ -92,7 +92,7 @@ function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
                 ))}
               </section>
               <p className="muted" style={{ margin: 0 }}>
-                Each invoice takes up to a minute. You can leave this page.
+                Keep this page open until the batch finishes uploading. Checking will then continue on the server.
               </p>
               <Dropzone size="sm" title="Drop more invoices or archives, or" hint="" accept={INVOICE_ACCEPT} multiple inputLabel="More invoices or archives" onFiles={add} />
             </>

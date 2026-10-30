@@ -34,9 +34,14 @@ def _auth_secret() -> bytes:
     explicit = (os.environ.get("AUTH_SECRET") or "").strip()
     if explicit:
         return hashlib.sha256(explicit.encode("utf-8")).digest()
-    password = os.environ.get("AUTH_PASSWORD") or "invoice-checker"
-    username = (os.environ.get("AUTH_USERNAME") or "demo-account").strip()
-    return hashlib.sha256(f"ic-auth-v1:{username}:{password}".encode("utf-8")).digest()
+    raise ValueError("Set AUTH_SECRET to an independent random secret with at least 32 characters.")
+
+
+def validate_auth_configuration() -> None:
+    if len((os.environ.get("AUTH_SECRET") or "").strip()) < 32:
+        raise ValueError(
+            "Set AUTH_SECRET to an independent random secret with at least 32 characters."
+        )
 
 
 def create_session_token(
@@ -118,6 +123,17 @@ def _request_token_claims(request: Request, token: str | None) -> dict[str, Any]
         store = getattr(app.state, "store", None) if app is not None else None
         if claims is not None and (store is None or store.is_session_revoked(claims["session_id"])):
             claims = None
+        accounts = getattr(app.state, "accounts", None) if app is not None else None
+        if claims is not None:
+            account = (
+                accounts.session_claims(claims["session_id"], claims["username"], claims["exp"])
+                if accounts
+                else None
+            )
+            if account is None:
+                claims = None
+            else:
+                claims.update(account)
         cache[token] = claims
     return cache[token]
 
@@ -170,5 +186,8 @@ def has_invalid_auth_token(request: Request, query_session_id: str | None = None
 def is_auth_required() -> bool:
     raw = os.environ.get("AUTH_REQUIRED")
     if raw is not None:
-        return raw.strip().lower() in {"1", "true", "yes", "on"}
+        enabled = raw.strip().lower() in {"1", "true", "yes", "on"}
+        if not enabled and "pytest" not in sys.modules:
+            raise ValueError("Authentication cannot be disabled outside automated tests.")
+        return enabled
     return "pytest" not in sys.modules

@@ -46,6 +46,8 @@ export interface SupplierInvoice {
   /** When the PDF was uploaded, as local ISO date and time. */
   uploadedAt: string;
   state: CheckState;
+  queued?: boolean;
+  serverUpdatedAt?: string;
   /** The fields below are null until the reading steps have filled them. */
   supplier: string | null;
   number: string | null;

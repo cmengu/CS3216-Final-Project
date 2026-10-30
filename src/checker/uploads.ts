@@ -5,7 +5,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { rememberInvoice, uploadInvoice, UploadError } from "./api";
+import { rememberInvoice, uploadInvoiceBatch, UploadError } from "./api";
 import type { SupplierInvoice } from "./types";
 
 import { isArchive, MAX_ARCHIVE_BYTES, MAX_INVOICE_BYTES } from "./upload-formats";
@@ -13,12 +13,12 @@ import { isArchive, MAX_ARCHIVE_BYTES, MAX_INVOICE_BYTES } from "./upload-format
 export interface QueueItem {
   key: string;
   name: string;
-  status: "waiting" | "unpacking" | "checking";
+  status: "waiting" | "unpacking" | "uploading";
 }
 
 export interface UploadNotice {
   key: string;
-  kind: "error" | "duplicate" | "skipped";
+  kind: "error" | "duplicate" | "skipped" | "queued";
   text: string;
   /** For a duplicate: the invoice already uploaded. */
   invoiceId?: string;
@@ -100,75 +100,89 @@ const shortDate = (iso: string) => {
   return Number.isNaN(at.getTime()) ? "" : at.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 };
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 async function run(known: () => SupplierInvoice[]) {
   const currentSession = session;
   if (running === currentSession) return;
   running = currentSession;
   try {
     while (session === currentSession && state.items.length) {
-      const item = state.items[0];
-      const file = files.get(item.key)!;
-      if (isArchive(file.name)) {
-        set({ items: state.items.map((x) => x.key === item.key ? { ...x, status: "unpacking" } : x) });
-        const controller = new AbortController();
-        unpacking = controller;
+      if (state.items.length > 1000 || state.items.reduce((size, item) => size + (files.get(item.key)?.size ?? 0), 0) > 100 * 1024 * 1024) {
+        notice({ kind: "error", text: "Select up to 1,000 invoices and 100 MB per complete batch." });
+        files.clear(); set({ items: [] });
+        return;
+      }
+      const archive = state.items.find(item => isArchive(item.name));
+      if (archive) {
+        const file = files.get(archive.key)!;
+        set({ items: state.items.map(item => item.key === archive.key ? { ...item, status: "unpacking" } : item) });
+        const controller = new AbortController(); unpacking = controller;
         let extracted: QueueItem[] = [];
         try {
           const { unpackInvoices } = await import("./archives");
           if (session !== currentSession) return;
           const result = await unpackInvoices(file, controller.signal);
           if (session !== currentSession) return;
-          extracted = result.files.map((invoice) => {
-            const key = `u${++seq}`;
-            files.set(key, invoice);
+          const loose = state.items.filter(item => !isArchive(item.name));
+          const combinedSize = loose.reduce((size, item) => size + (files.get(item.key)?.size ?? 0), 0) + result.files.reduce((size, file) => size + file.size, 0);
+          if (loose.length + result.files.length > 1000 || combinedSize > 100 * 1024 * 1024) {
+            notice({ kind: "error", text: "The complete selection exceeds 1,000 invoices or 100 MB unpacked. Select a smaller batch." });
+            files.clear(); set({ items: [] });
+            return;
+          }
+          extracted = result.files.map(invoice => {
+            const key = `u${++seq}`; files.set(key, invoice);
             return { key, name: invoice.name, status: "waiting" };
           });
-          if (result.skipped) notice({ kind: "skipped", text: `${file.name}: skipped ${result.skipped} unsupported, empty or oversized file${result.skipped === 1 ? "" : "s"}. Only PDF and XML invoices up to 20 MB each are checked; nested archives aren't unpacked.` });
+          if (result.skipped) notice({ kind: "skipped", text: `${file.name}: skipped ${result.skipped} unsupported, empty or oversized files. Nested archives are not unpacked.` });
         } catch (error) {
           if (session !== currentSession) return;
-          notice({ kind: "error", text: `${file.name}: ${error instanceof Error ? error.message : "The archive couldn't be unpacked."}` });
-        } finally {
-          if (unpacking === controller) unpacking = null;
-        }
-        files.delete(item.key);
-        set({ items: [...extracted, ...state.items.filter((x) => x.key !== item.key)] });
+          notice({ kind: "error", text: `${file.name}: ${error instanceof Error ? error.message : "The archive could not be unpacked."}` });
+        } finally { if (unpacking === controller) unpacking = null; }
+        files.delete(archive.key);
+        set({ items: state.items.flatMap(item => item.key === archive.key ? extracted : [item]) });
         continue;
       }
-      set({ items: state.items.map((x, i) => (i === 0 ? { ...x, status: "checking" } : x)) });
-      const hash = await sha256(file);
-      if (session !== currentSession) return;
-      const dup = hash ? (known().find((inv) => inv.documentHash === hash) ?? sent.get(hash)) : undefined;
-      if (dup) {
-        notice({ kind: "duplicate", text: `You already uploaded ${dup.number ?? dup.fileName} on ${shortDate(dup.uploadedAt)}.`, invoiceId: dup.id });
-      } else {
-        for (; session === currentSession;) {
-          try {
-            const saved = await uploadInvoice(file);
-            if (session !== currentSession) return;
-            if (hash) sent.set(hash, saved);
-            rememberInvoice(saved);
-            set({ lastDone: saved, doneCount: state.doneCount + 1 });
-            break;
-          } catch (e) {
-            if (session !== currentSession) return;
-            if (e instanceof UploadError && e.status === 429) {
-              await wait((e.retryAfter ?? 5) * 1000);
-              continue;
-            }
-            notice({ kind: "error", text: refusal(file.name, e) });
-            break;
+      const batch = [...state.items];
+      const selected: File[] = [];
+      const hashes = new Set<string>();
+      for (const item of batch) {
+        const file = files.get(item.key)!;
+        const hash = await sha256(file);
+        if (session !== currentSession) return;
+        const duplicate = hash ? known().find(invoice => invoice.documentHash === hash) ?? sent.get(hash) : undefined;
+        if (duplicate || (hash && hashes.has(hash))) {
+          notice({ kind: "duplicate", text: duplicate ? `You already uploaded ${duplicate.number ?? duplicate.fileName} on ${shortDate(duplicate.uploadedAt)}.` : `${file.name}: duplicate content in this batch was skipped.`, invoiceId: duplicate?.id });
+        } else {
+          selected.push(file);
+          if (hash) hashes.add(hash);
+        }
+      }
+      const keys = new Set(batch.map(item => item.key));
+      if (selected.length) {
+        set({ items: state.items.map(item => keys.has(item.key) ? { ...item, status: "uploading" } : item) });
+        try {
+          if (selected.length > 1000 || selected.reduce((size, file) => size + file.size, 0) > 100 * 1024 * 1024) throw new Error("Select up to 1,000 invoices and 100 MB unpacked per batch.");
+          const receipt = await uploadInvoiceBatch(selected);
+          if (session !== currentSession) return;
+          for (const invoice of receipt.invoices) {
+            if (invoice.documentHash) sent.set(invoice.documentHash, invoice);
+            rememberInvoice(invoice);
           }
+          for (const duplicate of receipt.duplicates) notice({ kind: "duplicate", text: `${duplicate.filename} was already uploaded.`, invoiceId: duplicate.existing_id ?? undefined });
+          if (receipt.invoices.length) {
+            set({ lastDone: receipt.invoices.at(-1)!, doneCount: state.doneCount + receipt.invoices.length });
+            notice({ kind: "queued", text: `Uploaded ${receipt.invoices.length} invoice${receipt.invoices.length === 1 ? "" : "s"}. Checking continues even if you close this page. Return later to review the results.` });
+          }
+        } catch (error) {
+          if (session !== currentSession) return;
+          notice({ kind: "error", text: error instanceof Error ? error.message : "The batch could not be uploaded. Try again." });
         }
       }
       if (session !== currentSession) return;
-      files.delete(item.key);
-      set({ items: state.items.slice(1) });
+      for (const item of batch) files.delete(item.key);
+      set({ items: state.items.filter(item => !keys.has(item.key)) });
     }
-  } finally {
-    if (running === currentSession) running = null;
-  }
+  } finally { if (running === currentSession) running = null; }
 }
 
 /** Queue files for checking. `known` lists invoices already uploaded, for the duplicate check. */

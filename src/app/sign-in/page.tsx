@@ -14,6 +14,7 @@ export default function SignIn() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [wrong, setWrong] = useState(false);
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
 
@@ -25,7 +26,10 @@ export default function SignIn() {
 
   const finish = (r: SignInResult) => {
     if (r.ok) router.replace(nextRoute);
-    else setWrong(true);
+    else {
+      setWrong(r.error === "invalid");
+      setError(r.message ?? (r.error === "unreachable" ? "The sign-in service could not be reached. Try again." : "Username or password is incorrect."));
+    }
   };
 
   return (
@@ -38,6 +42,7 @@ export default function SignIn() {
       </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
+        <p className="ic-hint">Use an account approved by your administrator.</p>
         <form
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           onSubmit={async (e) => {
@@ -54,12 +59,13 @@ export default function SignIn() {
               className={`ic-input${wrong ? " ic-input--error" : ""}`}
               type="text"
               autoComplete="username"
-              placeholder="demo-account"
+              placeholder="Your approved username"
               required
               value={username}
               onChange={(e) => {
                 setUsername(e.target.value);
                 setWrong(false);
+                setError("");
               }}
             />
           </div>
@@ -84,11 +90,12 @@ export default function SignIn() {
               onChange={(e) => {
                 setPassword(e.target.value);
                 setWrong(false);
+                setError("");
               }}
             />
-            {wrong ? (
+            {error ? (
               <p id="pw-error" className="ic-hint ic-hint--error" role="alert">
-                Username or password is incorrect.
+                {error}
               </p>
             ) : null}
             {forgot ? (

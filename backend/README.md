@@ -31,7 +31,8 @@ MICROSOFT_REDIRECT_URI=http://localhost:8001/auth/outlook/callback
 Fill the key locally. `gpt-6-luna` with reasoning `none` prioritizes latency; availability
 depends on the API project. See the [model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna).
 Remove `OPENAI_REASONING_EFFORT` when selecting a model without reasoning support.
-Paths above are relative to `backend/`. From that directory:
+Paths above are relative to `backend/`. Before starting the API, prepare the first admin
+with `python -m api.manage_accounts prepare-setup` as described below. From that directory:
 
 ```sh
 uv sync --locked --extra dev --extra docling --extra dummy
@@ -111,8 +112,9 @@ fixture mode. With no `INVOICE_MODE`, uploads return 503. Any other value stops 
 
 This service requires sign-in by default. Keep the loopback binding and a single worker for local use.
 Only one invoice processes at a time; concurrent uploads receive 429 and Retry-After. The
-POST request waits for processing to finish. Configure a generous frontend timeout for the
-first model load. Batch queues remain future work.
+legacy `POST /invoices` request waits for processing to finish. The app uploads complete batches
+to `POST /invoice-batches`, which accepts them before processing. Keep the backend running and
+its database/files persistent so work continues after the browser closes or the service restarts.
 
 ## Browser authentication and request protection
 
@@ -126,7 +128,9 @@ can continue without it. CORS permission alone does not authorize a cookie-authe
 mutation. Keep allowed origins restricted to trusted frontends.
 
 Logout records the login session in the invoice database’s `revoked_sessions` table.
-All credential transports check that table. Revocation survives service restarts, and
+All credential transports also require a registered account session and an active approved
+account. Disabling an account, changing its role, or resetting its password invalidates its
+existing sessions. Revocation survives service restarts, and
 `GET /auth/me` preserves the existing token expiry. Keep the persistent database through
 redeploys; removing the revocation records can reactivate old, unexpired tokens.
 If logout cannot reach the server, the UI reports the failure and lets the user retry.
@@ -140,15 +144,91 @@ Use the same public API hostname for login and the registered Microsoft callback
 browser sends both cookies. For the default local callback, set
 `NEXT_PUBLIC_INVOICE_API=http://localhost:8001` and use `http://localhost:3000` for the UI;
 avoid mixing `localhost` with `127.0.0.1`. Production must use HTTPS, correct callback and
-frontend URLs, and a persistent invoice database. These changes do not resolve the
-separate default-credential/signing-key issue (R01).
+frontend URLs, and a persistent invoice database. Approved accounts and an independent signing secret are required; the public demo login
+and frontend offline login fallback have been removed.
+
+## Approved accounts and private workspaces
+
+There is no public registration. An administrator creates usernames/passwords, assigns Member
+or Administrator access, enables/disables accounts and resets passwords at `/admin/accounts`.
+Each account owns a separate, stable private workspace for invoices, master versions and its
+Outlook connection. Administrative access manages credentials; it does not grant read access
+to another account’s invoices or batches. Any account can change its own password at `/account`.
+Passwords require 15–128 characters and use salted Argon2id (19 MiB, two passes, one lane); plaintext passwords are not stored.
+
+Configure `AUTH_SECRET` as an independent random secret of at least 32 characters. Production
+startup rejects missing/short secrets and demo bootstrap credentials. Authentication cannot
+be disabled outside automated tests. Prepare the first administrator from `backend/`:
+
+```sh
+.venv/bin/python -m api.manage_accounts prepare-setup
+```
+
+This writes private settings to ignored `.env` and an ignored `admin-setup.url` file in the
+configured data directory. It prints the file location, never the token. It retires the known
+public demo credentials if they were configured. Restart the API, open that one-time link,
+and choose your administrator username and password. The code travels in a URL fragment, is
+removed from the address bar, and is checked on the server; setup cannot create a second admin
+once any account exists. For managed deployments, provide `AUTH_SECRET` and `AUTH_SETUP_TOKEN`
+through the deployment’s secret settings and open `/setup` to enter the code. Existing deployments
+may bootstrap their first admin using explicitly configured, non-default `AUTH_USERNAME` and
+`AUTH_PASSWORD`; those settings never become an ongoing credential fallback. Remove them after
+initial setup. Do not set `NEXT_PUBLIC_AUTH_PASSWORD`.
+
+Old session-owned data is preserved but is never automatically assigned to a new person. An
+operator who knows the owner can explicitly recover one old workspace into an empty private
+account; Outlook must be reconnected separately:
+
+```sh
+.venv/bin/python -m api.manage_accounts recover-workspace --source EXACT_OLD_SESSION_ID --username APPROVED_USERNAME
+```
+
+This refuses to reassign another approved account’s workspace, move unfinished jobs, or merge
+over an existing target workspace. Keep a database/files backup before an operator recovery.
+
+## Background batches and usage limits
+
+`POST /invoice-batches` accepts multipart `files` (1–1,000 PDF/XML files, at most 20 MiB each
+and 100 MiB together). ZIP/RAR extraction stays in the browser. Keep the browser open while
+unpacking/uploading. Only after HTTP 202 does the UI promise that checking continues without
+the browser. A malformed batch is rejected before any invoices/jobs are committed. Exact
+file duplicates are skipped. Results appear under the same approved account after re-login.
+`GET /invoice-batches/{id}` returns private queued/processing/completed/failed counts.
+
+Jobs and original sources are persisted before acceptance. Every job pins the uploaded
+master version. A worker starts with the API, processes one job at a time through the same
+conservative checker, renews a lease and rejects writes from an expired worker. Queued jobs
+survive restart; expired in-progress leases are retried, up to three attempts. PDF/OCR/model
+calls may repeat after a crash; completion is not an exactly-once external-provider guarantee.
+Use an always-running backend and persistent SQLite storage, or Postgres for durable source
+blobs and queue records. An autosleeping or stopped service cannot process until it resumes.
+Outlook’s token store still needs persistent local storage.
+
+Limits are persistent across service restarts and atomic across workers:
+
+| Setting | Default per private workspace |
+| --- | --- |
+| `INVOICE_CHECKS_PER_HOUR` | 1,000 invoices |
+| `INVOICE_CHECKS_PER_DAY` | 2,000 invoices |
+| `INVOICE_AI_CHECKS_PER_DAY` | 200 PDF checks |
+| `INVOICE_PREVIEWS_PER_HOUR` | 30 master-list previews |
+| `INVOICE_MAIL_SCANS_PER_HOUR` | 12 Outlook scans |
+| `INVOICE_STORAGE_LIMIT_MB` | 1,024 MiB of original invoices/master files |
+
+Use positive whole numbers. Allowance windows start with the first request; daily means 24 hours. Login is limited to 20 attempts/IP/10 minutes and eight attempts
+per username/IP/10 minutes. Administrator account changes and password changes are also
+limited. HTTP 429 carries `Retry-After`. These are request/source-storage allowances, not
+currency-denominated AI budgets or a cap on database/parsed-document overhead. Provider budgets,
+backups, parser isolation and the remaining security-report findings still need production review.
 
 ## HTTP contract for Nam
 
 | Method | Path | Result |
 | --- | --- | --- |
 | GET | `/health` | Active mode and whether processing is configured |
-| POST | `/invoices` | Multipart `file`; 201 with saved record, fields and per-line results |
+| POST | `/invoices` | Legacy immediate multipart `file`; 201 with saved result |
+| POST | `/invoice-batches` | Multipart `files`; 202 with persisted queued invoices and duplicates |
+| GET | `/invoice-batches/{id}` | Private batch progress |
 | GET | `/invoices?limit=50&offset=0` | Newest-first summaries; limit 1–100 |
 | GET | `/invoices/{id}` | Saved full record including read output, fields and results |
 | GET | `/invoices/{id}/file` | Original PDF (inline) or XML (download) |
@@ -233,7 +313,7 @@ results when those adapters are integrated.
 
 ## XML invoice uploads
 
-`POST /invoices` also accepts `.xml` files up to 20 MiB in live mode. Supported vocabulary: Vietnamese `HDon/DLHDon`, with invoice header, seller, lines, discounts and totals. This does not verify the issuer’s digital signature. Missing totals/currency, special lines and unsupported tax/discount terms require human review; no missing values are inferred. The original bytes and filename are retained. ZIP/RAR files are unpacked by the frontend worker; the API still receives one PDF/XML invoice per request.
+`POST /invoices` also accepts `.xml` files up to 20 MiB in live mode. Supported vocabulary: Vietnamese `HDon/DLHDon`, with invoice header, seller, lines, discounts and totals. This does not verify the issuer’s digital signature. Missing totals/currency, special lines and unsupported tax/discount terms require human review; no missing values are inferred. The original bytes and filename are retained. ZIP/RAR files are unpacked by the frontend worker; the API receives the complete extracted PDF/XML batch before acknowledging background processing.
 
 ## PDF handoff
 

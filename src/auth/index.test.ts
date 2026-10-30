@@ -92,3 +92,19 @@ it.each(["server rejection", "network failure"])("keeps the user signed in after
   await signOut();
   expect(currentUser()).toBeNull();
 });
+
+
+it("does not authenticate with public demo credentials when the server is unreachable", async () => {
+  vi.stubGlobal("window", {});
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+  expect(await signIn("demo-account", "invoice-checker")).toEqual({ ok: false, error: "unreachable" });
+  expect(currentUser()).toBeNull();
+});
+
+it("explains sign-in throttling without reporting successful authentication", async () => {
+  vi.stubGlobal("window", {});
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 429, headers: { "Retry-After": "60" } })));
+  const result = await signIn("approved-member", "a-real-test-password");
+  expect(result.ok).toBe(false);
+  if (!result.ok) { expect(result.error).toBe("limited"); expect(result.message).toContain("60"); }
+});

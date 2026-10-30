@@ -71,7 +71,7 @@ export function Queue({
   const ql = q.trim().toLowerCase();
   const match = (inv: SupplierInvoice) => !ql || [inv.supplier, inv.number, inv.fileName, inv.purchaseOrder].join(" ").toLowerCase().includes(ql);
   const list = (seg === "decide" ? decideList : doneList).filter(match);
-  const current = uploads[0];
+  const current = uploads.find(item => item.status !== "waiting") ?? uploads[0];
   return (
     <aside id="invoice-sidebar" className="ic-queue" aria-label="Invoices">
       <div className="ic-queue-h">
@@ -114,7 +114,7 @@ export function Queue({
       </div>
       <div className="ic-queue-list">
         {notices.map((n) => (
-          <Notice key={n.key} tone="warn" onDismiss={() => dismissNotice(n.key)}>
+          <Notice key={n.key} tone={n.kind === "queued" ? undefined : "warn"} onDismiss={() => dismissNotice(n.key)}>
             <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 13 }}>
               {n.text}
               {n.invoiceId ? (
@@ -133,7 +133,7 @@ export function Queue({
               <span />
             </div>
             <span className="muted">
-              {current.status === "unpacking" ? "Unpacking…" : "Checking…"}{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
+              {current.status === "unpacking" ? "Unpacking…" : current.status === "uploading" ? "Uploading… keep this page open" : "Waiting to upload…"}{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
             </span>
           </div>
         ) : null}

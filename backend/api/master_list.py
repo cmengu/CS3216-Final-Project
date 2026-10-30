@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
+from .limits import allowance, reserve_upload
 from .master_import import normalize, preview, read_tables
 from .storage import DEFAULT_SESSION_ID, MasterListExists, NoMasterList, now, request_session_id
 
@@ -60,8 +61,14 @@ def events(request: Request):
 
 
 @router.post("/preview")
-def inspect(file: UploadFile):
+def inspect(file: UploadFile, request: Request):
     try:
+        request.app.state.limits.take(
+            "master-preview",
+            request_session_id(request),
+            maximum=allowance("INVOICE_PREVIEWS_PER_HOUR", 30),
+            seconds=3600,
+        )
         _, _, tables = read_upload(file)
         return preview(tables)
     finally:
@@ -71,6 +78,8 @@ def inspect(file: UploadFile):
 @router.post("", status_code=201)
 @router.put("")
 def upload(request: Request, file: UploadFile, options: str = Form("{}")):
+    reserved = 0
+    saved = False
     try:
         filename, data, tables = read_upload(file)
         try:
@@ -110,6 +119,7 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
             "items": len(items),
             "suppliers": document["supplierCount"],
         }
+        reserved = reserve_upload(request, len(data))
         try:
             request.app.state.store.add_master_list(
                 document, event, data, replace=replace, session_id=request_session_id(request)
@@ -118,6 +128,9 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
             raise HTTPException(409, "A master list already exists. Use Replace file.") from None
         except NoMasterList:
             raise HTTPException(409, "No master list exists yet. Upload one first.") from None
+        saved = True
         return document
     finally:
+        if reserved and not saved:
+            request.app.state.limits.release_storage(request_session_id(request), reserved)
         file.file.close()

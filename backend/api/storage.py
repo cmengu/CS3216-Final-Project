@@ -19,6 +19,7 @@ from fastapi import Request
 
 from .auth import extract_request_claims, is_auth_required
 from .contracts import InvoiceSummary, SavedInvoice
+from .job_schema import JOB_SCHEMA
 
 DEFAULT_SESSION_ID = "default"
 _SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -48,7 +49,7 @@ def normalize_session_id(session_id: str | None) -> str:
 def request_session_id(request: Request, query_session_id: str | None = None) -> str:
     claims = extract_request_claims(request, query_session_id)
     if claims is not None:
-        return normalize_session_id(claims["session_id"])
+        return normalize_session_id(claims["workspace_id"])
     if is_auth_required():
         return DEFAULT_SESSION_ID
     candidates = (
@@ -104,6 +105,7 @@ class Store:
         self.database = self.directory / "invoices.sqlite3"
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
+            db.executescript(JOB_SCHEMA.format(prefix=""))
             db.execute("""CREATE TABLE IF NOT EXISTS revoked_sessions (
                 session_id TEXT PRIMARY KEY, expires_at BIGINT NOT NULL
             )""")
@@ -181,7 +183,7 @@ class Store:
         with self.connect() as db:
             db.execute(
                 """UPDATE invoices SET status='failed', error=?, updated_at=?
-                WHERE status NOT IN ('completed', 'failed')""",
+                WHERE status NOT IN ('completed', 'failed') AND NOT EXISTS (SELECT 1 FROM invoice_jobs j WHERE j.invoice_id=invoices.id AND j.status IN ('queued','running'))""",
                 (INTERRUPTED, now()),
             )
 
@@ -392,6 +394,9 @@ CREATE INDEX IF NOT EXISTS master_lists_session_idx ON {schema}.master_lists (se
 """
 
 
+POSTGRES_TABLES += JOB_SCHEMA.replace("{prefix}", "{schema}.")
+
+
 class PostgresStore:
     """Postgres, in its own schema so it can share a Supabase project with other apps.
 
@@ -453,7 +458,7 @@ class PostgresStore:
         with self.connect() as db:
             db.execute(
                 f"""UPDATE {self.schema}.invoices SET status='failed', error=%s, updated_at=%s
-                WHERE status NOT IN ('completed', 'failed')""",
+                WHERE status NOT IN ('completed', 'failed') AND NOT EXISTS (SELECT 1 FROM {self.schema}.invoice_jobs j WHERE j.invoice_id={self.schema}.invoices.id AND j.status IN ('queued','running'))""",
                 (INTERRUPTED, now()),
             )
 

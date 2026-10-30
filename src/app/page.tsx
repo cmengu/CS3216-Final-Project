@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useUser } from "@/auth";
 import { Icon, type IconName } from "@/components/icons";
 import { useMasterList } from "@/masterList";
 
-// TODO: replace with the real contact address before launch.
-const CONTACT_EMAIL = "hello@invoicechecker.com";
 
 /* ---------------------------------------------------------------------------
    Sample invoices are real lines from data/mock_invoice_dataset (synthetic).
@@ -607,30 +605,6 @@ function Proof() {
 /* ----------------------------------------------------------------------- */
 
 function Close({ workspaceHref, ctaLabel }: { workspaceHref: string; ctaLabel: string }) {
-  const [copied, setCopied] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const [opened, setOpened] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(CONTACT_EMAIL);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* Clipboard blocked: the address is on screen to copy by hand. */
-    }
-  };
-
-  const send = (e: FormEvent) => {
-    e.preventDefault();
-    const subject = encodeURIComponent(`[Invoice Checker] ${name}`);
-    const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\n\n${message}`);
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
-    setOpened(true);
-  };
-
   return (
     <section className="lp-close" aria-labelledby="lp-close-h">
       <div>
@@ -643,38 +617,10 @@ function Close({ workspaceHref, ctaLabel }: { workspaceHref: string; ctaLabel: s
         </Link>
       </div>
 
-      <div className="lp-contact" id="contact">
-        <h3>Questions? Write to us.</h3>
-        <div className="lp-email">
-          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
-          <button type="button" className="ic-btn ic-btn--secondary ic-btn--sm" onClick={() => void copy()}>
-            <Icon name={copied ? "check" : "copy"} />
-            {copied ? "Copied" : "Copy"}
-          </button>
-        </div>
-        <form onSubmit={send} className="lp-form">
-          <div className="lp-form-row">
-            <div className="ic-field">
-              <label htmlFor="lp-name">Name</label>
-              <input id="lp-name" className="ic-input" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="ic-field">
-              <label htmlFor="lp-email">Work email</label>
-              <input id="lp-email" className="ic-input" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-          </div>
-          <div className="ic-field">
-            <label htmlFor="lp-msg">Message</label>
-            <textarea id="lp-msg" className="ic-input lp-textarea" rows={3} required value={message} onChange={(e) => setMessage(e.target.value)} />
-          </div>
-          <div className="lp-form-end">
-            {opened ? <span role="status">Your email app should open with the message ready.</span> : <span />}
-            <button type="submit" className="ic-btn ic-btn--primary">
-              <Icon name="envelope" />
-              Send
-            </button>
-          </div>
-        </form>
+      <div className="lp-contact">
+        <h3>Bring your invoices.</h3>
+        <p className="lp-lead">Upload PDF or Vietnamese HDon XML invoices, or a ZIP/RAR batch.</p>
+        <p className="lp-fine">After the complete batch uploads, checking continues on the server. Come back later to review the results.</p>
       </div>
     </section>
   );

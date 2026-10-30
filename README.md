@@ -9,7 +9,9 @@ holds the reader, the service, the price check and the scorer, with invented inv
 (`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
 defaults to `http://127.0.0.1:8001`. The earlier PO demo remains below.
 
-Upload individual PDFs/XMLs (up to 20 MiB each) or ZIP/RAR archives (up to 50 MiB). Archives are unpacked locally in the browser, including invoices inside folders, then checked one at a time. Expanded archives are limited to 100 MiB and 1,000 entries. Password-protected and nested archives are not unpacked. Other file types are skipped with a notice. XML uses structured fields directly, without OCR/model extraction; it requires live mode and a master list. The original XML remains available for line review and download.
+Upload individual PDFs/XMLs (up to 20 MiB each) or ZIP/RAR archives (up to 50 MiB). Archives are unpacked locally in the browser, including invoices inside folders, then uploaded together to the server’s durable background queue. Keep the browser open until upload completes; checking then continues without it. Expanded archives are limited to 100 MiB and 1,000 entries. Password-protected and nested archives are not unpacked. Other file types are skipped with a notice. XML uses structured fields directly, without OCR/model extraction; it requires live mode and a master list. The original XML remains available for line review and download.
+
+**Accounts:** administrators approve credentials at `/admin/accounts`; each account has its own persistent private workspace. Prepare the first admin using the [backend setup instructions](backend/README.md#approved-accounts-and-private-workspaces). Public demo login is disabled.
 
 **Continuing the work? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md):** where it stands and what is next.
 Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).

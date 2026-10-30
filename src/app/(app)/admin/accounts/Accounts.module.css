@@ -1,0 +1,11 @@
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 140px auto;
+  gap: 16px;
+  align-items: start;
+}
+.form > button { margin-top: 25px; }
+@media (max-width: 800px) {
+  .form { grid-template-columns: minmax(0, 1fr); }
+  .form > button { margin-top: 0; justify-self: start; }
+}

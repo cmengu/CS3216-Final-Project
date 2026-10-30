@@ -40,7 +40,7 @@ class InvoiceSummary(Contract):
     id: str
     filename: str
     document_hash: str
-    status: Literal["reading", "extracting", "checking", "completed", "failed"]
+    status: Literal["queued", "reading", "extracting", "checking", "completed", "failed"]
     mode: str
     created_at: str
     updated_at: str

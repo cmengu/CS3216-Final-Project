@@ -19,6 +19,7 @@ dependencies = [
     "xlrd>=2.0,<3",
     "psycopg[binary,pool]>=3.2,<4",
     "defusedxml>=0.7,<1",
+    "argon2-cffi>=25.1,<26",
 ]
 
 [project.optional-dependencies]

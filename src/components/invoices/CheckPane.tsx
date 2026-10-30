@@ -210,7 +210,7 @@ export function CheckPane({
         ) : inv.state === "checking" ? (
           <section className="ic-card ic-card--tight">
             <p className="muted" style={{ margin: 0 }}>
-              Checking… Each invoice takes up to a minute.
+              {inv.queued ? "Queued. Checking continues on the server; you can come back later." : "Checking… You can close this page and return later."}
             </p>
           </section>
         ) : (

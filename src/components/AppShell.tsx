@@ -178,6 +178,8 @@ function Account({ user }: { user: User }) {
             <Icon name="upload" size="ui" />
             Replace master list
           </Link>
+          {user.role === "admin" ? <Link role="menuitem" href="/admin/accounts" onClick={() => setOpen(false)}>Approved accounts</Link> : null}
+          <Link role="menuitem" href="/account" onClick={() => setOpen(false)}>Change password</Link>
           <button
             role="menuitem"
             type="button"

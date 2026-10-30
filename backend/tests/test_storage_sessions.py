@@ -1,7 +1,6 @@
 """The session contract must hold for both persistence implementations after the merge."""
 
 import json
-import os
 import sqlite3
 import time
 from uuid import uuid4
@@ -11,25 +10,7 @@ from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.stages import FixtureStages
-from api.storage import MasterListExists, NoMasterList, PostgresStore, Store
-
-
-@pytest.fixture(params=["sqlite", "postgres"])
-def session_store(request, tmp_path):
-    if request.param == "sqlite":
-        yield Store(tmp_path)
-        return
-    url = os.environ.get("DATABASE_URL", "").strip()
-    if not url:
-        pytest.skip("DATABASE_URL is not set")
-    schema = f"invoice_checker_test_{uuid4().hex}"
-    store = PostgresStore(url, tmp_path, schema=schema)
-    try:
-        yield store
-    finally:
-        with store.connect() as db:
-            db.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
-        store.pool.close()
+from api.storage import MasterListExists, NoMasterList, Store
 
 
 def test_invoice_sessions_isolate_reads_lists_and_decisions(session_store):

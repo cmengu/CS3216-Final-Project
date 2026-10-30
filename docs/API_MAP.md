@@ -8,8 +8,8 @@ The backend endpoints behind the three core features: master list, invoice uploa
   - A running service serves it at **`GET /openapi.json`**, with Swagger UI at **`GET /docs`** (FastAPI defaults; not overridden).
   - This map comes from `create_app().openapi()` (OpenAPI 3.1.0, title "Invoice Checker", version 0.1.0) and from the handler code.
   - Each resolution rule was also exercised against the service in fixture mode on 20 Oct 2026.
-- **Base URL:** `NEXT_PUBLIC_INVOICE_API`, default `http://127.0.0.1:8000`. The frontend client is `src/checker/api.ts`.
-- **CORS:** origins `http://localhost:3000` and `http://127.0.0.1:3000`; methods `GET`, `POST`, `PUT`; request header `Content-Type` only.
+- **Base URL:** `NEXT_PUBLIC_INVOICE_API`, default `http://127.0.0.1:8001`. The frontend client is `src/checker/api.ts`.
+- **CORS:** explicit configured frontend origins (plus local development origins); credentialed requests support GET/POST/PUT/PATCH/DELETE and the browser protection header.
 - **Errors:**
   - Handler errors are `{"detail": "<one sentence>"}`.
   - FastAPI's own validation errors are `422 {"detail": [{"loc": [...], "msg": "...", "type": "..."}]}`.
@@ -19,28 +19,43 @@ The backend endpoints behind the three core features: master list, invoice uploa
 
 | Area | Endpoints | Status |
 |---|---|---|
-| Auth (email/password, OAuth) | **None** | Not built. The service says "No auth/connectors in release 1". |
+| Approved accounts | `/auth/*`, `/admin/accounts` | Administrator-managed private accounts and registered sessions. |
 | Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events`, `GET /master-list/versions/{version}` | Persisted CSV/XLSX/XLS imports; live checks use a fixed uploaded version. |
-| Invoice upload | `POST /invoices` | Built |
+| Invoice upload | `POST /invoices`, `POST /invoice-batches` | Immediate compatibility API and durable batch API. |
 | Invoice read | `GET /invoices`, `GET /invoices/{invoice_id}`, `GET /invoices/{invoice_id}/file` | Built |
-| Discrepancy check | **No separate endpoint.** Runs inside `POST /invoices`. | Built |
+| Discrepancy check | **No separate endpoint.** Runs inside immediate uploads or the durable batch worker. | Built |
 | Discrepancy resolution | `PUT /invoices/{invoice_id}/outcome` (per invoice, not per line) | Built |
 | Health | `GET /health` | Built |
 
 ---
 
-## 1. Auth
+## 1. Approved-account authentication
 
-**There are no auth endpoints.** The API accepts every request without credentials. There is no email/password, OAuth, session, token or user model on the service.
+Only approved active accounts can sign in. Authentication uses a signed HttpOnly cookie and a
+registered server-side login session, with a separate persistent account/workspace identity.
+The backend requires an independent `AUTH_SECRET`; there are no public demo credentials or
+offline browser login fallback. First-admin setup requires an operator-prepared one-time code.
+Passwords use salted Argon2id. Tokens are invalidated by logout and account access/password changes.
 
-The app's "sign-in" is a **client-side demo**, not authentication:
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/auth/setup-status` | Whether first-admin setup is pending |
+| POST | `/auth/setup` | One-time code, username and password; create the first administrator |
+| POST | `/auth/sign-in` | Approved username/password; return user ID/role and set session cookie |
+| GET | `/auth/me` | Verify the registered, unexpired, unrevoked account session |
+| POST | `/auth/sign-out` | Revoke the current login and clear its cookie |
+| PUT | `/auth/password` | Verify current password, replace it, and invalidate all sessions |
+| GET/POST | `/admin/accounts` | Administrators list/create approved accounts |
+| PATCH | `/admin/accounts/{id}` | Administrators enable/disable, change role or reset another account |
 
-- **Where:** `/who` (`src/components/pages/WhoGate.tsx`).
-- **How it works:** the person picks one of five invented people. Owner and Finance must type a PIN, and the demo accepts any four digits (`pinOk` in `src/platform/access.ts`).
-- **What it stores:** the choice in `sessionStorage` (`pot-who`) and in the demo state in `localStorage` (`pot-demo-v3`).
-- **What it controls:** which pages show (Invoices is limited to Owner and Finance). Nothing is sent to the service.
-
-**For the redesign:** real sign-in (email/password and/or OAuth) needs new backend work. Nothing exists to wire to.
+Every account has its own private workspace; an administrator’s invoice permissions remain
+limited to that administrator’s own workspace. Account management responses never include
+passwords/hashes. There is no public registration. Login and expensive operations have persistent
+rate limits; 429 includes `Retry-After`. All browser mutations require
+`X-Requested-With: InvoiceChecker` and a trusted Origin when present. Sign-in, setup and sign-out
+require the header even before a session cookie exists. Unsafe requests with a cookie and an
+untrusted/missing protection header return 403. Unauthenticated access to protected data returns 401;
+non-admin account management returns 403. CORS supports trusted origins and GET/POST/PUT/PATCH/DELETE.
 
 ---
 
@@ -89,7 +104,7 @@ Without a current master, invoice upload returns 409. Explicit legacy `standard`
 
 ### `POST /invoices`
 
-Uploads one PDF or Vietnamese HDon XML invoice, then **reads, extracts and checks it in the same request** and returns the saved result. The request can take a minute in live mode. ZIP/RAR archives are unpacked locally by the frontend and submitted as individual PDF/XML requests. XML fields are mapped directly without OCR/model calls; the same master-list checks and review safeguards apply.
+Uploads one PDF or Vietnamese HDon XML invoice, then **reads, extracts and checks it in the same request** and returns the saved result. The request can take a minute in live mode. ZIP/RAR archives are unpacked locally and submitted together through `/invoice-batches`. XML fields are mapped directly without OCR/model calls; the same master-list checks and review safeguards apply.
 
 **Request**
 
@@ -293,3 +308,20 @@ All fields are listed; `?` marks a field that may be `null`. "dec" is a decimal 
 | Check: re-run | A re-check endpoint. Re-checking means re-uploading, which creates a new invoice. |
 | Resolution per line | Line-level actions (accept a line, override a price, mark resolved). Only the whole-invoice outcome exists. |
 | Housekeeping | Deleting an invoice. |
+
+## Durable batch upload
+
+`POST /invoice-batches` receives multipart `files`: 1–1,000 invoices, at most 20 MiB per file
+and 100 MiB total. It validates the complete batch, reserves storage/usage allowance, pins the
+current master version, and persists source files and jobs before returning **202**:
+`{id, invoices: SavedInvoice[], duplicates: [{filename, existing_id}], processing: "background"}`.
+New records have status `queued`, then use the existing reading/extracting/checking/completed/failed
+pipeline. Exact previously uploaded content is skipped; there is no business-number duplicate guarantee.
+Invalid files reject the batch before job creation; 413 signals a file/batch/storage limit;
+429 signals an allowance limit. The browser must stay open until upload is acknowledged.
+
+`GET /invoice-batches/{id}` returns `{id, invoice_ids, total, queued, processing, completed, failed}`
+for the owner only; another account receives 404. Results also appear in the ordinary invoice list.
+Queued jobs survive a service restart. In-progress jobs recover after an expired lease with at most
+three attempts; stale workers cannot overwrite results. Processing needs an available backend and
+persistent database/files. The legacy `POST /invoices` endpoint retains its immediate 201/422 contract.
