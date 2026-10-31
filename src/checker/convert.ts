@@ -96,6 +96,7 @@ const outcomeOf = (value: string | null | undefined): Outcome | null => (value &
 
 export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
   const invoice = saved.invoice;
+  const xml = /\.xml$/i.test(saved.filename);
   const checks = new Map((saved.check?.lines ?? []).map((line) => [line.line_index, line]));
   const lines: InvoiceLine[] = (invoice?.lines ?? []).map((line, index) => {
     const check = checks.get(index);
@@ -129,9 +130,9 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     number: invoice?.invoice_number ?? null,
     date: invoice?.invoice_date ?? null,
     currency: invoice?.currency ?? null,
-    subtotal: numberOf(invoice?.subtotal) ?? (lines.length && lines.every((l) => l.lineTotal !== null)
+    subtotal: numberOf(invoice?.subtotal) ?? (!xml && lines.length && lines.every((l) => l.lineTotal !== null)
       ? Math.round(lines.reduce((sum, l) => sum + l.lineTotal!, 0) * 100) / 100 : null),
-    tax: invoice ? (numberOf(invoice.tax) ?? 0) : null,
+    tax: invoice ? (numberOf(invoice.tax) ?? (xml ? null : 0)) : null,
     total: numberOf(invoice?.invoice_total),
     lines,
     priceSheet: saved.price_sheet_version,

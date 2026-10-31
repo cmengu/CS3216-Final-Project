@@ -4,7 +4,7 @@ Built for the 10 October build plan: upload → Docling → extraction adapter �
 → SQLite. Completed records and original PDFs survive a restart. The existing Next.js PO demo
 is unchanged; Nam can build the new screens against this API.
 
-**Modes:** `live` reads PDFs with Docling and extracts printed fields using OpenAI.
+**Modes:** `live` reads PDFs with Docling and extracts printed fields using OpenAI. Vietnamese HDon XML invoices map structured fields directly, bypassing OCR and model extraction; the same master-list checks, review rules and persistence apply. Missing fields remain unknown. XML DTDs/entities and unsupported XML formats are rejected.
 The default `INVOICE_CHECKER=master_list` uses the versioned, uploaded master list.
 `csv_context` remains an alias for this mode. The explicit `standard` mode retains the legacy
 file-backed checker and requires `INVOICE_PRICE_SHEET`. `fixture` replays answers for the exact original
@@ -109,10 +109,39 @@ The first Docling run downloads model weights. Subsequent runs reuse locally cac
 and converter instances. The reader is configured for CPU execution. No API key is needed for
 fixture mode. With no `INVOICE_MODE`, uploads return 503. Any other value stops the start.
 
-This is a local demo service without sign-in. Keep the loopback binding and a single worker.
+This service requires sign-in by default. Keep the loopback binding and a single worker for local use.
 Only one invoice processes at a time; concurrent uploads receive 429 and Retry-After. The
 POST request waits for processing to finish. Configure a generous frontend timeout for the
-first model load. Batch queues, authentication and connectors remain future work.
+first model load. Batch queues remain future work.
+
+## Browser authentication and request protection
+
+Sign-in is required by default. `POST /auth/sign-in` and `POST /auth/sign-out`
+require `X-Requested-With: InvoiceChecker`, including requests without a session cookie.
+Every other state-changing request carrying `ic_session` also requires that header.
+When an `Origin` is present, it must match the configured frontend/CORS allowlist or the
+API’s own origin. This includes multipart master-list and invoice uploads. The frontend
+adds the header automatically; nonbrowser clients using only explicit bearer credentials
+can continue without it. CORS permission alone does not authorize a cookie-authenticated
+mutation. Keep allowed origins restricted to trusted frontends.
+
+Logout records the login session in the invoice database’s `revoked_sessions` table.
+All credential transports check that table. Revocation survives service restarts, and
+`GET /auth/me` preserves the existing token expiry. Keep the persistent database through
+redeploys; removing the revocation records can reactivate old, unexpired tokens.
+If logout cannot reach the server, the UI reports the failure and lets the user retry.
+
+Outlook starts a 15-minute, one-use flow with PKCE, a hashed browser nonce and the app’s
+signed session ID. Its temporary `ic_outlook_oauth` cookie is HttpOnly, SameSite=Lax and
+Secure over HTTPS. The callback validates both browser and app session before exchanging
+a code. Restart any Outlook connection flow started before this migration.
+
+Use the same public API hostname for login and the registered Microsoft callback so the
+browser sends both cookies. For the default local callback, set
+`NEXT_PUBLIC_INVOICE_API=http://localhost:8001` and use `http://localhost:3000` for the UI;
+avoid mixing `localhost` with `127.0.0.1`. Production must use HTTPS, correct callback and
+frontend URLs, and a persistent invoice database. These changes do not resolve the
+separate default-credential/signing-key issue (R01).
 
 ## HTTP contract for Nam
 
@@ -122,7 +151,7 @@ first model load. Batch queues, authentication and connectors remain future work
 | POST | `/invoices` | Multipart `file`; 201 with saved record, fields and per-line results |
 | GET | `/invoices?limit=50&offset=0` | Newest-first summaries; limit 1–100 |
 | GET | `/invoices/{id}` | Saved full record including read output, fields and results |
-| GET | `/invoices/{id}/file` | Original PDF for inline viewing |
+| GET | `/invoices/{id}/file` | Original PDF (inline) or XML (download) |
 | PUT | `/invoices/{id}/outcome` | JSON `{"outcome", "reason"}`; saves or clears the clerk's decision (proposed) |
 
 `POST /invoices?force_ocr=true` explicitly overrides embedded-text selection. A processing
@@ -201,6 +230,10 @@ The older `invoice_processing` OpenAI experiment is not used. The live adapter u
 with a separate extended checking schema, preserving the original field-only handoff.
 Reading warnings must be carried into Chen Meng's uncertainty handling and Kalent's review
 results when those adapters are integrated.
+
+## XML invoice uploads
+
+`POST /invoices` also accepts `.xml` files up to 20 MiB in live mode. Supported vocabulary: Vietnamese `HDon/DLHDon`, with invoice header, seller, lines, discounts and totals. This does not verify the issuer’s digital signature. Missing totals/currency, special lines and unsupported tax/discount terms require human review; no missing values are inferred. The original bytes and filename are retained. ZIP/RAR files are unpacked by the frontend worker; the API still receives one PDF/XML invoice per request.
 
 ## PDF handoff
 

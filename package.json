@@ -8,9 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "node scripts/copy-archive-assets.mjs",
+    "predev": "node scripts/copy-archive-assets.mjs",
+    "prebuild": "node scripts/copy-archive-assets.mjs"
   },
   "dependencies": {
+    "comlink": "^4.4.2",
+    "libarchive.js": "2.0.2",
     "next": "16.3.8",
     "pdfjs-dist": "6.4.299",
     "react": "19.2.8",

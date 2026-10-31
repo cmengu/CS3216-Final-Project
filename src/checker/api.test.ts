@@ -93,10 +93,11 @@ describe("listInvoices", () => {
 });
 
 describe("uploadProblem", () => {
-  it("refuses a file that is not a PDF, or is too large, before anything is sent", () => {
-    expect(uploadProblem({ name: "prices.xlsx", size: 10 })).toBe("Only PDF files can be checked.");
-    expect(uploadProblem({ name: "big.PDF", size: 20 * 1024 * 1024 + 1 })).toBe("That PDF is over the 20 MB limit.");
+  it("refuses unsupported or oversized invoice files, before anything is sent", () => {
+    expect(uploadProblem({ name: "prices.xlsx", size: 10 })).toBe("Only PDF or Vietnamese HDon XML invoices can be checked.");
+    expect(uploadProblem({ name: "big.PDF", size: 20 * 1024 * 1024 + 1 })).toBe("That invoice is over the 20 MB limit.");
     expect(uploadProblem({ name: "invoice.PDF", size: 20 * 1024 * 1024 })).toBeNull();
+    expect(uploadProblem({ name: "invoice.XML", size: 12 })).toBeNull();
   });
 });
 
@@ -111,7 +112,7 @@ describe("uploadInvoice", () => {
     expect(url).toMatch(/\/invoices$/);
     expect(init?.method).toBe("POST");
     expect((init?.body as FormData).get("file")).toBe(file);
-    expect(init?.headers).toBeUndefined();
+    expect(init?.headers).toEqual({ "X-Requested-With": "InvoiceChecker" });
   });
   it("names the three refusals in one sentence each", () => {
     expect(uploadFailure(429)).toBe("Another invoice is being checked. Try again in a moment.");
@@ -123,7 +124,7 @@ describe("uploadInvoice", () => {
   it("passes on the service's own reason for refusing a file", () => {
     expect(uploadFailure(422, "PDF must contain 1–30 pages")).toBe("This file could not be checked. PDF must contain 1–30 pages");
     expect(uploadFailure(415, "Upload a PDF")).toBe("This file could not be checked. Upload a PDF");
-    expect(uploadFailure(413)).toBe("That PDF is over the 20 MB limit.");
+    expect(uploadFailure(413)).toBe("That invoice is over the 20 MB limit.");
     expect(uploadFailure(500)).toBe("The checking service had a problem. Try again in a moment.");
   });
 
@@ -191,6 +192,7 @@ describe("decideInvoice", () => {
     const invoice = await decideInvoice(id, "ready_to_pay_anyway", "Credit note agreed");
     expect(fetchMock.mock.calls[0][0]).toMatch(new RegExp(`/invoices/${id}/outcome$`));
     expect(fetchMock.mock.calls[0][1]?.method).toBe("PUT");
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ outcome: "ready_to_pay_anyway", reason: "Credit note agreed" });
     expect(invoice.outcomeReason).toBe("Credit note agreed");
   });
@@ -227,7 +229,7 @@ describe("session isolation headers and URLs", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await uploadInvoice(new File(["%PDF"], "upload.pdf", { type: "application/pdf" }));
-    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({ "X-Invoice-Session": "sess-user-42" });
+    expect(fetchMock.mock.calls[0][1]?.headers).toEqual({ "X-Invoice-Session": "sess-user-42", "X-Requested-With": "InvoiceChecker" });
 
     setActiveSessionId(null);
     expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file$`));

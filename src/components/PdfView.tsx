@@ -9,11 +9,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-import {
-  orderedLines,
-} from "@/checker/present";
 import type { SourceBlock, SupplierInvoice } from "@/checker/types";
-import { PriceComparison } from "./invoices/PriceComparison";
+import { InvoicePreview, PreviewZoom, PREVIEW_ZOOMS as ZOOMS } from "./InvoicePreview";
 import { blockFor } from "./pdfEvidence";
 import { wholeItemRow } from "./pdfRow";
 import { projectBox, textRotation } from "./pdfRotation";
@@ -41,7 +38,6 @@ function screenBox(s: PageSize, b: Box) {
   return projectBox(s.viewport.transform, b);
 }
 
-const ZOOMS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
 /** Bottom-left PDF coordinates for a block location. */
 function toBottomLeft(loc: SourceBlock["locations"][number]) {
   const b = loc.bbox!;
@@ -304,82 +300,16 @@ export function PdfView({
 
   if (inv) {
     return (
-      <div className="ic-pdfmodal-scrim" onClick={onClose}>
-        <section
-          className="ic-pdfmodal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Invoice PDF"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <header className="ic-pdfmodal-head">
-            <div className="ic-pdfmodal-tools">
-              <button className="ic-icobtn" type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => goTo(page - 1)}>
-                <Icon name="chevL" />
-              </button>
-              <span className="num ic-pdfmodal-page" aria-live="polite">
-                {n ? `Page ${page} of ${n}` : "Loading…"}
-              </span>
-              <button className="ic-icobtn" type="button" aria-label="Next page" disabled={!n || page >= n} onClick={() => goTo(page + 1)}>
-                <Icon name="chev" />
-              </button>
-              <span className="sep" aria-hidden="true" />
-              <button className="ic-icobtn" type="button" aria-label="Zoom out" disabled={zoom === 0} onClick={() => setZoom((z) => Math.max(0, z - 1))}>
-                <Icon name="minus" />
-              </button>
-              <span className="num ic-pdfmodal-zoom">{zoomPct}%</span>
-              <button className="ic-icobtn" type="button" aria-label="Zoom in" disabled={zoom === ZOOMS.length - 1} onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}>
-                <Icon name="plus" />
-              </button>
-              <button className="ic-icobtn" type="button" aria-label="Rotate current page clockwise" title="Rotate current page clockwise" disabled={!doc} onClick={rotatePage}>↻</button>
-              {onClose ? (
-                <button className="ic-pdfmodal-close" type="button" onClick={onClose} aria-label="Close PDF preview">
-                  <Icon name="x" />
-                  <span>Close</span>
-                  <kbd>Esc</kbd>
-                </button>
-              ) : null}
-            </div>
-          </header>
-
-          <div className="ic-pdfmodal-body">
-            <aside className="ic-pdfmodal-side" aria-label="Invoice lines">
-              <div className="ic-pdfmodal-lines" role="list">
-                {orderedLines(inv).map(({ line, n: lineNum }) => {
-                  const flagged = line.result !== "match";
-                  const active = focus?.n === lineNum;
-                  return (
-                    <div key={lineNum} role="listitem" className="ic-pdfmodal-item" aria-current={active ? "true" : undefined}>
-                    <button
-                      type="button"
-                      className="ic-pdfmodal-line"
-                      aria-current={active ? "true" : undefined}
-                      onClick={() => onSelectLine?.(lineNum)}
-                    >
-                      <span className="ico">
-                        {flagged ? (
-                          <Icon name="warn" style={{ color: "var(--warn)" }} />
-                        ) : (
-                          <Icon name="tick" style={{ color: "var(--good)", strokeWidth: 2 }} />
-                        )}
-                      </span>
-                      <span className="lbl">
-                        <span>
-                          {lineNum} · {line.description.trim() || line.part || "No description"}
-                        </span>
-                      </span>
-                    </button>
-                    <PriceComparison line={line} currency={inv.currency} number={lineNum} />
-                    </div>
-                  );
-                })}
-              </div>
-            </aside>
-            <div className="ic-pdfmodal-stage">{canvasNodes}</div>
-          </div>
-
-        </section>
-      </div>
+      <InvoicePreview inv={inv} url={url} fileName={fileName} activeLine={focus?.n ?? null} onSelectLine={onSelectLine} onClose={onClose} tools={
+        <>
+          <button className="ic-icobtn" type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => goTo(page - 1)}><Icon name="chevL" /></button>
+          <span className="num ic-pdfmodal-page" aria-live="polite">{n ? `Page ${page} of ${n}` : "Loading…"}</span>
+          <button className="ic-icobtn" type="button" aria-label="Next page" disabled={!n || page >= n} onClick={() => goTo(page + 1)}><Icon name="chev" /></button>
+          <span className="sep" aria-hidden="true" />
+          <PreviewZoom zoom={zoom} percent={zoomPct} onChange={setZoom} />
+          <button className="ic-icobtn" type="button" aria-label="Rotate current page clockwise" title="Rotate current page clockwise" disabled={!doc} onClick={rotatePage}>↻</button>
+        </>
+      }>{canvasNodes}</InvoicePreview>
     );
   }
 

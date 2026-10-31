@@ -1,13 +1,15 @@
 """Local demo API: bounded upload → read → extract → check → persist.
 
-No auth/connectors in release 1. Bind to loopback, one worker. The mode is always explicit:
+Signed sessions protect invoice, master-list and Outlook routes. The mode is explicit:
 INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real steps.
 """
 
 import hmac
 import logging
 import os
+import re
 import sys
+import time
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -21,14 +23,18 @@ from pydantic import BaseModel, ValidationError
 
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
+from read.xml_invoice import read_xml_invoice
 
 from .auth import (
     COOKIE_NAME,
+    CSRF_HEADER,
+    CSRF_VALUE,
     TOKEN_TTL_SECONDS,
     create_session_token,
     extract_request_claims,
     has_invalid_auth_token,
     is_auth_required,
+    session_cookie_options,
 )
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .master_list import current_master
@@ -115,6 +121,8 @@ def create_app(
     # Preview deployments get a new address each time, so they are allowed by pattern.
     cors_origin_regex = os.environ.get("INVOICE_ALLOWED_ORIGIN_REGEX", "").strip() or None
 
+    trusted_origin_pattern = re.compile(cors_origin_regex) if cors_origin_regex else None
+
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
     app.include_router(outlook_router)
@@ -129,6 +137,32 @@ def create_app(
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         path = request.url.path
+        # Custom headers cannot be submitted by cross-site HTML forms. Browser AJAX from
+        # other origins additionally has to pass the credentialed CORS preflight allowlist.
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            browser_mutation = bool(request.cookies.get(COOKIE_NAME)) or path in {
+                "/auth/sign-in",
+                "/auth/sign-out",
+            }
+            if browser_mutation:
+                origin = request.headers.get("origin")
+                trusted = origin is None or (
+                    origin != "null"
+                    and (
+                        origin in cors_origins
+                        or origin == f"{request.url.scheme}://{request.url.netloc}"
+                        or (
+                            trusted_origin_pattern is not None
+                            and trusted_origin_pattern.fullmatch(origin)
+                        )
+                    )
+                )
+                if request.headers.get(CSRF_HEADER) != CSRF_VALUE or not trusted:
+                    return JSONResponse(
+                        {"detail": "Request origin or CSRF protection header is invalid"},
+                        status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )
         protected = path.startswith(
             ("/invoices", "/master-list", "/outlook", "/auth/outlook/login")
         )
@@ -163,15 +197,6 @@ def create_app(
         username: str | None = None
         email: str | None = None
         password: str = ""
-
-    def session_cookie_options(request: Request) -> dict:
-        # The deployed app and service are on different sites (vercel.app, railway.app). Browsers
-        # only send a cross-site cookie that is SameSite=None and Secure, and Secure needs HTTPS.
-        # Behind Railway's proxy the request reaches uvicorn as http, so trust its forwarded scheme.
-        forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
-        if request.url.scheme == "https" or forwarded == "https":
-            return {"samesite": "none", "secure": True}
-        return {"samesite": "lax", "secure": False}
 
     @app.post("/auth/sign-in")
     def auth_sign_in(payload: SignInPayload, request: Request):
@@ -216,7 +241,9 @@ def create_app(
                 {"ok": False, "authenticated": False, "detail": "Authentication required"},
                 status_code=401,
             )
-        token = create_session_token(claims["username"], claims["session_id"])
+        token = create_session_token(
+            claims["username"], claims["session_id"], expires_at=claims["exp"]
+        )
         return {
             "ok": True,
             "authenticated": True,
@@ -228,6 +255,12 @@ def create_app(
 
     @app.post("/auth/sign-out")
     def auth_sign_out(request: Request):
+        claims = extract_request_claims(request)
+        if claims is not None:
+            # Cover every previously issued token for this login, including old refreshes.
+            app.state.store.revoke_session(
+                claims["session_id"], max(claims["exp"], int(time.time()) + TOKEN_TTL_SECONDS)
+            )
         response = JSONResponse({"ok": True})
         response.delete_cookie(
             key=COOKIE_NAME, path="/", httponly=True, **session_cookie_options(request)
@@ -284,17 +317,28 @@ def create_app(
                 except ValueError as exc:
                     raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
-            if not filename.lower().endswith(".pdf"):
-                raise HTTPException(415, "Upload a PDF")
+            is_xml = filename.lower().endswith(".xml")
+            if not filename.lower().endswith((".pdf", ".xml")):
+                raise HTTPException(415, "Upload a PDF or Vietnamese HDon XML invoice")
+            if is_xml and selected.mode == "fixture":
+                raise HTTPException(
+                    422,
+                    "XML invoices require live mode and a master list; fixture mode only replays known PDFs",
+                )
             size = 0
             with path.open("xb") as target:
                 while chunk := file.file.read(1024 * 1024):
                     size += len(chunk)
                     if size > MAX_BYTES:
-                        raise HTTPException(413, "PDF exceeds 20 MiB")
+                        raise HTTPException(413, "Invoice exceeds 20 MiB")
                     target.write(chunk)
+            xml_document = xml_record = None
             try:
-                document_hash, _ = validate_pdf(path)
+                if is_xml:
+                    xml_document, xml_record = read_xml_invoice(path.read_bytes(), filename)
+                    document_hash = xml_document.document_hash
+                else:
+                    document_hash, _ = validate_pdf(path)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             store.insert(
@@ -308,16 +352,20 @@ def create_app(
             inserted = True
             stage = "reading"
             try:
-                document = reader(path, force_ocr=force_ocr)
+                document = xml_document if is_xml else reader(path, force_ocr=force_ocr)
                 if document.document_hash != document_hash:
                     raise ValueError("Reader returned a different document hash")
                 document.filename = filename
                 stage = "extracting"
                 store.update(invoice_id, stage, document=document)
-                invoice = selected.extract(document)
+                invoice = xml_record if is_xml else selected.extract(document)
                 stage = "checking"
                 store.update(invoice_id, stage, invoice=invoice)
                 check = selected.check(invoice)
+                if is_xml and invoice.warnings:
+                    # XML uncertainty must remain visible even with a legacy checking adapter.
+                    check.overcharge_total = None
+                    check.warnings = list(dict.fromkeys([*check.warnings, *invoice.warnings]))
                 if len(check.lines) != len(invoice.lines) or {
                     x.line_index for x in check.lines
                 } != set(range(len(invoice.lines))):
@@ -362,12 +410,17 @@ def create_app(
         saved = invoice(invoice_id, request, session_id)
         path = app.state.store.path(str(invoice_id))
         if not path.is_file():
-            raise HTTPException(404, "Original PDF is unavailable")
+            raise HTTPException(404, "Original invoice is unavailable")
         return FileResponse(
             path,
-            media_type="application/pdf",
+            media_type="application/xml"
+            if saved.filename.lower().endswith(".xml")
+            else "application/pdf",
+            headers={"X-Content-Type-Options": "nosniff"},
             filename=saved.filename,
-            content_disposition_type="inline",
+            content_disposition_type="attachment"
+            if saved.filename.lower().endswith(".xml")
+            else "inline",
         )
 
     @app.put("/invoices/{invoice_id}/outcome", response_model=SavedInvoice)

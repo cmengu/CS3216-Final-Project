@@ -4,7 +4,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { SERVICE_URL, SESSION_ID_KEY, setActiveSessionId } from "@/checker/api";
+import { SERVICE_URL, SESSION_ID_KEY, sessionHeaders, setActiveSessionId } from "@/checker/api";
 import { resetUploadsSession } from "@/checker/uploads";
 import { resetMasterListSession } from "@/masterList";
 
@@ -108,7 +108,7 @@ export async function signIn(username: string, password: string): Promise<SignIn
     const resp = await fetch(`${SERVICE_URL}/auth/sign-in`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: sessionHeaders({ "Content-Type": "application/json" }, true),
       body: JSON.stringify({ username: trimmed, password }),
       signal: AbortSignal.timeout(5_000),
     });
@@ -142,13 +142,15 @@ export async function signInWithMicrosoft(): Promise<SignInResult> {
 
 export async function signOut(): Promise<void> {
   try {
-    await fetch(`${SERVICE_URL}/auth/sign-out`, {
+    const response = await fetch(`${SERVICE_URL}/auth/sign-out`, {
       method: "POST",
       credentials: "include",
+      headers: sessionHeaders(undefined, true),
       signal: AbortSignal.timeout(5_000),
     });
+    if (!response.ok) throw new Error("Sign-out failed");
   } catch {
-    /* ignore network error on sign-out */
+    throw new Error("Couldn’t sign out securely. Check the connection and try again.");
   }
   setSessionState(null);
 }

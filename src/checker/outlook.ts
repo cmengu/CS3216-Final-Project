@@ -100,7 +100,7 @@ export async function fetchOutlookStatus(): Promise<OutlookResult<OutlookStatus>
 
 export async function disconnectOutlook(): Promise<OutlookResult<OutlookStatus>> {
   try {
-    const headers = sessionHeaders();
+    const headers = sessionHeaders(undefined, true);
     const res = await fetch(`${SERVICE_URL}/outlook/disconnect`, {
       method: "POST",
       cache: "no-store",
@@ -181,7 +181,7 @@ export async function scanOutlookMessages(options?: {
     const res = await fetch(`${SERVICE_URL}/outlook/scan`, {
       method: "POST",
       credentials: "include",
-      headers: sessionHeaders({ "Content-Type": "application/json" }),
+      headers: sessionHeaders({ "Content-Type": "application/json" }, true),
       body: JSON.stringify(payload),
       cache: "no-store",
     });

@@ -260,7 +260,7 @@ export function CheckPane({
                           )}
                         </div>
                         <div className="end">
-                            <button type="button" className="ic-link ic-link--sm" onClick={(e) => { e.stopPropagation(); onShow(n); }} aria-label={`Show line ${n} on the PDF`}>
+                            <button type="button" className="ic-link ic-link--sm" onClick={(e) => { e.stopPropagation(); onShow(n); }} aria-label={`Show line ${n} in the original invoice`}>
                               Show
                               <Icon name="arrowR" arrow />
                             </button>

@@ -97,6 +97,7 @@ export function Queue({
           </button>
         </div>
       </div>
+      <p className="muted" style={{ margin: "0 16px 12px", fontSize: 12 }}>PDF, XML, ZIP or RAR</p>
       <Search label="Search invoices" value={q} onChange={onQ} full />
       <div className="ic-seg ic-seg--fill" role="group" aria-label="Show">
         <button type="button" aria-pressed={seg === "decide"} onClick={() => onSeg("decide")}>
@@ -132,7 +133,7 @@ export function Queue({
               <span />
             </div>
             <span className="muted">
-              Checking…{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
+              {current.status === "unpacking" ? "Unpacking…" : "Checking…"}{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
             </span>
           </div>
         ) : null}

@@ -125,6 +125,8 @@ function Stepper({ checking }: { checking: boolean }) {
 
 function Account({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const router = useRouter();
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -179,15 +181,24 @@ function Account({ user }: { user: User }) {
           <button
             role="menuitem"
             type="button"
+            disabled={signingOut}
             onClick={async () => {
-              setOpen(false);
-              await signOut();
-              router.replace("/sign-in");
+              setSignOutError(null);
+              setSigningOut(true);
+              try {
+                await signOut();
+                router.replace("/sign-in");
+              } catch (error) {
+                setSignOutError(error instanceof Error ? error.message : "Couldn’t sign out. Try again.");
+              } finally {
+                setSigningOut(false);
+              }
             }}
           >
             <Icon name="signout" size="ui" />
-            Sign out
+            {signingOut ? "Signing out…" : "Sign out"}
           </button>
+          {signOutError ? <p role="alert" className="who">{signOutError}</p> : null}
         </div>
       ) : null}
     </div>
