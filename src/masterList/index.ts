@@ -31,8 +31,8 @@ let refreshAfterSave = false;
 let saveQueue: Promise<unknown> = Promise.resolve();
 const SYNC_KEY = `ic.master-list.changed:${SERVICE_URL}`;
 function emit() { listeners.forEach((listener) => listener()); }
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${SERVICE_URL}/master-list${path}`, {
+async function api<T>(path: string, options?: RequestInit, projectId?: string): Promise<T> {
+  const response = await fetch(`${SERVICE_URL}/master-list${path}${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`, {
     ...options, credentials: "include", ...(sessionHeaders() ? { headers: sessionHeaders(options?.headers as Record<string, string> | undefined) } : {}), cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(15_000),
   });
   const data = await response.json();
@@ -74,7 +74,7 @@ export async function previewMasterList(file: File): Promise<ImportPreview> {
   const body = new FormData(); body.append("file", file);
   return api<ImportPreview>("/preview", { method: "POST", body, signal: AbortSignal.timeout(60_000) });
 }
-async function performSave(file: File, method: "POST" | "PUT", options?: ImportOptions): Promise<UploadResult> {
+async function performSave(file: File, method: "POST" | "PUT", options?: ImportOptions, projectId?: string): Promise<UploadResult> {
   saving = true;
   ++writeRevision;
   ++readRevision;
@@ -82,7 +82,8 @@ async function performSave(file: File, method: "POST" | "PUT", options?: ImportO
   try {
     const body = new FormData(); body.append("file", file);
     if (options) body.append("options", JSON.stringify(options));
-    const list = await api<MasterList>("", { method, body });
+    const list = await api<MasterList>("", { method, body }, projectId);
+    if (projectId) return { ok: true, list };
     // Update the table immediately even if fetching the audit trail later fails.
     cached = list; error = null;
     emit();
@@ -100,13 +101,13 @@ async function performSave(file: File, method: "POST" | "PUT", options?: ImportO
     }
   }
 }
-function save(file: File, method: "POST" | "PUT", options?: ImportOptions): Promise<UploadResult> {
-  const pending = saveQueue.then(() => performSave(file, method, options));
+function save(file: File, method: "POST" | "PUT", options?: ImportOptions, projectId?: string): Promise<UploadResult> {
+  const pending = saveQueue.then(() => performSave(file, method, options, projectId));
   saveQueue = pending.catch(() => {});
   return pending;
 }
-export const uploadMasterList = (file: File, options?: ImportOptions) => save(file, "POST", options);
-export const replaceMasterList = (file: File, options?: ImportOptions) => save(file, "PUT", options);
+export const uploadMasterList = (file: File, options?: ImportOptions, projectId?: string) => save(file, "POST", options, projectId);
+export const replaceMasterList = (file: File, options?: ImportOptions, projectId?: string) => save(file, "PUT", options, projectId);
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 export function useMasterList() {
   useEffect(() => {

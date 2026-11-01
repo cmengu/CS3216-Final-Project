@@ -233,3 +233,17 @@ describe("session isolation headers and URLs", () => {
     expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file$`));
   });
 });
+
+it("preserves project destination on uploads and retries", async () => {
+  const record = { ...saved("Supplier", null), project_id: "project-a", comparison_mode: "totals_only" as const, check: null };
+  const fetchMock = vi.fn(async (url: string) => url.includes("/file")
+    ? new Response("%PDF fixture")
+    : new Response(JSON.stringify(record), { status: 201 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const first = await uploadInvoice(new File(["%PDF"], "test.pdf"), "project-a");
+  expect(first.projectId).toBe("project-a");
+  expect(first.comparisonMode).toBe("totals_only");
+  expect(String(fetchMock.mock.calls[0][0])).toContain("/invoices?project_id=project-a");
+  await retryInvoice(first);
+  expect(String(fetchMock.mock.calls[2][0])).toContain("/invoices?project_id=project-a");
+});

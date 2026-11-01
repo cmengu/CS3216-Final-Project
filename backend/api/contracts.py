@@ -37,6 +37,8 @@ class OutcomeRequest(Contract):
 
 
 class InvoiceSummary(Contract):
+    project_id: str | None = None
+    comparison_mode: Literal["master_list", "totals_only"] = "master_list"
     id: str
     filename: str
     document_hash: str

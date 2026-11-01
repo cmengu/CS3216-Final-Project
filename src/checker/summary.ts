@@ -137,7 +137,7 @@ export interface Summary {
  */
 export function supersededBy(inv: SupplierInvoice, list: SupplierInvoice[]): SupplierInvoice | null {
   if (inv.state !== "failed" || !inv.documentHash || inv.outcome) return null;
-  return newestFirst(list).find((x) => x.id !== inv.id && x.documentHash === inv.documentHash && x.uploadedAt > inv.uploadedAt) ?? null;
+  return newestFirst(list).find((x) => x.id !== inv.id && x.projectId === inv.projectId && x.documentHash === inv.documentHash && x.uploadedAt > inv.uploadedAt) ?? null;
 }
 
 /** The totals boxes on the Invoices page, and the invoices in each pile (newest first). */

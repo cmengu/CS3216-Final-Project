@@ -6,7 +6,7 @@ import { auditRows, exportReadyToPay, whenLabel, type AuditKind } from "@/checke
 import { csvName } from "@/checker/review";
 import { useApp } from "@/components/AppShell";
 import { download, Pill, Search } from "@/components/ui";
-import { getMasterListEvents } from "@/masterList";
+import { useProjectEvents } from "@/checker/projects";
 
 const FILTERS: [AuditKind | "all", string][] = [
   ["all", "All"],
@@ -19,17 +19,17 @@ const FILTERS: [AuditKind | "all", string][] = [
 const COLS = "150px minmax(0, 1.3fr) 170px minmax(0, 1.6fr) 60px";
 
 export default function Audit() {
-  const { invoices, invoiceError, masterList } = useApp();
+  const { invoices, invoiceError, projects } = useApp();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<AuditKind | "all">("all");
-  // The events change only when the master list does.
-  const events = useMemo(() => (masterList ? getMasterListEvents() : []), [masterList]);
+  const { events, error: eventsError } = useProjectEvents(projects);
   const rows = useMemo(() => auditRows(invoices ?? [], events), [invoices, events]);
   const ql = q.trim().toLowerCase();
   const shown = rows.filter((r) => (filter === "all" || r.kind === filter) && (!ql || `${r.title} ${r.sub} ${r.details}`.toLowerCase().includes(ql)));
 
   return (
     <div className="ic-page">
+      {eventsError ? <p role="alert">{eventsError}</p> : null}
       <div className="ic-headrow">
         <h1 className="ic-h1">Audit trail</h1>
         <button type="button" className="ic-btn ic-btn--secondary" onClick={() => download(csvName(), exportReadyToPay(invoices ?? []))} disabled={!invoices}>

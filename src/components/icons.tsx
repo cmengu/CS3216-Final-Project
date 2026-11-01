@@ -2,6 +2,9 @@
 import type { CSSProperties, ReactNode } from "react";
 
 const P: Record<string, ReactNode> = {
+  panelClose: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m7-11-3 3 3 3" /></>,
+  panelOpen: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m4-11 3 3-3 3" /></>,
+  folder: <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />,
   check: <path d="m5 12 5 5L20 7" />,
   warn: <path d="M12 9v4M12 17h.01M10.3 3.9 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />,
   x: <path d="M6 6l12 12M18 6 6 18" />,

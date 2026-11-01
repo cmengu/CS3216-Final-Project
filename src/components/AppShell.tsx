@@ -11,8 +11,7 @@ import { signOut, useUser, type User } from "@/auth";
 import { useInvoices } from "@/checker/api";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
-import { useUploads } from "@/checker/uploads";
-import { useMasterList, useMasterListError, refreshMasterList, type MasterList } from "@/masterList";
+import { useProjects, type Project } from "@/checker/projects";
 import { Icon } from "./icons";
 
 /**
@@ -23,10 +22,13 @@ export type Phase = "first" | "setup" | "ready" | "loading";
 
 interface AppState {
   user: User;
-  masterList: MasterList | null;
   invoices: SupplierInvoice[] | null;
   invoiceError: string | null;
   phase: Phase;
+  projects: Project[];
+  projectError: string | null;
+  projectsLoading: boolean;
+  reloadProjects: () => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -37,24 +39,10 @@ export function useApp(): AppState {
   return v;
 }
 
-function phaseOf(ml: MasterList | null, invoices: SupplierInvoice[] | null, error: string | null): Phase {
-  if (!ml) return "first";
-  if (invoices === null) return error ? "ready" : "loading";
-  return invoices.length ? "ready" : "setup";
-}
-
-function Switcher({ phase, toDecide }: { phase: Phase; toDecide: number }) {
+function Switcher({ toDecide }: { toDecide: number }) {
   const path = usePathname();
-  const locked = phase === "first";
   const tab = (href: string, icon: "list" | "sheet" | "clock", label: string, extra?: ReactNode) => {
     const current = path.startsWith(href);
-    if (locked && href !== "/master-list")
-      return (
-        <button type="button" aria-disabled="true" title="Upload your master list first">
-          <Icon name={icon} size="ui" />
-          {label}
-        </button>
-      );
     return (
       <Link href={href} aria-current={current ? "page" : undefined}>
         <Icon name={icon} size="ui" />
@@ -69,12 +57,7 @@ function Switcher({ phase, toDecide }: { phase: Phase; toDecide: number }) {
         "/master-list",
         "list",
         "Master list",
-        phase !== "first" ? (
-          <span className="ok">
-            <Icon name="tick" style={{ strokeWidth: 2 }} />
-            <span className="sr">ready</span>
-          </span>
-        ) : null,
+
       )}
       {tab(
         "/invoices",
@@ -88,37 +71,6 @@ function Switcher({ phase, toDecide }: { phase: Phase; toDecide: number }) {
         ) : null,
       )}
       {tab("/audit", "clock", "Audit trail")}
-    </nav>
-  );
-}
-
-function Stepper({ checking }: { checking: boolean }) {
-  return (
-    <nav className="ic-steps" aria-label="Setup">
-      <Link className="ic-step done" href="/master-list">
-        <span className="num">
-          <Icon name="tick" />
-        </span>
-        Master list
-        <span className="sr">(done)</span>
-      </Link>
-      <span className="ic-step-sep" aria-hidden="true" />
-      {checking ? (
-        <span className="ic-step done">
-          <span className="num">
-            <Icon name="tick" />
-          </span>
-          Upload invoices
-        </span>
-      ) : (
-        <Link className="ic-step" href="/invoices" aria-current="step">
-          <span className="num">2</span>Upload invoices
-        </Link>
-      )}
-      <span className="ic-step-sep" aria-hidden="true" />
-      <span className="ic-step" aria-current={checking ? "step" : undefined} aria-disabled={checking ? undefined : "true"}>
-        <span className="num">3</span>Check
-      </span>
     </nav>
   );
 }
@@ -162,14 +114,6 @@ function Account({ user }: { user: User }) {
           </div>
           <Link
             role="menuitem"
-            href="/invoices?outlook=1"
-            onClick={() => setOpen(false)}
-          >
-            <Icon name="mail" size="ui" />
-            Outlook inbox
-          </Link>
-          <Link
-            role="menuitem"
             href="/master-list?replace=1"
             onClick={() => setOpen(false)}
           >
@@ -196,25 +140,26 @@ function Account({ user }: { user: User }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const user = useUser();
-  const ml = useMasterList();
-  const masterError = useMasterListError();
+  const projectState = useProjects();
+  const reloadProjects = projectState.reload;
   const router = useRouter();
   const { invoices, error } = useInvoices();
-  const uploads = useUploads();
+
+
+  useEffect(() => {
+    if (user) reloadProjects();
+  }, [user, invoices, reloadProjects]);
 
   useEffect(() => {
     if (user === null) router.replace("/sign-in");
   }, [user, router]);
 
   if (!user) return null;
-  if (masterError) return <div className="ic-page"><p role="alert">{masterError}</p><button className="ic-btn" onClick={() => void refreshMasterList()}>Retry</button></div>;
-  if (ml === undefined) return <p className="ic-empty">Loading master list…</p>;
-
-  const phase = phaseOf(ml, invoices, error);
-  const toDecide = invoices ? summarize(invoices).piles.decide.length : 0;
+  const phase: Phase = invoices === null && !error ? "loading" : "ready";
+  const toDecide = invoices ? summarize(invoices.filter((i) => i.comparisonMode !== "totals_only")).piles.decide.length : 0;
 
   return (
-    <Ctx.Provider value={{ user, masterList: ml, invoices, invoiceError: error, phase }}>
+    <Ctx.Provider value={{ user, invoices, invoiceError: error, phase, projects: projectState.projects, projectError: projectState.error, projectsLoading: projectState.loading, reloadProjects: projectState.reload }}>
       <div className="ic-app">
         <header className="ic-top">
           <Link className="ic-brand" href="/">
@@ -223,7 +168,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
             Invoice Checker
           </Link>
-          {phase === "setup" ? <Stepper checking={uploads.items.length > 0} /> : <Switcher phase={phase} toDecide={toDecide} />}
+          <Switcher toDecide={toDecide} />
           <Account user={user} />
         </header>
         <main className="ic-main">{children}</main>

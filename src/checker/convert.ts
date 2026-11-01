@@ -6,6 +6,7 @@ import { tableRows, type TableDocument } from "@/components/pdfEvidence";
 import type { CheckState, InvoiceLine, LineResult, Outcome, SourceBlock, SupplierInvoice } from "./types";
 
 export interface ServiceLine {
+  currency?: string | null;
   part_number: string | null;
   description: string | null;
   quantity: string | null;
@@ -32,6 +33,8 @@ export interface ServiceCheckLine {
 }
 
 export interface ServiceInvoice {
+  project_id?: string | null;
+  comparison_mode?: "master_list" | "totals_only";
   id: string;
   filename: string;
   document_hash?: string | null;
@@ -106,6 +109,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
       // The price the service compared with the master list, after any printed exchange rate, so it
       // is in the same currency as sheetPrice. The printed price only when the service compared none.
       unitPrice: numberOf(check?.invoice_price ?? line.unit_price),
+      priceCurrency: check?.invoice_price != null ? invoice?.currency : (line.currency ?? invoice?.currency),
       lineTotal: numberOf(line.line_total),
       // The service gives one result per line. A line without one is never shown as passed.
       result: check?.status ?? "needs_person",
@@ -121,6 +125,8 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
   });
   return {
     id: saved.id,
+    projectId: saved.project_id ?? null,
+    comparisonMode: saved.comparison_mode ?? "master_list",
     fileName: saved.filename,
     documentHash: saved.document_hash ?? null,
     uploadedAt: saved.created_at,

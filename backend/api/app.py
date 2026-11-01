@@ -35,6 +35,8 @@ from .master_list import current_master
 from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
+from .projects import require_project
+from .projects import router as projects_router
 from .stages import FixtureStages, Stages
 from .storage import Store, open_store, request_session_id
 from .uploaded_master import UploadedMasterStages
@@ -117,6 +119,7 @@ def create_app(
 
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
     app.include_router(master_list_router)
+    app.include_router(projects_router)
     app.include_router(outlook_router)
 
     @app.middleware("http")
@@ -130,7 +133,7 @@ def create_app(
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         path = request.url.path
         protected = path.startswith(
-            ("/invoices", "/master-list", "/outlook", "/auth/outlook/login")
+            ("/projects", "/invoices", "/master-list", "/outlook", "/auth/outlook/login")
         )
         if protected and request.method != "OPTIONS":
             if has_invalid_auth_token(request):
@@ -146,7 +149,7 @@ def create_app(
                     headers={"Cache-Control": "no-store"},
                 )
         response = await call_next(request)
-        if path.startswith(("/master-list", "/invoices", "/outlook", "/auth")):
+        if path.startswith(("/projects", "/master-list", "/invoices", "/outlook", "/auth")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -237,20 +240,17 @@ def create_app(
     @app.get("/health")
     def health(request: Request):
         selected = app.state.stages
-        sid = _request_session_id(request)
         return {
             "status": "ok",
             "mode": selected.mode if selected else "unconfigured",
-            "processing_configured": selected is not None
-            and (
-                not isinstance(selected, UploadedMasterStages)
-                or current_master(app.state.store, session_id=sid) is not None
-            ),
+            "processing_configured": selected is not None,
             "contract": "proposed-v1",
         }
 
     @app.post("/invoices", response_model=SavedInvoice, status_code=201)
-    def upload(request: Request, file: UploadFile, force_ocr: bool = False):
+    def upload(
+        request: Request, file: UploadFile, force_ocr: bool = False, project_id: str | None = None
+    ):
         selected = app.state.stages
         if selected is None:
             file.file.close()
@@ -278,9 +278,29 @@ def create_app(
         path = store.path(invoice_id)
         inserted = False
         try:
+            project = require_project(store, project_id, session_id) if project_id else None
+            if (
+                project
+                and selected.mode == "live"
+                and not isinstance(selected, UploadedMasterStages)
+            ):
+                raise HTTPException(
+                    503, "Project uploads require INVOICE_CHECKER=master_list or csv_context."
+                )
+            totals_only = project is not None and project["comparison_mode"] == "totals_only"
+            if (
+                project
+                and not totals_only
+                and current_master(store, session_id=session_id, project_id=project_id) is None
+            ):
+                raise HTTPException(
+                    409, "Upload a master list for this project before uploading invoices."
+                )
             if isinstance(selected, UploadedMasterStages):
                 try:
-                    selected = selected.bind(store, session_id=session_id)
+                    selected = selected.bind(
+                        store, session_id=session_id, project_id=project_id, totals_only=totals_only
+                    )
                 except ValueError as exc:
                     raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
@@ -302,8 +322,10 @@ def create_app(
                 filename,
                 document_hash,
                 selected.mode,
-                selected.price_sheet_version,
+                "" if totals_only else selected.price_sheet_version,
                 session_id=session_id,
+                project_id=project_id,
+                comparison_mode="totals_only" if totals_only else "master_list",
             )
             inserted = True
             stage = "reading"
@@ -315,18 +337,21 @@ def create_app(
                 stage = "extracting"
                 store.update(invoice_id, stage, document=document)
                 invoice = selected.extract(document)
-                stage = "checking"
-                store.update(invoice_id, stage, invoice=invoice)
-                check = selected.check(invoice)
-                if len(check.lines) != len(invoice.lines) or {
-                    x.line_index for x in check.lines
-                } != set(range(len(invoice.lines))):
-                    raise ValueError(
-                        "Checker must return exactly one result for every invoice line"
-                    )
-                if check.price_sheet_version != selected.price_sheet_version:
-                    raise ValueError("Checker returned a different price-sheet version")
-                store.update(invoice_id, "completed", check=check)
+                if totals_only:
+                    store.update(invoice_id, "completed", invoice=invoice)
+                else:
+                    stage = "checking"
+                    store.update(invoice_id, stage, invoice=invoice)
+                    check = selected.check(invoice)
+                    if len(check.lines) != len(invoice.lines) or {
+                        x.line_index for x in check.lines
+                    } != set(range(len(invoice.lines))):
+                        raise ValueError(
+                            "Checker must return exactly one result for every invoice line"
+                        )
+                    if check.price_sheet_version != selected.price_sheet_version:
+                        raise ValueError("Checker returned a different price-sheet version")
+                    store.update(invoice_id, "completed", check=check)
             except Exception as exc:
                 # Persist failures without logging document text, provider response bodies or keys.
                 log.warning("Invoice %s failed (%s)", invoice_id, type(exc).__name__)
@@ -345,9 +370,12 @@ def create_app(
         request: Request,
         limit: int = Query(50, ge=1, le=100),
         offset: int = Query(0, ge=0),
+        project_id: str | None = None,
     ):
         session_id = _request_session_id(request)
-        return app.state.store.list(limit, offset, session_id=session_id)
+        if project_id:
+            require_project(app.state.store, project_id, session_id)
+        return app.state.store.list(limit, offset, session_id=session_id, project_id=project_id)
 
     @app.get("/invoices/{invoice_id}", response_model=SavedInvoice)
     def invoice(invoice_id: UUID, request: Request, session_id: str | None = None):
@@ -408,6 +436,8 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     rule as the screens' All match: checked in full, a total the service stands behind, and every
     line a match. Anything else that is finished can still be paid, but only with a reason.
     """
+    if saved.comparison_mode == "totals_only" and outcome is not None:
+        return 409, "This project tracks totals only; no price-check decision is available"
     if outcome is None:
         return (422, "Clearing an outcome takes no reason") if reason else None
     if saved.status not in ("completed", "failed"):

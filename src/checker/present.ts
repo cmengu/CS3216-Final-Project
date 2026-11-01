@@ -60,6 +60,7 @@ function worst(inv: SupplierInvoice): InvoiceLine["result"] | null {
 export function checkPill(inv: SupplierInvoice): Pill {
   if (inv.state === "checking") return { text: "Checking…", tone: "neutral" };
   if (inv.state === "failed") return { text: "Couldn't read", tone: "warn" };
+  if (inv.comparisonMode === "totals_only") return { text: "Extracted", tone: "neutral" };
   const w = worst(inv);
   if (w === "price_mismatch") return { text: `${inv.lines.filter((l) => l.result === "price_mismatch").length} out of ${inv.lines.length} differs`, tone: "warn" };
   if (w) return LINE_PILL[w];
@@ -83,6 +84,7 @@ export const lineOverBy = (l: InvoiceLine) => (overSheet(l) ? (l.overcharge ?? 0
 export function queueAttention(inv: SupplierInvoice): string | null {
   if (inv.state === "checking") return null;
   if (inv.state === "failed") return failureSentence(inv);
+  if (inv.comparisonMode === "totals_only") return null;
   const cur = inv.currency;
   const over = inv.lines.filter(overSheet);
   if (over.length) {

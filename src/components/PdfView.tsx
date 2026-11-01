@@ -357,7 +357,7 @@ export function PdfView({
                       onClick={() => onSelectLine?.(lineNum)}
                     >
                       <span className="ico">
-                        {flagged ? (
+                        {inv.comparisonMode === "totals_only" ? <Icon name="doc" /> : flagged ? (
                           <Icon name="warn" style={{ color: "var(--warn)" }} />
                         ) : (
                           <Icon name="tick" style={{ color: "var(--good)", strokeWidth: 2 }} />
@@ -369,7 +369,7 @@ export function PdfView({
                         </span>
                       </span>
                     </button>
-                    <PriceComparison line={line} currency={inv.currency} number={lineNum} />
+                    {inv.comparisonMode === "totals_only" ? <p className="ic-hint">Qty: {line.quantity ?? "—"} · Unit price: {line.unitPrice ?? "—"} · Total: {inv.currency} {line.lineTotal ?? "—"}</p> : <PriceComparison line={line} currency={inv.currency} number={lineNum} />}
                     </div>
                   );
                 })}
