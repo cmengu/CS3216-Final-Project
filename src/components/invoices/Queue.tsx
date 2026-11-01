@@ -111,7 +111,7 @@ export function Queue({
           </button> : null}
         </div>
       </div>
-      {project ? <p className="muted" style={{ margin: "0 16px 12px", fontSize: 12 }}>PDF, XML, ZIP or RAR</p> : null}
+      {project ? <p className="muted" style={{ margin: "0 16px 12px", fontSize: "calc(12px * var(--text-scale))" }}>PDF, XML, ZIP or RAR</p> : null}
       <Search label={project ? "Search invoices" : "Search projects"} value={q} onChange={onQ} full />
       {project && !totalsOnly ? <div className="ic-seg ic-seg--fill" role="group" aria-label="Invoice status">
         <button type="button" aria-pressed={segment === "decide"} onClick={() => setSegment("decide")}>
@@ -125,7 +125,7 @@ export function Queue({
       <div className="ic-queue-list">
         {notices.map((n) => (
           <Notice key={n.key} tone="warn" onDismiss={() => dismissNotice(n.key)}>
-            <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 13 }}>
+            <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "calc(13px * var(--text-scale))" }}>
               {n.text}
               {n.invoiceId ? (
                 <Link className="ic-link ic-link--sm" href={`/invoices?id=${n.invoiceId}`} onClick={() => dismissNotice(n.key)} style={{ minHeight: 28 }}>
@@ -149,7 +149,7 @@ export function Queue({
         ) : null}
         {loadError ? (
           <Notice tone="warn">
-            <span style={{ fontSize: 13 }}>{loadError}</span>
+            <span style={{ fontSize: "calc(13px * var(--text-scale))" }}>{loadError}</span>
             <button type="button" className="ic-link ic-link--sm" onClick={onRetryLoad}>
               Try again
             </button>

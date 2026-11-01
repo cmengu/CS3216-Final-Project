@@ -289,6 +289,7 @@ export function shortDate(inv: SupplierInvoice): string {
 export type AuditKind = "ready" | "raised" | "anyway" | "master";
 
 export interface AuditRow {
+  projectId?: string | null;
   key: string;
   kind: AuditKind;
   at: string;
@@ -304,7 +305,7 @@ const KIND: Record<Outcome, AuditKind> = { ready_to_pay: "ready", raise_with_sup
 /** Decided invoices plus master list uploads, newest first. */
 export function auditRows(
   list: SupplierInvoice[],
-  events: { kind: "uploaded" | "replaced"; file: string; at: string; items: number; suppliers: number }[],
+  events: { kind: "uploaded" | "replaced"; file: string; at: string; items: number; suppliers: number; projectId?: string }[],
 ): AuditRow[] {
   const rows: AuditRow[] = list
     .filter((inv) => inv.outcome && inv.decidedAt)
@@ -315,11 +316,12 @@ export function auditRows(
         const n = inv.lines.filter(overSheet).length;
         details = inv.overchargeTotal != null && inv.overchargeTotal > 0 ? `${money(inv.overchargeTotal, inv.currency)} over` : `${plural(n, "line", "lines")} over`;
       } else if (o === "ready_to_pay_anyway" && inv.outcomeReason) details = `“${inv.outcomeReason}”`;
-      return { key: inv.id, kind: KIND[o], at: inv.decidedAt!, title: inv.number ?? inv.fileName, sub: inv.supplier ?? "", pill: OUTCOME_PILL[o], details, invoiceId: inv.id };
+      return { projectId: inv.projectId, key: inv.id, kind: KIND[o], at: inv.decidedAt!, title: inv.number ?? inv.fileName, sub: inv.supplier ?? "", pill: OUTCOME_PILL[o], details, invoiceId: inv.id };
     });
   for (const e of events)
     rows.push({
-      key: `ml-${e.at}`,
+      projectId: e.projectId,
+      key: `ml-${e.projectId ?? ""}-${e.at}-${e.file}`,
       kind: "master",
       at: e.at,
       title: "Master list",

@@ -160,3 +160,14 @@ describe("export and audit", () => {
     ]);
   });
 });
+
+it("preserves project identity for invoice decisions and simultaneous master uploads", () => {
+  const at = "2026-11-01T08:00:00Z";
+  const event = { kind: "uploaded" as const, file: "prices.csv", at, items: 2, suppliers: 1 };
+  const rows = auditRows([inv({ projectId: "a", outcome: "ready_to_pay", decidedAt: at })], [
+    { ...event, projectId: "a" }, { ...event, projectId: "b" },
+  ]);
+  expect(rows.filter((r) => r.projectId === "a")).toHaveLength(2);
+  expect(rows.filter((r) => r.projectId === "b")).toHaveLength(1);
+  expect(new Set(rows.map((r) => r.key)).size).toBe(3);
+});
