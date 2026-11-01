@@ -202,6 +202,7 @@ def create_app(
                 "/auth/sign-in",
                 "/auth/sign-out",
                 "/auth/setup",
+                "/auth/mfa/verify",
             }
             if browser_mutation:
                 origin = request.headers.get("origin")
@@ -222,10 +223,15 @@ def create_app(
                         status_code=403,
                         headers={"Cache-Control": "no-store"},
                     )
-        if path == "/auth/sign-in" and request.method == "POST":
+        if path in {"/auth/sign-in", "/auth/mfa/verify"} and request.method == "POST":
             ip = request.client.host if request.client else "unknown"
             try:
-                request.app.state.limits.take("login-ip", ip, maximum=20, seconds=600)
+                request.app.state.limits.take(
+                    "mfa-ip" if path == "/auth/mfa/verify" else "login-ip",
+                    ip,
+                    maximum=30 if path == "/auth/mfa/verify" else 20,
+                    seconds=600,
+                )
             except HTTPException as exc:
                 return JSONResponse(
                     {"detail": exc.detail},

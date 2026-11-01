@@ -39,6 +39,34 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Mandatory authenticator 2FA, 1 November 2026
+
+Every approved account, including the first administrator, now verifies an authenticator app
+before receiving any authenticated session. Password/setup responses carry only a five-minute,
+single-use challenge. Enrollment offers a locally generated QR and manual key; a correct code
+confirms enrollment and returns ten recovery codes once. Users acknowledge saving them before
+the UI continues. Secrets are encrypted at rest; recovery codes and challenge bearer tokens are
+stored only as hashes. TOTP accepts at most one step of clock skew and rejects consumed counters.
+Failed attempts commit, with limits per challenge, account and IP. Stale or password-only sessions
+are rejected, as are challenges invalidated by account changes.
+
+Authenticator replacement requires the current password and a fresh factor/recovery code,
+then confirmation of the new authenticator. It invalidates other sessions and all old recovery
+codes. Password resets preserve MFA. There is no web disable/reset bypass; a privileged,
+audited operator CLI is the last-resort reset. Keep the MFA encryption key stable and backed up;
+the [backend instructions](../backend/README.md#approved-accounts-and-private-workspaces) explain
+the optional separate `AUTH_MFA_KEY` and implications of key rotation.
+
+Validation: 332 backend tests passed, 14 optional Postgres/provider cases skipped; 153 frontend
+tests, production build, TypeScript, frontend lint and backend lint/format passed. Dedicated MFA
+tests exercise the real mandatory policy; existing password/session regressions mock MFA only
+to keep their original assertions focused. Chrome verified administrator/member enrollment,
+QR/manual setup, denied password-only access, wrong-code rejection, recovery-code download and
+acknowledgement, recovery sign-in, authenticator replacement, revoked old sessions/codes, mobile
+layout and a private ZIP batch completing after the entire browser closed. These browser checks
+used synthetic identities and fixture invoices with no page errors. Live Supabase and a physical authenticator device
+have not been tested. TOTP can still be phished and does not prevent theft of an existing session.
+
 ## Original verification, 31 October 2026
 
 - Full backend suite: **304 passed, 12 skipped**. Skips require Postgres or external models. The SQLite/Postgres account, quota and queue contract tests are parametrized; only SQLite was exercised locally.
@@ -47,4 +75,4 @@ After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tes
 - The entire browser process was closed while two fixture invoices were still being read. Both completed on the server without a browser, then appeared after a fresh browser launch/sign-in. No browser page errors occurred.
 - Model/Outlook provider behavior uses synthetic fixtures or mocks. No real mailbox, real invoice or administrator password was used in QA. The local app has a private one-time setup link ready; the owner chooses the actual administrator credentials.
 
-R01 (public demo signing/login configuration), R05 (changing owner IDs) and R28 (offline frontend login) are addressed in this implementation. R07 is mitigated by persistent quotas/rate limits; strict monetary budgets and other operational controls remain. Individual accounts improve R06, but MFA is still absent. The remaining audit findings, including dependency advisories, parser isolation, backup/retention and immutable payment audit history, are not resolved by this change.
+R01 (public demo signing/login configuration), R05 (changing owner IDs), R06 (missing MFA) and R28 (offline frontend login) are addressed in this implementation. R07 is mitigated by persistent quotas/rate limits; strict monetary budgets and other operational controls remain. The remaining audit findings, including dependency advisories, parser isolation, backup/retention and immutable payment audit history, are not resolved by this change.

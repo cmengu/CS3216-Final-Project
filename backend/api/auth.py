@@ -38,6 +38,8 @@ def _auth_secret() -> bytes:
 
 
 def validate_auth_configuration() -> None:
+    if os.environ.get("AUTH_MFA_KEY") and len(os.environ["AUTH_MFA_KEY"].strip()) < 32:
+        raise ValueError("Set AUTH_MFA_KEY to a persistent secret with at least 32 characters.")
     if len((os.environ.get("AUTH_SECRET") or "").strip()) < 32:
         raise ValueError(
             "Set AUTH_SECRET to an independent random secret with at least 32 characters."

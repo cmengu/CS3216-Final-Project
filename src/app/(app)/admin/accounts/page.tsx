@@ -49,7 +49,7 @@ export default function ApprovedAccounts() {
         try {
           const created = await accountRequest<ApprovedAccount>("/admin/accounts", { method: "POST", body: JSON.stringify({ username, password, role }) });
           setAccounts(rows => [...rows, created]); setUsername(""); setPassword(""); setRole("member");
-          setNotice("Account approved. Share the credentials with this person through your usual private channel.");
+          setNotice("Account approved. Share the credentials through your usual private channel. This person will connect their own authenticator on first sign-in.");
         } catch (error) { setError(error instanceof Error ? error.message : "Could not add this account."); }
         finally { setBusy(false); }
       }}>

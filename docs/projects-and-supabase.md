@@ -27,7 +27,7 @@ PostgreSQL uses composite foreign keys `(project_id, session_id)` to `projects(i
 
 Existing invoices and master versions are assigned to one **Existing invoices** project per existing session, using `legacy:<session_id>`. Existing IDs, source files, decisions and master versions are retained. Running the migration again does not add duplicate projects. Project comparison policy is fixed at creation in this release; no project move/delete or mode-change endpoint is introduced.
 
-Ownership intentionally retains this application's existing **signed-session** model. It is not Supabase Auth user/team ownership. A new sign-in currently creates a new session; this change does not make old-session projects visible to a new session.
+Ownership uses this application's approved accounts and stable private workspace IDs, with a separate signed, MFA-verified session for each login. It is not Supabase Auth user/team ownership. Accounts retain their projects across logins; legacy session-owned projects require explicit operator recovery into the correct approved workspace.
 
 ## How the sums work
 

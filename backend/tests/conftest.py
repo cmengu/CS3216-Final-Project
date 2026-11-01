@@ -33,6 +33,17 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(autouse=True)
 def isolated_auth_secret(monkeypatch):
     monkeypatch.setenv("AUTH_SECRET", "isolated-automated-test-signing-secret-2026")
+    monkeypatch.delenv("AUTH_MFA_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def password_only_regressions(request, monkeypatch):
+    # Existing suites cover password/session/workspace behavior independently of MFA.
+    # MFA tests retain the real mandatory policy and exercise the complete challenge flow.
+    if request.node.get_closest_marker("mfa") is None:
+        from api.mfa import TwoFactor
+
+        monkeypatch.setattr(TwoFactor, "required", lambda self, user: False)
 
 
 @pytest.fixture(params=["sqlite", "postgres"])

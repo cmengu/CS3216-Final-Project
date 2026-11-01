@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { setupAdministrator } from "@/auth";
+import { completeSignIn, setupAdministrator, type TwoFactorChallenge } from "@/auth";
+import { TwoFactor } from "@/components/TwoFactor";
 
 export default function AdministratorSetup() {
   const router = useRouter();
@@ -13,17 +14,18 @@ export default function AdministratorSetup() {
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
   useEffect(() => {
     const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
     if (token && tokenInput.current) { tokenInput.current.value = token; window.history.replaceState(null, "", "/setup"); }
   }, []);
   return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card"><h1>Set up your administrator</h1>
-    <p className="ic-hint">Use the one-time setup link prepared by the app operator. After setup, only an administrator can approve accounts.</p>
-    <form style={{ display: "grid", gap: 16, marginTop: 20 }} onSubmit={async event => {
+    <p className="ic-hint">Choose your administrator credentials, then connect an authenticator app. Every approved account uses two-factor authentication.</p>
+    {challenge ? <TwoFactor challenge={challenge} onComplete={user => { completeSignIn(user); router.replace("/admin/accounts"); }} onCancel={() => router.replace("/sign-in")} /> : <form style={{ display: "grid", gap: 16, marginTop: 20 }} onSubmit={async event => {
       event.preventDefault(); setError("");
       if (password !== confirmation) { setError("The passwords do not match."); return; }
       setBusy(true);
-      try { await setupAdministrator(tokenInput.current?.value ?? "", username, password); router.replace("/admin/accounts"); }
+      try { const next = await setupAdministrator(tokenInput.current?.value ?? "", username, password); setPassword(""); setConfirmation(""); setChallenge(next); }
       catch (error) { setError(error instanceof Error ? error.message : "Could not set up the administrator."); }
       finally { setBusy(false); }
     }}>
@@ -32,6 +34,6 @@ export default function AdministratorSetup() {
       <label className="ic-field">Password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} /></label>
       <label className="ic-field">Confirm password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
       {error ? <p role="alert">{error}</p> : null}<button className="ic-btn ic-btn--primary" disabled={busy}>{busy ? "Creating administrator…" : "Create administrator"}</button>
-    </form>
+    </form>}
   </main></div>;
 }

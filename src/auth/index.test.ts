@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { currentUser, refreshAuthSession, signIn, signOut } from "./index";
+import { completeSignIn, currentUser, refreshAuthSession, setupAdministrator, signIn, signOut, verifySecondFactor } from "./index";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -106,5 +106,40 @@ it("explains sign-in throttling without reporting successful authentication", as
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 429, headers: { "Retry-After": "60" } })));
   const result = await signIn("approved-member", "a-real-test-password");
   expect(result.ok).toBe(false);
-  if (!result.ok) { expect(result.error).toBe("limited"); expect(result.message).toContain("60"); }
+  if (!result.ok && result.error === "limited") { expect(result.message).toContain("60"); }
+});
+
+it("keeps password-verified MFA challenges signed out and never stores their secret", async () => {
+  const localStorage = { removeItem: vi.fn(), setItem: vi.fn() };
+  vi.stubGlobal("window", { localStorage });
+  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", enrollment: { secret: "private-setup-secret", qr_code: "data:image/png;base64,fake" }, expires_in: 300 };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(challenge)));
+  const result = await signIn("approved-member", "a-real-test-password");
+  expect(result).toEqual({ ok: false, error: "two_factor", challenge });
+  expect(currentUser()).toBeNull();
+  expect(localStorage.setItem).not.toHaveBeenCalled();
+});
+
+it("requires recovery-code acknowledgement before activating frontend auth state", async () => {
+  vi.stubGlobal("window", {});
+  const verified = { user: { email: "approved-member", role: "member" as const }, recovery_codes: ["test-recovery-code"] };
+  const fetchMock = vi.fn().mockResolvedValue(Response.json(verified));
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await verifySecondFactor("private-challenge-id-longer-than-32", "123456");
+  expect(result).toEqual(verified);
+  expect(currentUser()).toBeNull();
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("/auth/mfa/verify");
+  expect(init.credentials).toBe("include");
+  expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
+  completeSignIn(result.user);
+  expect(currentUser()).toEqual(verified.user);
+});
+
+it("administrator setup returns a challenge and clears any existing frontend identity", async () => {
+  vi.stubGlobal("window", {});
+  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", enrollment: { secret: "private-secret", qr_code: "data:image/png;base64,fake" }, expires_in: 300 };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(challenge)));
+  expect(await setupAdministrator("private-operator-setup-token", "admin", "a-real-test-password")).toEqual(challenge);
+  expect(currentUser()).toBeNull();
 });

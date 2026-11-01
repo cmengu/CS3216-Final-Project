@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { signIn, useUser, type SignInResult } from "@/auth";
+import { completeSignIn, signIn, useUser, type SignInResult, type TwoFactorChallenge } from "@/auth";
 import { Icon } from "@/components/icons";
 import { useMasterList } from "@/masterList";
+import { TwoFactor } from "@/components/TwoFactor";
 
 export default function SignIn() {
   const user = useUser();
@@ -17,15 +18,17 @@ export default function SignIn() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
 
   const nextRoute = ml === null ? "/master-list" : "/invoices";
 
   useEffect(() => {
-    if (user && ml !== undefined) router.replace(nextRoute);
-  }, [user, ml, nextRoute, router]);
+    if (user && ml !== undefined && !challenge) router.replace(nextRoute);
+  }, [user, ml, nextRoute, router, challenge]);
 
   const finish = (r: SignInResult) => {
     if (r.ok) router.replace(nextRoute);
+    else if (r.error === "two_factor") { setPassword(""); setError(""); setChallenge(r.challenge); }
     else {
       setWrong(r.error === "invalid");
       setError(r.message ?? (r.error === "unreachable" ? "The sign-in service could not be reached. Try again." : "Username or password is incorrect."));
@@ -42,8 +45,8 @@ export default function SignIn() {
       </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
-        <p className="ic-hint">Use an account approved by your administrator.</p>
-        <form
+        <p className="ic-hint">Use your approved account and authenticator app.</p>
+        {challenge ? <TwoFactor key={challenge.challenge_id} challenge={challenge} onComplete={verified => { completeSignIn(verified); router.replace(nextRoute); }} onCancel={() => { setChallenge(null); setError(""); }} /> : <form
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           onSubmit={async (e) => {
             e.preventDefault();
@@ -107,7 +110,7 @@ export default function SignIn() {
           <button className="ic-btn ic-btn--primary ic-btn--block" type="submit" disabled={busy}>
             Sign in
           </button>
-        </form>
+        </form>}
       </main>
     </div>
   );

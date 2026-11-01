@@ -14,7 +14,16 @@ export interface User {
   role?: "admin" | "member";
 }
 
-export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" | "unreachable" | "limited"; message?: string };
+export interface TwoFactorChallenge {
+  mfa_required: true;
+  challenge_id: string;
+  enrollment: { secret: string; qr_code: string } | null;
+  expires_in: number;
+}
+
+export interface TwoFactorResult { user: User; recovery_codes?: string[] }
+
+export type SignInResult = { ok: true; user: User } | { ok: false; error: "two_factor"; challenge: TwoFactorChallenge } | { ok: false; error: "invalid" | "unreachable" | "limited"; message?: string };
 
 const listeners = new Set<() => void>();
 
@@ -113,7 +122,11 @@ export async function signIn(username: string, password: string): Promise<SignIn
       signal: AbortSignal.timeout(5_000),
     });
     if (resp.ok) {
-      const data = (await resp.json()) as { ok: boolean; user?: User };
+      const data = (await resp.json()) as { ok: boolean; user?: User } & Partial<TwoFactorChallenge>;
+      if (data.mfa_required && data.challenge_id) {
+        setSessionState(null);
+        return { ok: false, error: "two_factor", challenge: data as TwoFactorChallenge };
+      }
       if (data.ok && data.user?.email) {
         const user: User = data.user;
         setSessionState(user);
@@ -169,11 +182,20 @@ export function useUser(): User | null | undefined {
 }
 
 
-export async function setupAdministrator(token: string, username: string, password: string): Promise<void> {
+export async function setupAdministrator(token: string, username: string, password: string): Promise<TwoFactorChallenge> {
   const { accountRequest } = await import("./accounts");
-  const result = await accountRequest<{ user: User }>("/auth/setup", { method: "POST", body: JSON.stringify({ token, username, password }) });
-  setSessionState(result.user);
+  const result = await accountRequest<TwoFactorChallenge>("/auth/setup", { method: "POST", body: JSON.stringify({ token, username, password }) });
+  if (!result.mfa_required || !result.challenge_id) throw new Error("Two-factor setup could not be started. Sign in to continue setup.");
+  setSessionState(null);
+  return result;
 }
+
+export async function verifySecondFactor(challengeId: string, code: string): Promise<TwoFactorResult> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest<TwoFactorResult>("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export function completeSignIn(user: User): void { setSessionState(user); }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   const { accountRequest } = await import("./accounts");

@@ -37,19 +37,28 @@ def prepare_setup(env_file, store, accounts):
     if len(secret) < 32:
         secret = secrets.token_urlsafe(48)
     setup_token = secrets.token_urlsafe(32)
+    mfa_key = os.environ.get("AUTH_MFA_KEY", "").strip() or secrets.token_urlsafe(48)
     original = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
     kept = [
         line
         for line in original
         if line.partition("=")[0].strip()
         not in (
-            {"AUTH_SECRET", "AUTH_SETUP_TOKEN", "AUTH_USERNAME", "AUTH_PASSWORD"}
+            {"AUTH_SECRET", "AUTH_SETUP_TOKEN", "AUTH_MFA_KEY", "AUTH_USERNAME", "AUTH_PASSWORD"}
             if obsolete_demo
-            else {"AUTH_SECRET", "AUTH_SETUP_TOKEN"}
+            else {"AUTH_SECRET", "AUTH_SETUP_TOKEN", "AUTH_MFA_KEY"}
         )
     ]
     env_file.write_text(
-        "\n".join([*kept, f"AUTH_SECRET={secret}", f"AUTH_SETUP_TOKEN={setup_token}", ""]),
+        "\n".join(
+            [
+                *kept,
+                f"AUTH_SECRET={secret}",
+                f"AUTH_SETUP_TOKEN={setup_token}",
+                f"AUTH_MFA_KEY={mfa_key}",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
     os.chmod(env_file, 0o600)
@@ -69,6 +78,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("prepare-setup")
+    reset = sub.add_parser(
+        "reset-2fa", help="Operator-only recovery when an account lost all second factors"
+    )
+    reset.add_argument("--username", required=True)
     recover = sub.add_parser("recover-workspace")
     recover.add_argument(
         "--source", required=True, help="Exact old session/workspace ID; never inferred"
@@ -84,6 +97,19 @@ def main():
     try:
         if args.command == "prepare-setup":
             prepare_setup(env_file, store, accounts)
+        elif args.command == "reset-2fa":
+            with accounts.connect() as db:
+                row = accounts.execute(
+                    db,
+                    f"SELECT id FROM {accounts.table('approved_accounts')} WHERE username=?",
+                    (args.username.strip().lower(),),
+                ).fetchone()
+            if row is None:
+                raise ValueError("The approved account does not exist.")
+            accounts.mfa.reset_by_operator(row["id"])
+            print(
+                "Two-factor enrollment reset. All sessions were invalidated. The account must sign in with its password and enroll again."
+            )
         else:
             with accounts.connect() as db:
                 row = accounts.execute(

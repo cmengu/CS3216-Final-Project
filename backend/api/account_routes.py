@@ -46,6 +46,16 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=15, max_length=128)
 
 
+class VerifyFactor(BaseModel):
+    challenge_id: str = Field(min_length=32, max_length=128)
+    code: str = Field(min_length=1, max_length=128)
+
+
+class ReplaceFactor(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=1, max_length=128)
+
+
 def require_user(request, admin=False):
     claims = extract_request_claims(request)
     if claims is None:
@@ -63,10 +73,19 @@ def user_response(claims):
     }
 
 
-def login_response(request, user):
-    sid, expires = request.app.state.accounts.create_session(user, TOKEN_TTL_SECONDS)
+def login_response(request, user, *, mfa_verified=False, recovery_codes=None):
+    sid, expires = request.app.state.accounts.create_session(
+        user, TOKEN_TTL_SECONDS, mfa_verified=mfa_verified
+    )
     token = create_session_token(user["username"], sid, expires_at=expires)
-    response = JSONResponse({"ok": True, "session_id": token, "user": user_response(user)})
+    response = JSONResponse(
+        {
+            "ok": True,
+            "session_id": token,
+            "user": user_response(user),
+            **({"recovery_codes": recovery_codes} if recovery_codes else {}),
+        }
+    )
     response.set_cookie(
         COOKIE_NAME,
         token,
@@ -76,6 +95,12 @@ def login_response(request, user):
         **session_cookie_options(request),
     )
     return response
+
+
+def begin_sign_in(request, user):
+    if request.app.state.accounts.mfa.needs_verification(user):
+        return clear_cookie(request, JSONResponse(request.app.state.accounts.mfa.begin(user)))
+    return login_response(request, user)
 
 
 def clear_cookie(request, response):
@@ -98,7 +123,7 @@ def setup_admin(body: Setup, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    return login_response(request, user)
+    return begin_sign_in(request, user)
 
 
 @router.post("/auth/sign-in")
@@ -109,7 +134,39 @@ def sign_in(body: SignIn, request: Request):
     user = request.app.state.accounts.authenticate(username, body.password)
     if user is None:
         raise HTTPException(401, "Invalid username or password.")
-    return login_response(request, user)
+    return begin_sign_in(request, user)
+
+
+@router.post("/auth/mfa/verify")
+def verify_second_factor(body: VerifyFactor, request: Request):
+    user_id = request.app.state.accounts.mfa.challenge_user(body.challenge_id)
+    if user_id:
+        request.app.state.limits.take("mfa-account", user_id, maximum=15, seconds=600)
+    user, codes = request.app.state.accounts.mfa.verify(body.challenge_id, body.code.strip())
+    return login_response(request, user, mfa_verified=True, recovery_codes=codes)
+
+
+@router.get("/auth/mfa/status")
+def factor_status(request: Request):
+    import json
+
+    claims = require_user(request)
+    accounts = request.app.state.accounts
+    with accounts.connect() as db:
+        factor = accounts.mfa.factor(db, claims["user_id"])
+        return {
+            "enabled": factor is not None,
+            "recovery_remaining": len(json.loads(factor["recovery"])) if factor else 0,
+        }
+
+
+@router.post("/auth/mfa/replace")
+def replace_second_factor(body: ReplaceFactor, request: Request):
+    claims = require_user(request)
+    accounts = request.app.state.accounts
+    request.app.state.limits.take("replace-mfa", claims["user_id"], maximum=5, seconds=600)
+    user = accounts.get_user(claims["user_id"])
+    return accounts.mfa.replace(user, body.password, body.code.strip())
 
 
 @router.get("/auth/me")

@@ -20,6 +20,9 @@ dependencies = [
     "psycopg[binary,pool]>=3.2,<4",
     "defusedxml>=0.7,<1",
     "argon2-cffi>=25.1,<26",
+    "pyotp>=2.9,<3",
+    "cryptography>=46,<48",
+    "segno>=1.6,<2",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +59,7 @@ packages = ["invoice_processing", "read", "api", "dummy", "check", "extract", "e
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
+    "mfa: exercises mandatory two-factor policy rather than isolated password-only regressions",
     "docling: real conversion; downloads model weights on first run",
     "model: real OpenAI field extraction; sends only data/dummy and needs OPENAI_API_KEY",
 ]

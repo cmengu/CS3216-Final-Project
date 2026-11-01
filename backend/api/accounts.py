@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from .access_store import AccessStore
+from .mfa import TwoFactor
 from .passwords import hash_password, verify_password
 
 _DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
@@ -57,6 +58,7 @@ class Accounts(AccessStore):
             )
         # Hash once, so unknown and disabled accounts perform the same password work as real ones.
         self.dummy_password = _DUMMY_PASSWORD_HASH
+        self.mfa = TwoFactor(self)
 
     def _lock(self, db):
         self.execute(
@@ -71,6 +73,9 @@ class Accounts(AccessStore):
         if session_id is not None:
             query += f" AND EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id=? AND s.user_id=a.id AND s.version=a.version AND s.expires_at>?) AND NOT EXISTS (SELECT 1 FROM {self.table('revoked_sessions')} r WHERE r.session_id=? AND r.expires_at>?)"
             params += [session_id, int(time.time()), session_id, int(time.time())]
+            if self.mfa.required(None):
+                query += f" AND EXISTS (SELECT 1 FROM {self.table('mfa_verified_sessions')} m WHERE m.id=?) AND EXISTS (SELECT 1 FROM {self.table('account_mfa')} f WHERE f.user_id=a.id)"
+                params.append(session_id)
         if self.execute(db, query, tuple(params)).fetchone() is None:
             raise HTTPException(403, "Administrator access changed. Sign in again.")
 
@@ -180,13 +185,19 @@ class Accounts(AccessStore):
         valid = verify_password(password, row["password_hash"] if row else self.dummy_password)
         return dict(row) if valid and row and row["active"] else None
 
-    def create_session(self, user, ttl):
+    def create_session(self, user, ttl, *, mfa_verified=False):
+        if self.mfa.needs_verification(user) and not mfa_verified:
+            raise HTTPException(401, "Complete two-factor verification before signing in.")
         sid, expires = str(uuid4()), int(time.time()) + ttl
         with self.connect() as db:
             self.execute(
                 db,
                 f"DELETE FROM {self.table('account_sessions')} WHERE expires_at<=?",
                 (int(time.time()),),
+            )
+            self.execute(
+                db,
+                f"DELETE FROM {self.table('mfa_verified_sessions')} WHERE NOT EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id={self.table('mfa_verified_sessions')}.id)",
             )
             # The account may have been disabled/reset while its password was being verified.
             fresh = self.execute(
@@ -201,6 +212,10 @@ class Accounts(AccessStore):
                 f"INSERT INTO {self.table('account_sessions')} (id,user_id,version,expires_at) VALUES (?,?,?,?)",
                 (sid, user["id"], user["version"], expires),
             )
+            if mfa_verified:
+                self.execute(
+                    db, f"INSERT INTO {self.table('mfa_verified_sessions')} (id) VALUES (?)", (sid,)
+                )
         return sid, expires
 
     def session_claims(self, sid, username, expires):
@@ -213,6 +228,13 @@ class Accounts(AccessStore):
                 AND s.expires_at>=? AND s.expires_at>?""",
                 (sid, username, expires, int(time.time())),
             ).fetchone()
+        if row and self.mfa.required(row):
+            with self.connect() as db:
+                proof = self.execute(
+                    db, f"SELECT 1 FROM {self.table('mfa_verified_sessions')} WHERE id=?", (sid,)
+                ).fetchone()
+                if not proof or not self.mfa.factor(db, row["id"]):
+                    return None
         return (
             {"user_id": row["id"], "workspace_id": row["workspace_id"], "role": row["role"]}
             if row

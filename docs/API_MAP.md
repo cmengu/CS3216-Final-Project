@@ -40,8 +40,11 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/auth/setup-status` | Whether first-admin setup is pending |
-| POST | `/auth/setup` | One-time code, username and password; create the first administrator |
-| POST | `/auth/sign-in` | Approved username/password; return user ID/role and set session cookie |
+| POST | `/auth/setup` | One-time code, username and password; create the first administrator and return an MFA enrollment challenge, without a login session |
+| POST | `/auth/sign-in` | Approved username/password; return an expiring MFA challenge, without a login session |
+| POST | `/auth/mfa/verify` | Challenge ID plus TOTP/recovery code; verify both factors and issue the session cookie. Enrollment/replacement also returns recovery codes once |
+| GET | `/auth/mfa/status` | Verified account's enrollment state and remaining recovery-code count |
+| POST | `/auth/mfa/replace` | Current password plus fresh TOTP/recovery code; begin authenticated replacement enrollment |
 | GET | `/auth/me` | Verify the registered, unexpired, unrevoked account session |
 | POST | `/auth/sign-out` | Revoke the current login and clear its cookie |
 | PUT | `/auth/password` | Verify current password, replace it, and invalidate all sessions |
@@ -50,7 +53,11 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 
 Every account has its own private workspace; an administrator’s invoice permissions remain
 limited to that administrator’s own workspace. Account management responses never include
-passwords/hashes. There is no public registration. Login and expensive operations have persistent
+passwords/hashes. Every approved account must enroll TOTP; password-only/pre-migration sessions
+cannot access protected resources. Challenges expire after five minutes and allow five failed
+attempts; per-account/IP rate limits also persist. Authenticator replacement revokes old sessions
+and codes. Password resets preserve 2FA. Recovery without any saved factor requires the audited
+operator CLI, not an admin-account mutation. There is no public registration. Login and expensive operations have persistent
 rate limits; 429 includes `Retry-After`. All browser mutations require
 `X-Requested-With: InvoiceChecker` and a trusted Origin when present. Sign-in, setup and sign-out
 require the header even before a session cookie exists. Unsafe requests with a cookie and an
