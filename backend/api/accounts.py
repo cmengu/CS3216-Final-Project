@@ -30,6 +30,7 @@ def public_user(row):
     return {
         **{key: row[key] for key in ("id", "username", "role", "created_at")},
         "active": bool(row["active"]),
+        **({"email": row["email"]} if "email" in row.keys() and row["email"] else {}),
     }
 
 
@@ -74,7 +75,7 @@ class Accounts(AccessStore):
             query += f" AND EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id=? AND s.user_id=a.id AND s.version=a.version AND s.expires_at>?) AND NOT EXISTS (SELECT 1 FROM {self.table('revoked_sessions')} r WHERE r.session_id=? AND r.expires_at>?)"
             params += [session_id, int(time.time()), session_id, int(time.time())]
             if self.mfa.required(None):
-                query += f" AND EXISTS (SELECT 1 FROM {self.table('mfa_verified_sessions')} m WHERE m.id=?) AND EXISTS (SELECT 1 FROM {self.table('account_mfa')} f WHERE f.user_id=a.id)"
+                query += f" AND EXISTS (SELECT 1 FROM {self.table('email_verified_sessions')} m WHERE m.id=?) AND EXISTS (SELECT 1 FROM {self.table('account_email')} f WHERE f.user_id=a.id AND f.verified=1)"
                 params.append(session_id)
         if self.execute(db, query, tuple(params)).fetchone() is None:
             raise HTTPException(403, "Administrator access changed. Sign in again.")
@@ -133,7 +134,9 @@ class Accounts(AccessStore):
                 if not self.execute(
                     db, f"SELECT 1 FROM {self.table('approved_accounts')} LIMIT 1"
                 ).fetchone():
-                    self._insert(db, username, password_hash, "admin", None, None)
+                    user_id = self._insert(db, username, password_hash, "admin", None, None)
+                    if os.environ.get("AUTH_ADMIN_EMAIL"):
+                        self.mfa.assign_email(db, user_id, self.mfa.admin_email())
 
     def setup(self, token, username, password):
         configured = os.environ.get("AUTH_SETUP_TOKEN", "")
@@ -145,6 +148,7 @@ class Accounts(AccessStore):
                 403, "The setup link is invalid. Ask the operator for a new setup link."
             )
         username = clean_username(username)
+        email = self.mfa.admin_email() if self.mfa.required(None) else None
         password_hash = hash_password(password)
         with self.connect() as db:
             self._lock(db)
@@ -155,9 +159,11 @@ class Accounts(AccessStore):
                     409, "Administrator setup is already complete. Sign in instead."
                 )
             user_id = self._insert(db, username, password_hash, "admin", "company", None)
+            if email:
+                self.mfa.assign_email(db, user_id, email)
         return self.get_user(user_id)
 
-    def create_user(self, username, password, role, actor=None, actor_session=None):
+    def create_user(self, username, password, role, actor=None, actor_session=None, email=None):
         username = clean_username(username)
         if role not in {"admin", "member"}:
             raise ValueError("Choose Admin or Member.")
@@ -166,12 +172,16 @@ class Accounts(AccessStore):
             self._lock(db)
             self._check_admin(db, actor, actor_session)
             user_id = self._insert(db, username, password_hash, role, None, actor)
+            if email:
+                self.mfa.assign_email(db, user_id, email)
         return self.get_user(user_id)
 
     def get_user(self, user_id):
         with self.connect() as db:
             row = self.execute(
-                db, f"SELECT * FROM {self.table('approved_accounts')} WHERE id=?", (user_id,)
+                db,
+                f"SELECT a.*,e.email FROM {self.table('approved_accounts')} a LEFT JOIN {self.table('account_email')} e ON e.user_id=a.id WHERE a.id=?",
+                (user_id,),
             ).fetchone()
         return dict(row) if row else None
 
@@ -197,7 +207,7 @@ class Accounts(AccessStore):
             )
             self.execute(
                 db,
-                f"DELETE FROM {self.table('mfa_verified_sessions')} WHERE NOT EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id={self.table('mfa_verified_sessions')}.id)",
+                f"DELETE FROM {self.table('email_verified_sessions')} WHERE NOT EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id={self.table('email_verified_sessions')}.id)",
             )
             # The account may have been disabled/reset while its password was being verified.
             fresh = self.execute(
@@ -214,7 +224,9 @@ class Accounts(AccessStore):
             )
             if mfa_verified:
                 self.execute(
-                    db, f"INSERT INTO {self.table('mfa_verified_sessions')} (id) VALUES (?)", (sid,)
+                    db,
+                    f"INSERT INTO {self.table('email_verified_sessions')} (id) VALUES (?)",
+                    (sid,),
                 )
         return sid, expires
 
@@ -231,9 +243,10 @@ class Accounts(AccessStore):
         if row and self.mfa.required(row):
             with self.connect() as db:
                 proof = self.execute(
-                    db, f"SELECT 1 FROM {self.table('mfa_verified_sessions')} WHERE id=?", (sid,)
+                    db, f"SELECT 1 FROM {self.table('email_verified_sessions')} WHERE id=?", (sid,)
                 ).fetchone()
-                if not proof or not self.mfa.factor(db, row["id"]):
+                contact = self.mfa.factor(db, row["id"])
+                if not proof or not contact or not contact["verified"]:
                     return None
         return (
             {"user_id": row["id"], "workspace_id": row["workspace_id"], "role": row["role"]}
@@ -246,7 +259,8 @@ class Accounts(AccessStore):
             return [
                 public_user(row)
                 for row in self.execute(
-                    db, f"SELECT * FROM {self.table('approved_accounts')} ORDER BY created_at,id"
+                    db,
+                    f"SELECT a.*,e.email FROM {self.table('approved_accounts')} a LEFT JOIN {self.table('account_email')} e ON e.user_id=a.id ORDER BY a.created_at,a.id",
                 ).fetchall()
             ]
 

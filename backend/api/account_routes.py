@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from . import security_mail
 from .accounts import public_user
 from .auth import (
     COOKIE_NAME,
@@ -33,6 +34,7 @@ class CreateAccount(BaseModel):
     username: str = Field(min_length=2, max_length=80)
     password: str = Field(min_length=15, max_length=128)
     role: Literal["admin", "member"] = "member"
+    email: str | None = Field(default=None, max_length=254)
 
 
 class UpdateAccount(BaseModel):
@@ -51,9 +53,8 @@ class VerifyFactor(BaseModel):
     code: str = Field(min_length=1, max_length=128)
 
 
-class ReplaceFactor(BaseModel):
-    password: str = Field(min_length=1, max_length=128)
-    code: str = Field(min_length=1, max_length=128)
+class ResendFactor(BaseModel):
+    challenge_id: str = Field(min_length=32, max_length=128)
 
 
 def require_user(request, admin=False):
@@ -110,13 +111,18 @@ def clear_cookie(request, response):
 
 @router.get("/auth/setup-status")
 def setup_status(request: Request):
-    return {"setup_required": not request.app.state.accounts.has_accounts()}
+    return {
+        "setup_required": not request.app.state.accounts.has_accounts(),
+        "email_delivery_configured": security_mail.configured(),
+    }
 
 
 @router.post("/auth/setup")
 def setup_admin(body: Setup, request: Request):
     ip = request.client.host if request.client else "unknown"
     request.app.state.limits.take("admin-setup", ip, maximum=5, seconds=3600)
+    if request.app.state.accounts.mfa.required(None):
+        security_mail.ensure_ready(request.app.state.accounts.mfa.admin_email())
     try:
         user = request.app.state.accounts.setup(
             body.token, body.username or body.email, body.password
@@ -148,25 +154,19 @@ def verify_second_factor(body: VerifyFactor, request: Request):
 
 @router.get("/auth/mfa/status")
 def factor_status(request: Request):
-    import json
-
     claims = require_user(request)
     accounts = request.app.state.accounts
     with accounts.connect() as db:
         factor = accounts.mfa.factor(db, claims["user_id"])
         return {
-            "enabled": factor is not None,
-            "recovery_remaining": len(json.loads(factor["recovery"])) if factor else 0,
+            "enabled": factor is not None and bool(factor["verified"]),
+            "email": factor["email"] if factor else None,
         }
 
 
-@router.post("/auth/mfa/replace")
-def replace_second_factor(body: ReplaceFactor, request: Request):
-    claims = require_user(request)
-    accounts = request.app.state.accounts
-    request.app.state.limits.take("replace-mfa", claims["user_id"], maximum=5, seconds=600)
-    user = accounts.get_user(claims["user_id"])
-    return accounts.mfa.replace(user, body.password, body.code.strip())
+@router.post("/auth/mfa/resend")
+def resend_second_factor(body: ResendFactor, request: Request):
+    return request.app.state.accounts.mfa.resend(body.challenge_id)
 
 
 @router.get("/auth/me")
@@ -210,6 +210,10 @@ def list_accounts(request: Request):
 def create_account(body: CreateAccount, request: Request):
     claims = require_user(request, admin=True)
     request.app.state.limits.take("manage-accounts", claims["user_id"], maximum=30, seconds=3600)
+    if request.app.state.accounts.mfa.required(None) and not body.email:
+        raise HTTPException(
+            422, "Register this person's email address before approving the account."
+        )
     try:
         return public_user(
             request.app.state.accounts.create_user(
@@ -218,6 +222,7 @@ def create_account(body: CreateAccount, request: Request):
                 body.role,
                 actor=claims["user_id"],
                 actor_session=claims["session_id"],
+                email=body.email,
             )
         )
     except ValueError as exc:

@@ -20,7 +20,7 @@ export default function AdministratorSetup() {
     if (token && tokenInput.current) { tokenInput.current.value = token; window.history.replaceState(null, "", "/setup"); }
   }, []);
   return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card"><h1>Set up your administrator</h1>
-    <p className="ic-hint">Choose your administrator credentials, then connect an authenticator app. Every approved account uses two-factor authentication.</p>
+    <p className="ic-hint">Choose your administrator credentials, then confirm the security code sent to the email approved by the server owner.</p>
     {challenge ? <TwoFactor challenge={challenge} onComplete={user => { completeSignIn(user); router.replace("/admin/accounts"); }} onCancel={() => router.replace("/sign-in")} /> : <form style={{ display: "grid", gap: 16, marginTop: 20 }} onSubmit={async event => {
       event.preventDefault(); setError("");
       if (password !== confirmation) { setError("The passwords do not match."); return; }
@@ -35,5 +35,6 @@ export default function AdministratorSetup() {
       <label className="ic-field">Confirm password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
       {error ? <p role="alert">{error}</p> : null}<button className="ic-btn ic-btn--primary" disabled={busy}>{busy ? "Creating administrator…" : "Create administrator"}</button>
     </form>}
+    <p className="ic-hint" style={{ marginTop: 20 }}>Already chose your credentials? <Link className="ic-link" href="/sign-in">Sign in to finish email verification</Link>.</p>
   </main></div>;
 }

@@ -10,6 +10,7 @@ export default function ApprovedAccounts() {
   const [accounts, setAccounts] = useState<ApprovedAccount[]>([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -47,21 +48,22 @@ export default function ApprovedAccounts() {
       <form className={styles.form} onSubmit={async event => {
         event.preventDefault(); setBusy(true); setError(""); setNotice("");
         try {
-          const created = await accountRequest<ApprovedAccount>("/admin/accounts", { method: "POST", body: JSON.stringify({ username, password, role }) });
+          const created = await accountRequest<ApprovedAccount>("/admin/accounts", { method: "POST", body: JSON.stringify({ username, password, role, email }) });
           setAccounts(rows => [...rows, created]); setUsername(""); setPassword(""); setRole("member");
-          setNotice("Account approved. Share the credentials through your usual private channel. This person will connect their own authenticator on first sign-in.");
+          setEmail(""); setNotice("Account approved. Share the credentials through your usual private channel. Security codes will go only to this person's registered email.");
         } catch (error) { setError(error instanceof Error ? error.message : "Could not add this account."); }
         finally { setBusy(false); }
       }}>
         <div className="ic-field"><label htmlFor="new-username">Username</label><input id="new-username" className="ic-input" required minLength={2} maxLength={80} autoComplete="off" value={username} onChange={event => setUsername(event.target.value)} /></div>
         <div className="ic-field"><label htmlFor="new-password">Initial password</label><input id="new-password" className="ic-input" type="password" required minLength={15} maxLength={128} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /><span className="ic-hint">15 to 128 characters.</span></div>
+        <div className="ic-field"><label htmlFor="new-email">Security email</label><input id="new-email" className="ic-input" type="email" required maxLength={254} autoComplete="off" value={email} onChange={event => setEmail(event.target.value)} /></div>
         <div className="ic-field"><label htmlFor="new-role">Access</label><select id="new-role" className="ic-select" value={role} onChange={event => setRole(event.target.value as "admin" | "member")}><option value="member">Member</option><option value="admin">Administrator</option></select></div>
         <button className="ic-btn ic-btn--primary" disabled={busy}>Approve account</button>
       </form>
     </section>
     <div className="ic-card" style={{ overflowX: "auto", padding: 0 }}>
-      <table className="ic-grid" aria-label="Approved accounts"><thead><tr><th>Username</th><th>Access</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-        {accounts.map(account => <tr key={account.id}><td>{account.username}{account.id === user.id ? " (you)" : ""}</td><td>{account.role === "admin" ? "Administrator" : "Member"}</td><td>{account.active ? "Approved" : "Disabled"}</td><td>
+      <table className="ic-grid" aria-label="Approved accounts"><thead><tr><th>Username</th><th>Security email</th><th>Access</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        {accounts.map(account => <tr key={account.id}><td>{account.username}{account.id === user.id ? " (you)" : ""}</td><td>{account.email ?? "Operator setup required"}</td><td>{account.role === "admin" ? "Administrator" : "Member"}</td><td>{account.active ? "Approved" : "Disabled"}</td><td>
           {account.id === user.id ? <span className="muted">Your account</span> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="ic-btn ic-btn--secondary ic-btn--sm" disabled={busy} onClick={() => void change(account.id, { active: !account.active })}>{account.active ? "Disable" : "Enable"}</button>
             <button className="ic-btn ic-btn--secondary ic-btn--sm" disabled={busy} onClick={() => { setResetId(account.id); setResetPassword(""); }}>Reset password</button>

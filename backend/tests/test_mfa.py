@@ -1,22 +1,39 @@
-"""Real mandatory MFA policy, without password-regression mocks or paid providers."""
+"""Mandatory email verification; all delivery is captured or mocked, never sent."""
 
-import hashlib
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import pyotp
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from test_accounts import ADMIN, DATA, HEADERS, MEMBER
 
+from api import security_mail
 from api.app import create_app
 from api.auth import create_session_token
-from api.mfa import CHALLENGE_SECONDS, now_seconds
+from api.mfa import CHALLENGE_SECONDS
 from api.stages import FixtureStages
 
 pytestmark = pytest.mark.mfa
+_REAL_SEND_CODE = security_mail.send_code
+OWNER = "owner@example.com"
+MEMBER_EMAIL = "member@example.com"
+
+
+@pytest.fixture(autouse=True)
+def mail(monkeypatch):
+    sent = []
+    monkeypatch.setenv("AUTH_ADMIN_EMAIL", OWNER)
+    monkeypatch.setenv("AUTH_EMAIL_FROM", "security@example.com")
+    monkeypatch.setenv("RESEND_API_KEY", "re_isolated_fake_api_key_never_sent")
+    monkeypatch.delenv("AUTH_EMAIL_TEST_RECIPIENT", raising=False)
+    monkeypatch.setattr(
+        security_mail,
+        "send_code",
+        lambda recipient, code, delivery_id: sent.append((recipient, code, delivery_id)),
+    )
+    return sent
 
 
 @pytest.fixture
@@ -38,10 +55,10 @@ def app(tmp_path, monkeypatch):
 def start(client, credentials=ADMIN):
     response = client.post("/auth/sign-in", headers=HEADERS, json=credentials)
     assert response.status_code == 200, response.text
-    assert response.json()["mfa_required"] is True
-    assert "session_id" not in response.json() and "user" not in response.json()
+    body = response.json()
+    assert body["mfa_required"] is True and "session_id" not in body and "user" not in body
     assert "ic_session" not in client.cookies
-    return response.json()
+    return body
 
 
 def verify(client, challenge, code):
@@ -52,193 +69,182 @@ def verify(client, challenge, code):
     )
 
 
-def enroll(client, credentials=ADMIN):
+def login(client, mail, credentials=ADMIN):
     challenge = start(client, credentials)
-    secret = challenge["enrollment"]["secret"]
-    response = verify(client, challenge, pyotp.TOTP(secret).at(now_seconds()))
+    response = verify(client, challenge, mail[-1][1])
     assert response.status_code == 200, response.text
-    result = response.json()
-    assert len(result["recovery_codes"]) == 10
-    return result, secret
+    return response.json()
 
 
-def test_first_administrator_setup_does_not_grant_access_before_totp(tmp_path, monkeypatch):
+def cooldown(app, user_id=None):
+    # Production rate limits remain real; simulate time passing in persisted windows.
+    with app.state.store.connect() as db:
+        db.execute("DELETE FROM request_limits")
+
+
+def test_first_admin_can_only_use_owner_email_and_gains_no_password_only_access(
+    tmp_path, monkeypatch, mail
+):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     monkeypatch.delenv("AUTH_USERNAME", raising=False)
     monkeypatch.delenv("AUTH_PASSWORD", raising=False)
-    token = "isolated-first-admin-mfa-setup-token-2026"
+    token = "isolated-first-administrator-setup-token-2026"
     monkeypatch.setenv("AUTH_SETUP_TOKEN", token)
     app = create_app(storage_dir=tmp_path, start_worker=False)
     with TestClient(app) as client:
-        response = client.post("/auth/setup", headers=HEADERS, json={**ADMIN, "token": token})
+        response = client.post(
+            "/auth/setup",
+            headers=HEADERS,
+            json={**ADMIN, "token": token, "email": "attacker@example.com"},
+        )
         assert response.status_code == 200, response.text
         challenge = response.json()
-        assert challenge["enrollment"]["qr_code"].startswith("data:image/png;base64,")
-        assert "session_id" not in challenge and "ic_session" not in client.cookies
+        assert mail[-1][0] == OWNER
+        assert challenge["destination"] == "o***@example.com"
+        assert "enrollment" not in challenge and "recovery_codes" not in challenge
         assert client.get("/admin/accounts").status_code == 401
         assert client.get("/invoices").status_code == 401
-        # Abandoning the setup page is recoverable by signing in with the chosen password.
-        challenge = start(client)
-        secret = challenge["enrollment"]["secret"]
-        verified = verify(client, challenge, pyotp.TOTP(secret).at(now_seconds()))
-        assert verified.status_code == 200
+        assert verify(client, challenge, mail[-1][1]).status_code == 200
         assert client.get("/admin/accounts").status_code == 200
-        with app.state.accounts.connect() as db:
-            factor = dict(db.execute("SELECT * FROM account_mfa").fetchone())
-            assert secret not in json.dumps(factor)
-            assert all(
-                value not in factor["recovery"] for value in verified.json()["recovery_codes"]
-            )
+        # Neither the code nor bearer challenge is stored in plaintext.
+        cooldown(app)
+        pending = start(client)
+        with app.state.store.connect() as db:
+            stored = dict(db.execute("SELECT * FROM email_challenges").fetchone())
+            assert stored["id"] != pending["challenge_id"]
+            assert stored["code_hash"] != mail[-1][1]
+            assert len(stored["code_hash"]) == 64
 
 
-def test_every_approved_member_requires_enrollment_and_private_verified_session(app):
+def test_every_member_needs_a_registered_email_and_verifies_it(app, mail):
     with TestClient(app) as client:
-        admin, _ = enroll(client)
-        member = client.post("/admin/accounts", headers=HEADERS, json=MEMBER)
-        assert member.status_code == 201
-        challenge = start(client, MEMBER)
-        assert client.get("/projects").status_code == 401
-        assert verify(client, challenge, "invalid").status_code == 401
-        result = verify(
-            client, challenge, pyotp.TOTP(challenge["enrollment"]["secret"]).at(now_seconds())
+        admin = login(client, mail)
+        assert client.post("/admin/accounts", headers=HEADERS, json=MEMBER).status_code == 422
+        member = client.post(
+            "/admin/accounts", headers=HEADERS, json={**MEMBER, "email": MEMBER_EMAIL}
         )
-        assert result.status_code == 200
-        assert result.json()["user"]["id"] != admin["user"]["id"]
+        assert member.status_code == 201 and member.json()["email"] == MEMBER_EMAIL
+        challenge = start(client, {**MEMBER, "email": "attacker@example.com"})
+        assert mail[-1][0] == MEMBER_EMAIL
+        assert client.get("/projects").status_code == 401
+        assert verify(client, challenge, mail[-1][1]).status_code == 200
         assert client.get("/admin/accounts").status_code == 403
         assert client.get("/projects").json() == []
+        assert client.get("/auth/mfa/status").json() == {"enabled": True, "email": MEMBER_EMAIL}
+        assert client.get("/auth/me").json()["user"]["id"] != admin["user"]["id"]
 
 
-def test_invalid_codes_expire_and_attempts_commit(app, clock):
+def test_invalid_codes_attempts_are_persisted_and_challenges_expire(app, clock, mail):
     with TestClient(app) as client:
         challenge = start(client)
-        code = pyotp.TOTP(challenge["enrollment"]["secret"]).at(clock[0])
         for _ in range(5):
-            assert verify(client, challenge, "not-a-code").status_code == 401
-        refused = verify(client, challenge, code)
-        assert refused.status_code == 401 and "expired" in refused.json()["detail"]
-        with app.state.accounts.connect() as db:
-            row = db.execute(
-                "SELECT attempts FROM mfa_challenges WHERE id=?",
-                (hashlib.sha256(challenge["challenge_id"].encode()).hexdigest(),),
-            ).fetchone()
-            assert row["attempts"] == 5
+            assert verify(client, challenge, "invalid").status_code == 401
+        assert verify(client, challenge, mail[-1][1]).status_code == 401
+        with app.state.store.connect() as db:
+            assert db.execute("SELECT attempts FROM email_challenges").fetchone()["attempts"] == 5
+        cooldown(app)
         fresh = start(client)
         clock[0] += CHALLENGE_SECONDS
-        assert (
-            verify(
-                client, fresh, pyotp.TOTP(fresh["enrollment"]["secret"]).at(clock[0])
-            ).status_code
-            == 401
-        )
+        assert verify(client, fresh, mail[-1][1]).status_code == 401
 
 
-def test_successful_challenge_is_single_use_and_totp_cannot_replay(app, clock):
+def test_code_and_challenge_are_single_use_under_concurrent_verification(app, mail):
     with TestClient(app) as client:
-        result, secret = enroll(client)
         challenge = start(client)
-        assert challenge["enrollment"] is None
-        assert verify(client, challenge, pyotp.TOTP(secret).at(clock[0])).status_code == 401
-        clock[0] += 30
-        accepted = verify(client, challenge, pyotp.TOTP(secret).at(clock[0]))
-        assert accepted.status_code == 200 and "recovery_codes" not in accepted.json()
-        assert verify(client, challenge, pyotp.TOTP(secret).at(clock[0])).status_code == 401
-        assert client.get("/auth/me").json()["user"]["id"] == result["user"]["id"]
+        code = mail[-1][1]
 
-
-def test_recovery_codes_are_single_use_and_atomic_across_concurrent_challenges(app):
-    with TestClient(app) as client:
-        result, _ = enroll(client)
-        accounts = app.state.accounts
-        user = accounts.get_user(result["user"]["id"])
-        challenges = [accounts.mfa.begin(user) for _ in range(2)]
-
-        def attempt(challenge):
+        def attempt(_):
             try:
-                accounts.mfa.verify(challenge["challenge_id"], result["recovery_codes"][0])
+                app.state.accounts.mfa.verify(challenge["challenge_id"], code)
                 return True
             except HTTPException:
                 return False
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            assert list(pool.map(attempt, challenges)).count(True) == 1
+            assert list(pool.map(attempt, range(2))).count(True) == 1
+        assert verify(client, challenge, code).status_code == 401
+
+
+def test_resend_is_throttled_and_replaces_the_old_code(app, mail):
+    with TestClient(app) as client:
         challenge = start(client)
-        assert verify(client, challenge, result["recovery_codes"][0]).status_code == 401
-        assert (
-            verify(
-                client, challenge, result["recovery_codes"][1].lower().replace("-", "")
-            ).status_code
-            == 200
-        )
-        assert client.get("/auth/mfa/status").json()["recovery_remaining"] == 8
-
-
-def test_password_reset_never_removes_mfa_and_invalidates_pending_challenges(app):
-    with TestClient(app) as client:
-        result, _ = enroll(client)
-        pending = start(client)
-        user_id = result["user"]["id"]
-        other = app.state.accounts.create_user(
-            "second-admin", "another-private-admin-password", "admin"
-        )
-        app.state.accounts.update_user(
-            user_id, actor=other["id"], password="replacement-private-password-2026"
-        )
-        assert verify(client, pending, result["recovery_codes"][0]).status_code == 401
-        new = start(client, {**ADMIN, "password": "replacement-private-password-2026"})
-        assert new["enrollment"] is None
-        assert verify(client, new, result["recovery_codes"][0]).status_code == 200
-        client.cookies.clear()
-        assert (
-            client.get(
-                "/auth/me", headers={"Authorization": "Bearer " + result["session_id"]}
-            ).status_code
-            == 401
-        )
-
-
-def test_replacing_authenticator_requires_both_factors_and_revokes_old_codes_and_sessions(app):
-    with TestClient(app) as client:
-        original, secret = enroll(client)
+        original_code = mail[-1][1]
         assert (
             client.post(
-                "/auth/mfa/replace",
+                "/auth/mfa/resend",
                 headers=HEADERS,
-                json={"password": "wrong", "code": original["recovery_codes"][0]},
+                json={"challenge_id": challenge["challenge_id"]},
             ).status_code
-            == 401
+            == 429
         )
-        assert (
-            client.post(
-                "/auth/mfa/replace",
-                headers=HEADERS,
-                json={"password": ADMIN["password"], "code": "invalid"},
-            ).status_code
-            == 401
-        )
+        cooldown(app)
         response = client.post(
-            "/auth/mfa/replace",
-            headers=HEADERS,
-            json={"password": ADMIN["password"], "code": original["recovery_codes"][0]},
+            "/auth/mfa/resend", headers=HEADERS, json={"challenge_id": challenge["challenge_id"]}
         )
         assert response.status_code == 200
-        challenge = response.json()
-        new_secret = challenge["enrollment"]["secret"]
-        assert secret != new_secret
-        result = verify(client, challenge, pyotp.TOTP(new_secret).at(now_seconds()))
-        assert result.status_code == 200
-        client.cookies.clear()
+        fresh = response.json()
+        assert fresh["challenge_id"] != challenge["challenge_id"]
+        assert verify(client, challenge, original_code).status_code == 401
+        assert verify(client, fresh, mail[-1][1]).status_code == 200
+
+
+def test_email_change_is_operator_only_and_revokes_sessions_and_pending_codes(app, mail):
+    with TestClient(app) as client:
+        original = login(client, mail)
+        user_id = original["user"]["id"]
+        cooldown(app)
+        pending = start(client)
+        old_code = mail[-1][1]
+        app.state.accounts.mfa.set_by_operator(user_id, "replacement@example.com")
+        assert verify(client, pending, old_code).status_code == 401
         assert (
             client.get(
                 "/auth/me", headers={"Authorization": "Bearer " + original["session_id"]}
             ).status_code
             == 401
         )
-        challenge = start(client)
-        assert verify(client, challenge, original["recovery_codes"][1]).status_code == 401
-        assert verify(client, challenge, result.json()["recovery_codes"][0]).status_code == 200
+        assert (
+            client.post(
+                "/auth/mfa/replace", headers=HEADERS, json={"email": "attacker@example.com"}
+            ).status_code
+            == 404
+        )
+        cooldown(app)
+        fresh = start(client)
+        assert mail[-1][0] == "replacement@example.com"
+        assert verify(client, fresh, mail[-1][1]).status_code == 200
 
 
-def test_registered_password_only_sessions_cannot_bypass_mfa(app):
+def test_password_reset_preserves_email_and_invalidates_pending_codes(app, mail):
+    with TestClient(app) as client:
+        original = login(client, mail)
+        cooldown(app)
+        pending = start(client)
+        pending_code = mail[-1][1]
+        other = app.state.accounts.create_user(
+            "other-admin", "another-private-admin-password", "admin", email="other@example.com"
+        )
+        app.state.accounts.update_user(
+            original["user"]["id"], actor=other["id"], password="new-private-password-2026"
+        )
+        assert verify(client, pending, pending_code).status_code == 401
+        cooldown(app)
+        fresh = start(client, {**ADMIN, "password": "new-private-password-2026"})
+        assert mail[-1][0] == OWNER
+        assert verify(client, fresh, mail[-1][1]).status_code == 200
+
+
+def test_existing_account_without_registered_email_cannot_self_claim_one(app):
+    with TestClient(app) as client:
+        app.state.accounts.create_user(MEMBER["username"], MEMBER["password"], "member")
+        response = client.post(
+            "/auth/sign-in", headers=HEADERS, json={**MEMBER, "email": "attacker@example.com"}
+        )
+        assert response.status_code == 409
+        assert "ic_session" not in client.cookies
+
+
+def test_password_only_or_legacy_authenticator_sessions_cannot_bypass_email_verification(app):
     with TestClient(app) as client:
         user = app.state.accounts.authenticate(ADMIN["username"], ADMIN["password"])
         with pytest.raises(HTTPException):
@@ -248,119 +254,146 @@ def test_registered_password_only_sessions_cannot_bypass_mfa(app):
                 "INSERT INTO account_sessions (id,user_id,version,expires_at) VALUES (?,?,?,?)",
                 ("old-password-session", user["id"], user["version"], int(time.time()) + 3600),
             )
+            db.execute("CREATE TABLE mfa_verified_sessions (id TEXT PRIMARY KEY)")
+            db.execute("INSERT INTO mfa_verified_sessions VALUES ('old-password-session')")
         token = create_session_token(ADMIN["username"], "old-password-session")
         assert (
             client.get("/invoices", headers={"Authorization": "Bearer " + token}).status_code == 401
         )
-        assert (
-            client.get("/auth/me", headers={"Authorization": "Bearer " + token}).status_code == 401
-        )
 
 
-def test_challenge_is_bound_to_account_version_and_disable_invalidates_it(app):
-    with TestClient(app) as client:
-        original, _ = enroll(client)
-        pending = start(client)
-        other = app.state.accounts.create_user(
-            "second-admin", "another-private-admin-password", "admin"
-        )
-        app.state.accounts.update_user(original["user"]["id"], actor=other["id"], active=False)
-        assert verify(client, pending, original["recovery_codes"][0]).status_code == 401
-        app.state.accounts.update_user(original["user"]["id"], actor=other["id"], active=True)
-        assert verify(client, pending, original["recovery_codes"][0]).status_code == 401
-
-
-def test_mfa_verification_requires_csrf_and_never_echoes_secrets(app):
+def test_email_verification_requires_csrf_and_validation_does_not_echo_codes(app, mail):
     with TestClient(app) as client:
         challenge = start(client)
-        secret = challenge["enrollment"]["secret"]
-        code = pyotp.TOTP(secret).at(now_seconds())
         assert (
             client.post(
-                "/auth/mfa/verify", json={"challenge_id": challenge["challenge_id"], "code": code}
+                "/auth/mfa/verify",
+                json={"challenge_id": challenge["challenge_id"], "code": mail[-1][1]},
             ).status_code
             == 403
         )
-        invalid = client.post(
+        assert (
+            client.post(
+                "/auth/mfa/resend", json={"challenge_id": challenge["challenge_id"]}
+            ).status_code
+            == 403
+        )
+        result = client.post(
             "/auth/mfa/verify",
             headers=HEADERS,
-            json={"challenge_id": challenge["challenge_id"], "code": secret * 10},
+            json={"challenge_id": challenge["challenge_id"], "code": "secret-input" * 30},
         )
-        assert invalid.status_code == 422 and secret not in invalid.text
-        assert client.get("/auth/me").status_code == 401
+        assert result.status_code == 422 and "secret-input" not in result.text
 
 
-def test_operator_reset_is_audited_and_forces_reenrollment(app):
-    with TestClient(app) as client:
-        result, _ = enroll(client)
-        app.state.accounts.mfa.reset_by_operator(result["user"]["id"])
-        assert client.get("/auth/me").status_code == 401
-        challenge = start(client)
-        assert challenge["enrollment"]
-        assert verify(client, challenge, result["recovery_codes"][0]).status_code == 401
-        with app.state.accounts.connect() as db:
-            assert db.execute(
-                "SELECT 1 FROM account_events WHERE action='mfa_reset_operator'"
-            ).fetchone()
-
-
-def test_pending_enrollment_and_recovery_survive_restart(tmp_path, monkeypatch):
+def test_missing_sender_configuration_does_not_consume_first_admin_setup(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
-    monkeypatch.setenv("AUTH_USERNAME", ADMIN["username"])
-    monkeypatch.setenv("AUTH_PASSWORD", ADMIN["password"])
-    with TestClient(create_app(storage_dir=tmp_path, start_worker=False)) as client:
-        challenge = start(client)
-    with TestClient(create_app(storage_dir=tmp_path, start_worker=False)) as client:
-        result = verify(
-            client, challenge, pyotp.TOTP(challenge["enrollment"]["secret"]).at(now_seconds())
+    monkeypatch.delenv("AUTH_USERNAME", raising=False)
+    monkeypatch.delenv("AUTH_PASSWORD", raising=False)
+    monkeypatch.setenv("AUTH_SETUP_TOKEN", "isolated-admin-setup-token-with-32-characters")
+    monkeypatch.delenv("RESEND_API_KEY")
+    app = create_app(storage_dir=tmp_path, start_worker=False)
+    with TestClient(app) as client:
+        response = client.post(
+            "/auth/setup",
+            headers=HEADERS,
+            json={**ADMIN, "token": "isolated-admin-setup-token-with-32-characters"},
         )
-        assert result.status_code == 200
-        codes = result.json()["recovery_codes"]
-    with TestClient(create_app(storage_dir=tmp_path, start_worker=False)) as client:
-        challenge = start(client)
-        assert verify(client, challenge, codes[0]).status_code == 200
+        assert response.status_code == 503
+        assert not app.state.accounts.has_accounts()
 
 
-def test_postgres_and_sqlite_mfa_sessions_require_verified_proof(session_store):
+def test_delivery_failure_invalidates_pending_code_and_never_grants_access(app, monkeypatch):
+    monkeypatch.setattr(
+        security_mail,
+        "send_code",
+        lambda *_: (_ for _ in ()).throw(HTTPException(503, "Email delivery unavailable")),
+    )
+    with TestClient(app) as client:
+        assert client.post("/auth/sign-in", headers=HEADERS, json=ADMIN).status_code == 503
+        assert client.get("/auth/me").status_code == 401
+        with app.state.store.connect() as db:
+            assert db.execute("SELECT COUNT(*) FROM email_challenges").fetchone()[0] == 0
+
+
+def test_unverified_resend_sender_is_restricted_to_owner_without_recipient_rewrite(
+    app, monkeypatch, mail
+):
+    with TestClient(app) as client:
+        login(client, mail)
+        client.post("/admin/accounts", headers=HEADERS, json={**MEMBER, "email": MEMBER_EMAIL})
+        monkeypatch.setenv("AUTH_EMAIL_FROM", "onboarding@resend.dev")
+        monkeypatch.setenv("AUTH_EMAIL_TEST_RECIPIENT", OWNER)
+        previous = len(mail)
+        assert client.post("/auth/sign-in", headers=HEADERS, json=MEMBER).status_code == 503
+        assert len(mail) == previous
+
+
+def test_registered_email_ownership_and_proof_are_portable(session_store, mail):
     from api.accounts import Accounts
 
     accounts = Accounts(session_store)
-    user = accounts.create_user("mfa-member", "isolated-mfa-member-password-2026", "member")
-    challenge = accounts.mfa.begin(user)
-    verified, codes = accounts.mfa.verify(
-        challenge["challenge_id"], pyotp.TOTP(challenge["enrollment"]["secret"]).at(now_seconds())
+    user = accounts.create_user(
+        "email-member", "isolated-email-member-password", "member", email=MEMBER_EMAIL
     )
+    challenge = accounts.mfa.begin(user)
+    verified, _ = accounts.mfa.verify(challenge["challenge_id"], mail[-1][1])
     sid, expires = accounts.create_session(verified, 3600, mfa_verified=True)
     assert (
         accounts.session_claims(sid, user["username"], expires)["workspace_id"]
         == user["workspace_id"]
     )
-    accounts.mfa.reset_by_operator(user["id"])
+    accounts.mfa.set_by_operator(user["id"], "replacement@example.com")
     assert accounts.session_claims(sid, user["username"], expires) is None
-    pending = accounts.mfa.begin(accounts.get_user(user["id"]))
-    with pytest.raises(HTTPException):
-        accounts.mfa.verify(pending["challenge_id"], codes[0])
 
 
-def test_mfa_attempt_allowance_is_shared_across_password_challenges(app):
+def test_pending_email_challenge_survives_restart(tmp_path, monkeypatch, mail):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.setenv("AUTH_USERNAME", ADMIN["username"])
+    monkeypatch.setenv("AUTH_PASSWORD", ADMIN["password"])
+    with TestClient(create_app(storage_dir=tmp_path, start_worker=False)) as client:
+        challenge = start(client)
+        code = mail[-1][1]
+    with TestClient(create_app(storage_dir=tmp_path, start_worker=False)) as client:
+        assert verify(client, challenge, code).status_code == 200
+
+
+def test_resend_request_uses_fixed_https_destination_and_no_redirects(monkeypatch):
+    real_send = _REAL_SEND_CODE
+    captured = []
+
+    def post(url, **kwargs):
+        captured.append((url, kwargs))
+        return httpx.Response(200, json={"id": "email-test-id"})
+
+    monkeypatch.setattr(httpx, "post", post)
+    real_send(OWNER, "123456", "opaque-delivery-id")
+    url, values = captured[0]
+    assert url == "https://api.resend.com/emails"
+    assert values["follow_redirects"] is False and values["timeout"] == 10
+    assert values["json"]["to"] == [OWNER]
+    assert "123456" in values["json"]["text"]
+
+
+def test_sender_failures_do_not_expose_api_keys_codes_or_provider_bodies(monkeypatch):
+    real_send = _REAL_SEND_CODE
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: httpx.Response(403, json={"secret": "private-provider-response-123456"}),
+    )
+    with pytest.raises(HTTPException) as failure:
+        real_send(OWNER, "123456", "opaque-id")
+    assert failure.value.status_code == 503
+    assert "123456" not in failure.value.detail and "private-provider" not in failure.value.detail
+
+
+def test_duplicate_or_invalid_email_is_rejected_atomically(app, mail):
     with TestClient(app) as client:
-        for _ in range(3):
-            challenge = start(client)
-            for _ in range(5):
-                assert verify(client, challenge, "invalid").status_code == 401
-        challenge = start(client)
-        response = verify(
-            client, challenge, pyotp.TOTP(challenge["enrollment"]["secret"]).at(now_seconds())
-        )
-        assert response.status_code == 429 and response.headers["Retry-After"]
-
-
-def test_clock_skew_is_small_and_each_accepted_counter_is_consumed(app, clock):
-    with TestClient(app) as client:
-        challenge = start(client)
-        otp = pyotp.TOTP(challenge["enrollment"]["secret"])
-        assert verify(client, challenge, otp.at(clock[0] - 90)).status_code == 401
-        assert verify(client, challenge, otp.at(clock[0] - 30)).status_code == 200
-        challenge = start(client)
-        assert verify(client, challenge, otp.at(clock[0] - 30)).status_code == 401
-        assert verify(client, challenge, otp.at(clock[0])).status_code == 200
+        login(client, mail)
+        for email in (OWNER, "bad\r\nBcc: attacker@example.com", "not-an-email"):
+            response = client.post(
+                "/admin/accounts", headers=HEADERS, json={**MEMBER, "email": email}
+            )
+            assert response.status_code in {409, 422}
+        assert len(client.get("/admin/accounts").json()) == 1

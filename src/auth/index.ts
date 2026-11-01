@@ -17,11 +17,12 @@ export interface User {
 export interface TwoFactorChallenge {
   mfa_required: true;
   challenge_id: string;
-  enrollment: { secret: string; qr_code: string } | null;
+  destination: string;
   expires_in: number;
+  resend_after: number;
 }
 
-export interface TwoFactorResult { user: User; recovery_codes?: string[] }
+export interface TwoFactorResult { user: User }
 
 export type SignInResult = { ok: true; user: User } | { ok: false; error: "two_factor"; challenge: TwoFactorChallenge } | { ok: false; error: "invalid" | "unreachable" | "limited"; message?: string };
 
@@ -119,7 +120,7 @@ export async function signIn(username: string, password: string): Promise<SignIn
       credentials: "include",
       headers: sessionHeaders({ "Content-Type": "application/json" }, true),
       body: JSON.stringify({ username: trimmed, password }),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(15_000),
     });
     if (resp.ok) {
       const data = (await resp.json()) as { ok: boolean; user?: User } & Partial<TwoFactorChallenge>;
@@ -193,6 +194,11 @@ export async function setupAdministrator(token: string, username: string, passwo
 export async function verifySecondFactor(challengeId: string, code: string): Promise<TwoFactorResult> {
   const { accountRequest } = await import("./accounts");
   return accountRequest<TwoFactorResult>("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendSecondFactor(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest<TwoFactorChallenge>("/auth/mfa/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
 }
 
 export function completeSignIn(user: User): void { setSessionState(user); }

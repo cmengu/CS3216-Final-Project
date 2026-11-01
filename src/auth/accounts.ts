@@ -8,6 +8,7 @@ export interface ApprovedAccount {
   role: "admin" | "member";
   active: boolean;
   created_at: number;
+  email?: string;
 }
 
 export async function accountRequest<T>(path: string, options: RequestInit = {}): Promise<T> {

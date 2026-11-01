@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { completeSignIn, currentUser, refreshAuthSession, setupAdministrator, signIn, signOut, verifySecondFactor } from "./index";
+import { completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifySecondFactor } from "./index";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -109,10 +109,10 @@ it("explains sign-in throttling without reporting successful authentication", as
   if (!result.ok && result.error === "limited") { expect(result.message).toContain("60"); }
 });
 
-it("keeps password-verified MFA challenges signed out and never stores their secret", async () => {
+it("keeps password-verified email challenges signed out and never stores them", async () => {
   const localStorage = { removeItem: vi.fn(), setItem: vi.fn() };
   vi.stubGlobal("window", { localStorage });
-  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", enrollment: { secret: "private-setup-secret", qr_code: "data:image/png;base64,fake" }, expires_in: 300 };
+  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", destination: "m***@example.com", expires_in: 300, resend_after: 60 };
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(challenge)));
   const result = await signIn("approved-member", "a-real-test-password");
   expect(result).toEqual({ ok: false, error: "two_factor", challenge });
@@ -120,9 +120,9 @@ it("keeps password-verified MFA challenges signed out and never stores their sec
   expect(localStorage.setItem).not.toHaveBeenCalled();
 });
 
-it("requires recovery-code acknowledgement before activating frontend auth state", async () => {
+it("activates frontend auth state only after a verified email-code response", async () => {
   vi.stubGlobal("window", {});
-  const verified = { user: { email: "approved-member", role: "member" as const }, recovery_codes: ["test-recovery-code"] };
+  const verified = { user: { email: "approved-member", role: "member" as const } };
   const fetchMock = vi.fn().mockResolvedValue(Response.json(verified));
   vi.stubGlobal("fetch", fetchMock);
   const result = await verifySecondFactor("private-challenge-id-longer-than-32", "123456");
@@ -138,8 +138,22 @@ it("requires recovery-code acknowledgement before activating frontend auth state
 
 it("administrator setup returns a challenge and clears any existing frontend identity", async () => {
   vi.stubGlobal("window", {});
-  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", enrollment: { secret: "private-secret", qr_code: "data:image/png;base64,fake" }, expires_in: 300 };
+  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", destination: "a***@example.com", expires_in: 300, resend_after: 60 };
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(challenge)));
   expect(await setupAdministrator("private-operator-setup-token", "admin", "a-real-test-password")).toEqual(challenge);
+  expect(currentUser()).toBeNull();
+});
+
+
+it("resends using only the existing challenge, never a caller-selected email", async () => {
+  vi.stubGlobal("window", {});
+  const challenge = { mfa_required: true, challenge_id: "replacement-private-challenge-id", destination: "a***@example.com", expires_in: 300, resend_after: 60 };
+  const fetchMock = vi.fn().mockResolvedValue(Response.json(challenge));
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await resendSecondFactor("current-private-challenge-id")).toEqual(challenge);
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("/auth/mfa/resend");
+  expect(JSON.parse(String(init.body))).toEqual({ challenge_id: "current-private-challenge-id" });
+  expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
   expect(currentUser()).toBeNull();
 });

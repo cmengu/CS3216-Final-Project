@@ -57,15 +57,18 @@ ROOT = Path(__file__).resolve().parents[2]
 def _load_dotenv() -> None:
     if "pytest" in sys.modules:
         return
-    env_file = BACKEND_DIR / ".env"
-    if not env_file.is_file():
-        return
-    for raw in env_file.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for env_file in (BACKEND_DIR / ".env", BACKEND_DIR / ".env.email"):
+        if not env_file.is_file():
             continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        for raw in env_file.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            os.environ.setdefault(key.strip(), value)
 
 
 def _request_session_id(request: Request, query_session_id: str | None = None) -> str:
@@ -203,6 +206,7 @@ def create_app(
                 "/auth/sign-out",
                 "/auth/setup",
                 "/auth/mfa/verify",
+                "/auth/mfa/resend",
             }
             if browser_mutation:
                 origin = request.headers.get("origin")
@@ -223,13 +227,16 @@ def create_app(
                         status_code=403,
                         headers={"Cache-Control": "no-store"},
                     )
-        if path in {"/auth/sign-in", "/auth/mfa/verify"} and request.method == "POST":
+        if (
+            path in {"/auth/sign-in", "/auth/mfa/verify", "/auth/mfa/resend"}
+            and request.method == "POST"
+        ):
             ip = request.client.host if request.client else "unknown"
             try:
                 request.app.state.limits.take(
-                    "mfa-ip" if path == "/auth/mfa/verify" else "login-ip",
+                    "mfa-ip" if path.startswith("/auth/mfa/") else "login-ip",
                     ip,
-                    maximum=30 if path == "/auth/mfa/verify" else 20,
+                    maximum=30 if path.startswith("/auth/mfa/") else 20,
                     seconds=600,
                 )
             except HTTPException as exc:

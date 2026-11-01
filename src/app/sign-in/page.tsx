@@ -45,7 +45,7 @@ export default function SignIn() {
       </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
-        <p className="ic-hint">Use your approved account and authenticator app.</p>
+        <p className="ic-hint">Use your approved account. We’ll email a security code after checking your password.</p>
         {challenge ? <TwoFactor key={challenge.challenge_id} challenge={challenge} onComplete={verified => { completeSignIn(verified); router.replace(nextRoute); }} onCancel={() => { setChallenge(null); setError(""); }} /> : <form
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           onSubmit={async (e) => {

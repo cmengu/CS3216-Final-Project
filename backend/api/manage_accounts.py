@@ -14,11 +14,16 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 def load_settings():
     path = BACKEND / ".env"
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
+    for settings in (path, BACKEND / ".env.email"):
+        if not settings.exists():
+            continue
+        for line in settings.read_text(encoding="utf-8").splitlines():
             if line.strip() and not line.lstrip().startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip())
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                    value = value[1:-1]
+                os.environ.setdefault(key.strip(), value)
     return path
 
 
@@ -82,6 +87,11 @@ def main():
         "reset-2fa", help="Operator-only recovery when an account lost all second factors"
     )
     reset.add_argument("--username", required=True)
+    email = sub.add_parser(
+        "set-email", help="Assign an account's independently verified security email"
+    )
+    email.add_argument("--username", required=True)
+    email.add_argument("--email", required=True)
     recover = sub.add_parser("recover-workspace")
     recover.add_argument(
         "--source", required=True, help="Exact old session/workspace ID; never inferred"
@@ -97,7 +107,7 @@ def main():
     try:
         if args.command == "prepare-setup":
             prepare_setup(env_file, store, accounts)
-        elif args.command == "reset-2fa":
+        elif args.command in {"reset-2fa", "set-email"}:
             with accounts.connect() as db:
                 row = accounts.execute(
                     db,
@@ -106,9 +116,11 @@ def main():
                 ).fetchone()
             if row is None:
                 raise ValueError("The approved account does not exist.")
-            accounts.mfa.reset_by_operator(row["id"])
+            accounts.mfa.set_by_operator(
+                row["id"], args.email if args.command == "set-email" else None
+            )
             print(
-                "Two-factor enrollment reset. All sessions were invalidated. The account must sign in with its password and enroll again."
+                "Security email verification reset. Existing sessions were invalidated; the next sign-in requires a code sent to the registered address."
             )
         else:
             with accounts.connect() as db:

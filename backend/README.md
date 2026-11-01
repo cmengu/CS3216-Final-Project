@@ -157,35 +157,61 @@ Outlook connection. Administrative access manages credentials; it does not grant
 to another account’s invoices or batches. Any account can change its own password at `/account`.
 Passwords require 15–128 characters and use salted Argon2id (19 MiB, two passes, one lane); plaintext passwords are not stored.
 
-Every approved account must enroll an authenticator app (TOTP). Password verification returns
-only a five-minute challenge. The first administrator also completes enrollment before gaining
-access. Scan the local QR code or enter its setup key, confirm a six-digit code, and save the
-ten one-use recovery codes. Later sign-ins require the password plus a fresh authenticator
-code or unused recovery code. Password/role changes and disabling access invalidate pending
-challenges; password resets do not remove an existing authenticator. Pre-MFA sessions no
-longer authenticate. Private ownership and queued work remain unchanged.
+Every approved account signs in with its password plus a six-digit code sent to its registered
+email address. The first administrator's destination is configured by the operator using
+`AUTH_ADMIN_EMAIL`; the setup form cannot choose a different destination. Administrators
+register an email when creating each approved account. Email ownership is verified by entering
+a delivered code. Password resets preserve the registered email. Existing password-only or
+old authenticator sessions no longer authenticate; existing data and accepted jobs are retained.
 
-Account settings allow replacing an authenticator after verifying the current password and
-a fresh code or unused recovery code. Confirming the replacement invalidates old sessions
-and recovery codes. There is no web endpoint to disable 2FA. If every recovery method is lost,
-an operator who has independently verified the account owner can run:
+Codes expire after five minutes and are single-use, with five failed attempts per challenge,
+a 60-second send cooldown, a ten-email hourly account cap and per-account/IP verification
+limits. Resending invalidates the earlier challenge. Only hashes of challenge tokens and
+server-keyed HMACs of codes are stored. Codes are never returned by the API or written to logs.
+Email delivery failures leave the user signed out; no code logging or alternate-recipient
+fallback is available. This is email two-step verification, not phishing-resistant MFA; inbox
+compromise can defeat it. The authenticator/QR/recovery-code flow is no longer used.
 
-```sh
-.venv/bin/python -m api.manage_accounts reset-2fa --username APPROVED_USERNAME
+### Configure Resend email delivery
+
+1. Create a Resend account. For testing with `onboarding@resend.dev`, use the same account email
+   as the administrator's inbox. Resend restricts this sender to its owner's address.
+2. Create a **Sending access** API key at <https://resend.com/api-keys>.
+3. Keep the key in the backend only. Local settings can be split between ignored `backend/.env`
+   and `backend/.env.email`; process environment variables take precedence. Set:
+
+```dotenv
+RESEND_API_KEY=your_private_sending_key
+AUTH_ADMIN_EMAIL=owner@example.com
+AUTH_EMAIL_FROM=onboarding@resend.dev
+AUTH_EMAIL_TEST_RECIPIENT=owner@example.com
 ```
 
-This audited operator action revokes access until the account signs in with its password and
-enrolls a new authenticator. It does not change the password or private workspace.
+4. Restart the backend, open the private administrator setup link, choose credentials, and enter
+   the code received by the approved inbox. If delivery fails after the credentials were saved,
+   sign in again after fixing mail configuration; do not recreate the administrator.
+5. To serve other approved users, verify a domain you own in Resend and change `AUTH_EMAIL_FROM`
+   to an address on that domain, such as `security@your-company.example`. The test sender is
+   deliberately blocked from sending another user's codes to the test owner. Do not try to
+   verify `outlook.com` or another provider's domain. Set these same private variables on the
+   hosted backend when deploying; local files are excluded from Git and Docker.
 
-TOTP secrets and pending setup keys are encrypted using a key derived from `AUTH_MFA_KEY`,
-or `AUTH_SECRET` when the separate key is absent. `prepare-setup` generates a separate key.
-Keep this key persistent, private and backed up; use a separate `AUTH_MFA_KEY` of at least
-32 random characters before enrollment if signing-secret rotation must leave TOTP unaffected.
-Do not introduce/change the MFA encryption key without a migration: existing secrets would
-become unreadable. Recovery codes are stored only as hashes. QR codes are generated locally;
-no external QR service receives the secret. Challenges and recovery-code use are atomic and
-persisted, with bounded attempts, per-account/IP limits and rejection of reused TOTP counters.
-These tables initialize automatically in SQLite or the private Postgres schema.
+Provider instructions: [Resend API keys](https://resend.com/docs/dashboard/api-keys/introduction),
+[test sender restrictions](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain),
+and [sending domains](https://resend.com/docs/dashboard/domains/introduction).
+
+Email changes for existing accounts require an operator who has independently verified the
+owner. Users cannot choose or replace a security email through sign-in or an account mutation:
+
+```sh
+.venv/bin/python -m api.manage_accounts set-email --username APPROVED_USERNAME --email owner@example.com
+```
+
+This audited action invalidates sessions and pending codes, then requires a code sent to the
+new approved address. Private invoices and projects retain their owner. A new Supabase database
+initializes `account_email`, `email_challenges`, and `email_verified_sessions` automatically in
+the private schema. Older accounts without a registered email need this explicit operator step.
+Old authenticator tables may remain as inactive legacy data; they grant no login access.
 
 Configure `AUTH_SECRET` as an independent random secret of at least 32 characters. Production
 startup rejects missing/short secrets and demo bootstrap credentials. Authentication cannot
@@ -198,9 +224,9 @@ be disabled outside automated tests. Prepare the first administrator from `backe
 This writes private settings to ignored `.env` and an ignored `admin-setup.url` file in the
 configured data directory. It prints the file location, never the token. It retires the known
 public demo credentials if they were configured. Restart the API, open that one-time link,
-and choose your administrator username and password. The code travels in a URL fragment, is
+and choose your administrator username and password, then confirm the emailed security code. The setup code travels in a URL fragment, is
 removed from the address bar, and is checked on the server; setup cannot create a second admin
-once any account exists. For managed deployments, provide `AUTH_SECRET` and `AUTH_SETUP_TOKEN`
+once any account exists. Configure email delivery before using setup. For managed deployments, provide `AUTH_SECRET`, `AUTH_SETUP_TOKEN` and the email settings
 through the deployment’s secret settings and open `/setup` to enter the code. Existing deployments
 may bootstrap their first admin using explicitly configured, non-default `AUTH_USERNAME` and
 `AUTH_PASSWORD`; those settings never become an ongoing credential fallback. Remove them after

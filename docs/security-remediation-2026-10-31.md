@@ -39,7 +39,33 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
-## Mandatory authenticator 2FA, 1 November 2026
+## Email security codes, 1 November 2026
+
+At the owner's request, the active sign-in flow now uses passwords plus security codes delivered
+by Resend to registered email addresses. This supersedes the authenticator implementation below.
+The first admin destination is operator-configured; approved members receive an email address
+when an administrator creates their account. Neither sign-in nor resend accepts a new recipient.
+Existing email changes require the audited operator CLI and invalidate sessions/pending codes.
+Password resets preserve the email requirement. Old authenticator sessions, secrets and recovery
+codes do not grant access through the new email-proof check.
+
+Codes are cryptographically random, six digits, single-use and expire after five minutes.
+Only keyed HMACs are stored; challenge bearer tokens are hashed. Five-attempt limits, persistent
+per-account/IP limits, a one-minute resend cooldown and hourly send caps are enforced. Delivery
+failure deletes the pending challenge and never issues a login session. Resend invalidates the
+old challenge. The backend sends only to the approved address and generates no console/outbox
+fallback. The Resend test sender is explicitly restricted to its owner; other users need a
+verified sender domain. API keys remain in ignored backend configuration, excluded from Docker.
+No provider credentials or real recipient addresses were committed.
+
+335 backend tests and 154 frontend tests passed; 14 optional Postgres/provider cases were
+skipped. Production build, TypeScript and frontend/backend lint passed. Chrome verified administrator/member email verification, wrong-code rejection, resend countdown, old-challenge rejection, registered email display, desktop/mobile layouts, private workspaces and background batches after closing the browser, with no page errors. Delivery tests mock the
+Resend HTTP API or capture synthetic email in memory. Actual inbox delivery has not yet been
+verified; it will be exercised by the owner's administrator setup. Live Supabase remains untested.
+Email two-step verification is weaker than an independent authenticator when the inbox is
+compromised; phishing-resistant MFA is not provided. See [email setup](../backend/README.md#configure-resend-email-delivery).
+
+## Historical authenticator implementation, 1 November 2026 (superseded)
 
 Every approved account, including the first administrator, now verifies an authenticator app
 before receiving any authenticated session. Password/setup responses carry only a five-minute,
@@ -75,4 +101,4 @@ have not been tested. TOTP can still be phished and does not prevent theft of an
 - The entire browser process was closed while two fixture invoices were still being read. Both completed on the server without a browser, then appeared after a fresh browser launch/sign-in. No browser page errors occurred.
 - Model/Outlook provider behavior uses synthetic fixtures or mocks. No real mailbox, real invoice or administrator password was used in QA. The local app has a private one-time setup link ready; the owner chooses the actual administrator credentials.
 
-R01 (public demo signing/login configuration), R05 (changing owner IDs), R06 (missing MFA) and R28 (offline frontend login) are addressed in this implementation. R07 is mitigated by persistent quotas/rate limits; strict monetary budgets and other operational controls remain. The remaining audit findings, including dependency advisories, parser isolation, backup/retention and immutable payment audit history, are not resolved by this change.
+R01 (public demo signing/login configuration), R05 (changing owner IDs) and R28 (offline frontend login) are addressed in this implementation. R06 is improved by individual accounts and mandatory email two-step verification; independent/phishing-resistant MFA remains a limitation. R07 is mitigated by persistent quotas/rate limits; strict monetary budgets and other operational controls remain. The remaining audit findings, including dependency advisories, parser isolation, backup/retention and immutable payment audit history, are not resolved by this change.

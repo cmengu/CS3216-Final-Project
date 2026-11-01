@@ -40,11 +40,11 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/auth/setup-status` | Whether first-admin setup is pending |
-| POST | `/auth/setup` | One-time code, username and password; create the first administrator and return an MFA enrollment challenge, without a login session |
+| POST | `/auth/setup` | One-time code, username and password; create the first administrator and return an email-verification challenge, without a login session |
 | POST | `/auth/sign-in` | Approved username/password; return an expiring MFA challenge, without a login session |
-| POST | `/auth/mfa/verify` | Challenge ID plus TOTP/recovery code; verify both factors and issue the session cookie. Enrollment/replacement also returns recovery codes once |
-| GET | `/auth/mfa/status` | Verified account's enrollment state and remaining recovery-code count |
-| POST | `/auth/mfa/replace` | Current password plus fresh TOTP/recovery code; begin authenticated replacement enrollment |
+| POST | `/auth/mfa/verify` | Challenge ID plus emailed security code; verify the approved inbox and issue the session cookie |
+| GET | `/auth/mfa/status` | Verified account's registered security email and verification state |
+| POST | `/auth/mfa/resend` | Existing unexpired challenge; send a new code to the same registered email after the cooldown |
 | GET | `/auth/me` | Verify the registered, unexpired, unrevoked account session |
 | POST | `/auth/sign-out` | Revoke the current login and clear its cookie |
 | PUT | `/auth/password` | Verify current password, replace it, and invalidate all sessions |
@@ -53,11 +53,13 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 
 Every account has its own private workspace; an administrator’s invoice permissions remain
 limited to that administrator’s own workspace. Account management responses never include
-passwords/hashes. Every approved account must enroll TOTP; password-only/pre-migration sessions
-cannot access protected resources. Challenges expire after five minutes and allow five failed
-attempts; per-account/IP rate limits also persist. Authenticator replacement revokes old sessions
-and codes. Password resets preserve 2FA. Recovery without any saved factor requires the audited
-operator CLI, not an admin-account mutation. There is no public registration. Login and expensive operations have persistent
+passwords/hashes. Every approved account requires an emailed security code; password-only and
+old authenticator sessions cannot access protected resources. Challenges expire after five
+minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
+Resending uses only the challenge, never a caller-selected email address. Delivery failures do
+not authenticate. Admin creation requires a registered email; changes to an existing security
+email require the audited operator CLI. Password resets preserve email verification.
+There is no public registration. Login and expensive operations have persistent
 rate limits; 429 includes `Retry-After`. All browser mutations require
 `X-Requested-With: InvoiceChecker` and a trusted Origin when present. Sign-in, setup and sign-out
 require the header even before a session cookie exists. Unsafe requests with a cookie and an
