@@ -195,91 +195,52 @@ Email delivery failures leave the user signed out; no code logging or alternate-
 fallback is available. This is email two-step verification, not phishing-resistant MFA; inbox
 compromise can defeat it. The authenticator/QR/recovery-code flow is no longer used.
 
-### Connect Google with send-only permission (recommended without a domain)
+### Sending service and recipient email addresses
 
-This uses the Gmail API with exactly `https://www.googleapis.com/auth/gmail.send`. It can
-send invitation links and security codes without reading mail or using a Gmail app password.
-Only the operator connects the sender; approved users do not connect their Google accounts.
-The recipient may use Gmail, Outlook or another provider.
+A delivery service (Resend or Brevo) sends the invitation links and security codes. Gmail, Outlook and other addresses are
+recipients and need no provider-specific app registration or mailbox password. The application
+does not connect a Gmail mailbox to send email.
 
-One-time setup in Google:
+The `onboarding@resend.dev` test sender can deliver only to the address registered to the
+Resend account. This is a recipient-address restriction, not a restriction on Gmail versus
+Outlook. To invite arbitrary approved addresses, verify a sender domain once in Resend and
+use an address on that domain for `AUTH_EMAIL_FROM`. The recipients do not verify domains.
+Pending invitations remain approved and can be retried after sender configuration is ready.
 
-1. Sign into [Google Cloud Console](https://console.cloud.google.com/) with the sender account.
-   Select or create a project for Invoice Checker.
-2. Enable the [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com).
-3. In **Google Auth platform**, configure the app branding/audience. For a local test, use an
-   External audience and add the sender email as a test user. Add only the Gmail send scope
-   under Data Access. This is separate from account sign-in for the invoice application.
-4. Under **Clients**, create an OAuth client with application type **Desktop app**, download
-   its JSON and save it as `backend/.env.gmail-oauth.json`. Keep this file out of chat/Git.
-5. From the backend folder, run:
+### Try Brevo with an email-verified sender
 
-```sh
-.venv/bin/python -m api.connect_gmail --sender your_sender@gmail.com
-```
+For an initial test without a custom domain, Brevo can verify a sender email address. When
+sending from a free-email address such as Gmail, Brevo can temporarily substitute its own
+sending domain, including for transactional messages. This is a testing/transition option;
+Brevo recommends an authenticated sender domain for reliable long-term delivery. Account
+validation, sending limits and provider deliverability policies still apply.
 
-On Windows, use `.venv/Scripts/python.exe` instead. The helper opens Google's consent page.
-Confirm the sender account and grant **Send email on your behalf**. It uses PKCE and a random
-state with a temporary callback listening only on `127.0.0.1`; the callback does not log URLs.
-It rejects missing/broader grants, then saves the refresh token and client settings in ignored
-`backend/.env` and selects `AUTH_EMAIL_PROVIDER=gmail_oauth`. It does not send a test email.
-The app retains a send-capable credential, so this still requires server secret protection.
-The credential cannot read messages using the requested scope. Revoke access in Google to
-invalidate it. An old Gmail app password is not needed and can be revoked separately.
-
-6. Restart the backend. Pending approvals have a **Send invitation** action for retrying an
-   earlier failed delivery. The invite goes only to the approval's email; resending replaces
-   the earlier unclaimed link. Revoking approval invalidates invitations and claimed grants.
-7. Set `FRONTEND_URL` to the actual public HTTPS app origin for hosted invitations. The default
-   `http://localhost:3000` works only when the link is opened on the machine running the app.
-
-Google's External **Testing** mode gives these refresh tokens a seven-day lifetime. Use the
-appropriate production publishing/verification process before relying on unattended delivery;
-Google can require sensitive-scope verification. A revoked/expired connection produces a
-visible delivery error and requires reconnecting. On a hosted backend, configure these private
-values in the host's secret settings: `AUTH_EMAIL_PROVIDER=gmail_oauth`, `GMAIL_OAUTH_FROM`,
-`GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, and `GMAIL_OAUTH_REFRESH_TOKEN`.
-The app caches short-lived access tokens only in memory, validates the granted scope on
-refresh, and calls only Google's fixed HTTPS token and messages/send endpoints. It never
-silently falls back to SMTP, Resend or a different recipient.
-
-Provider guidance: [desktop consent](https://developers.google.com/identity/protocols/oauth2/native-app),
-[Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes),
-and [refresh-token expiry](https://developers.google.com/identity/protocols/oauth2#expiration).
-
-### Configure Gmail sending without a custom domain
-
-Set `AUTH_EMAIL_PROVIDER=gmail` to send security codes through an existing Gmail account.
-This affects delivery for first-admin setup, sign-in, approved-user enrollment and password
-recovery. Recipients keep their own registered inboxes; they do not need Gmail accounts.
-The sender account can differ from `AUTH_ADMIN_EMAIL`.
-
-1. Sign into the Gmail account that will send codes and enable Google 2-Step Verification.
-2. Create an app password named **Invoice Checker** at <https://myaccount.google.com/apppasswords>.
-   Some organization/Advanced Protection accounts do not offer app passwords. Use Google's
-   instructions below if the option is unavailable. Do not use the ordinary Gmail password.
-3. Save the settings privately in `backend/.env.email` or backend environment variables:
+1. Create a [Brevo account](https://app.brevo.com/account/register).
+2. In **Settings > Senders, Domains, IPs > Senders**, add a sender named **Invoice Checker**
+   and an email you own. Enter the verification code Brevo sends to that inbox. This verifies
+   the sender identity; it does not connect or grant access to that mailbox.
+3. Under **Settings > SMTP & API > API keys**, generate an API key named **Invoice Checker**.
+   Use the API key beginning with `xkeysib-`, rather than an SMTP key or mailbox password.
+4. Keep the key and verified sender in private backend settings:
 
 ```dotenv
-AUTH_EMAIL_PROVIDER=gmail
-GMAIL_SMTP_USER=your_sender@gmail.com
-GMAIL_APP_PASSWORD=your_private_google_app_password
-AUTH_ADMIN_EMAIL=owner@example.com
+AUTH_EMAIL_PROVIDER=brevo
+BREVO_EMAIL_FROM=your_verified_sender@gmail.com
+BREVO_API_KEY=your_private_brevo_api_key
 ```
 
-4. Restart the backend after the app password is saved. Spaces between the app password's
-   groups are accepted. Keep existing Resend credentials private if retaining them as an
-   explicit alternative; Gmail delivery does not use `AUTH_EMAIL_FROM` or the Resend test recipient.
+Keep the current provider selected until the Brevo account, sender and API key are ready.
+Restart the backend after switching. Retained Resend settings are not used while Brevo is
+selected; failures do not silently fall back or rewrite the approved recipient. Hosted backend
+settings use the same variables. Private environment files remain excluded from Git/Docker.
+The app sends inline invitation/code content through the fixed HTTPS transactional API,
+`https://api.brevo.com/v3/smtp/email`, without synchronizing contacts or reading any inbox.
+An API acceptance is not a guarantee of inbox placement; inspect Brevo delivery logs if a
+message is delayed, blocked or rejected. Protect the API key as access to the Brevo account.
 
-Connections go only to `smtp.gmail.com:465` with certificate-validated TLS. The authenticated
-Gmail address is the sender; the approved recipient is preserved. SMTP failures produce a
-sanitized error and do not issue a login session, log codes, or silently switch providers.
-Google's sending limits still apply; this configuration is for ordinary account security codes.
-Resend remains the default when `AUTH_EMAIL_PROVIDER` is unset. Keep the current provider
-active until the Gmail app password is ready to avoid interrupting existing administrator access.
-
-Provider instructions: [Google app passwords](https://support.google.com/accounts/answer/185833)
-and [Gmail SMTP](https://developers.google.com/workspace/gmail/imap/imap-smtp).
+Provider instructions: [sender email verification](https://help.brevo.com/hc/en-us/articles/208836149-Create-a-new-sender-From-name-and-From-email),
+[free-email sender replacement](https://help.brevo.com/hc/en-us/articles/14925263522578-Comply-with-Gmail-Yahoo-and-Microsoft-s-requirements-for-email-senders),
+and [API key setup](https://developers.brevo.com/reference/quickstart-reference).
 
 ### Configure Resend email delivery
 

@@ -1,15 +1,10 @@
-"""Server-only Resend or Gmail delivery. Never log codes or provider responses."""
+"""Server-only transactional email delivery; Resend or Brevo. Never log codes or provider responses."""
 
 import os
-import smtplib
-import ssl
-from email.message import EmailMessage
 
 import httpx
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
-
-from . import gmail_oauth
 
 
 def normalize_email(value):
@@ -38,27 +33,23 @@ def sender_settings():
 
 def delivery_provider():
     provider = os.environ.get("AUTH_EMAIL_PROVIDER", "resend").strip().lower()
-    if provider not in {"resend", "gmail", "gmail_oauth"}:
-        raise ValueError("Choose resend, gmail or gmail_oauth for AUTH_EMAIL_PROVIDER.")
+    if provider not in {"resend", "brevo"}:
+        raise ValueError("Choose resend or brevo for AUTH_EMAIL_PROVIDER.")
     return provider
 
 
-def gmail_settings():
-    sender = normalize_email(os.environ.get("GMAIL_SMTP_USER", ""))
-    password = "".join(os.environ.get("GMAIL_APP_PASSWORD", "").split())
-    if not sender.endswith("@gmail.com") or len(password) != 16:
-        raise ValueError(
-            "Gmail delivery needs GMAIL_SMTP_USER and a 16-character Google app password. Keep the app password in private backend configuration."
-        )
-    return sender, password
+def brevo_settings():
+    key = os.environ.get("BREVO_API_KEY", "").strip()
+    sender = normalize_email(os.environ.get("BREVO_EMAIL_FROM", ""))
+    if not key.startswith("xkeysib-") or len(key) < 16 or any(char.isspace() for char in key):
+        raise ValueError("Configure a private Brevo API key and a sender verified in Brevo first.")
+    return key, sender
 
 
 def configured():
     try:
-        if delivery_provider() == "gmail_oauth":
-            gmail_oauth.settings()
-        elif delivery_provider() == "gmail":
-            gmail_settings()
+        if delivery_provider() == "brevo":
+            brevo_settings()
         else:
             sender_settings()
         return True
@@ -68,11 +59,8 @@ def configured():
 
 def ensure_ready(recipient=None):
     try:
-        if delivery_provider() == "gmail_oauth":
-            gmail_oauth.settings()
-            return
-        if delivery_provider() == "gmail":
-            gmail_settings()
+        if delivery_provider() == "brevo":
+            brevo_settings()
             return
         _, sender, test_recipient = sender_settings()
     except ValueError as exc:
@@ -110,10 +98,8 @@ def send_invitation(recipient, join_url, delivery_id):
 def _send_message(recipient, subject, body, delivery_id):
     ensure_ready(recipient)
     recipient = normalize_email(recipient)
-    if delivery_provider() == "gmail_oauth":
-        return gmail_oauth.send(recipient, subject, body)
-    if delivery_provider() == "gmail":
-        return _gmail_send(recipient, subject, body)
+    if delivery_provider() == "brevo":
+        return _brevo_send(recipient, subject, body)
     key, sender, _ = sender_settings()
     try:
         response = httpx.post(
@@ -131,23 +117,25 @@ def _send_message(recipient, subject, body, delivery_id):
         ) from None
 
 
-def _gmail_send(recipient, subject, body):
-    sender, password = gmail_settings()
-    message = EmailMessage()
-    message["From"] = sender
-    message["To"] = recipient
-    message["Subject"] = subject
-    message.set_content(body)
+def _brevo_send(recipient, subject, body):
+    key, sender = brevo_settings()
     try:
-        # Fixed Gmail destination, mandatory validated TLS, no debug output or fallback.
-        with smtplib.SMTP_SSL(
-            "smtp.gmail.com", 465, timeout=10, context=ssl.create_default_context()
-        ) as smtp:
-            smtp.login(sender, password)
-            if smtp.send_message(message, from_addr=sender, to_addrs=[recipient]):
-                raise ValueError("Recipient refused")
-    except (smtplib.SMTPException, OSError, ValueError):
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": key, "accept": "application/json"},
+            json={
+                "sender": {"name": "Invoice Checker", "email": sender},
+                "to": [{"email": recipient}],
+                "subject": subject,
+                "textContent": body,
+            },
+            timeout=10,
+            follow_redirects=False,
+        )
+        if not response.is_success or not isinstance(response.json().get("messageId"), str):
+            raise ValueError("Delivery rejected")
+    except (httpx.HTTPError, ValueError, AttributeError):
         raise HTTPException(
             503,
-            "The security email could not be sent. Ask the operator to check the Gmail app password and sending limits.",
+            "The email could not be sent. Check the Brevo API key, verified sender, account status and sending allowance.",
         ) from None

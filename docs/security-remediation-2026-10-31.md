@@ -39,6 +39,43 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Email-vendor alternative: Brevo, 2 November 2026
+
+Added explicit Resend/Brevo provider selection after clarifying that Gmail and Outlook are
+recipient mailboxes. Brevo uses a private API key and an email-verified sender; no mailbox app
+password or Google app registration is used. A Brevo free-email sender may be rewritten by
+the vendor to its transactional domain. This is a temporary deliverability measure, not a
+production domain-authentication guarantee. Actual activation requires a verified sender,
+valid API key and an eligible Brevo account.
+
+Delivery uses the fixed HTTPS Brevo transactional endpoint, validated TLS, a bounded timeout,
+no redirects and no fallback to another provider. The app preserves the exact approved
+recipient, uses inline plain-text invitations/codes and does not sync contacts or read mail.
+Provider rejection details, keys and private join links are excluded from errors. Approval
+and invitation retry status continue to show failures honestly. Resend remains selected until
+the new vendor is ready. Unused Gmail sender code and locally saved mailbox credentials have
+been removed; prior Gmail sections below are historical and superseded.
+
+93 targeted delivery, MFA, invitation, enrollment and recovery tests passed; four optional
+database cases were skipped. All 15 delivery-contract tests also passed after tightening key
+validation. Backend lint/format passed. Tests mocked the vendor API and sent no real emails.
+Live Brevo activation still requires the owner's verified sender and private API key.
+
+## Sender clarification: Resend sends, Gmail/Outlook receive, 2 November 2026
+
+The intended mechanism is Resend delivery to any approved recipient, including Gmail and
+Outlook. The unused Gmail SMTP/Google OAuth sender implementations and local Gmail app-password
+settings have been removed. Resend credentials, administrator identity, approvals, private
+workspaces and the personal invitation flow remain. The earlier Gmail-sender sections below
+are historical and are superseded by this correction; no Gmail sender was activated.
+
+The test sender `onboarding@resend.dev` can deliver only to the Resend account owner's address.
+This restriction applies to both invitations and security codes, regardless of the recipient's
+domain. Delivery to other approved recipients requires verifying a sender domain in Resend and
+configuring `AUTH_EMAIL_FROM` on that domain. No app-side recipient rewrite or bypass is used.
+The app retains visible delivery failure status and retry support until the sender is ready.
+Locally saved Gmail app passwords were cleared; Google-side revocation is an owner action.
+
 ## Automatic personal invitations and Google send-only consent, 2 November 2026
 
 Approval now emails a personal 24-hour join link, bound to that immutable approval/email.

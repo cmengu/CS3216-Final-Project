@@ -71,7 +71,7 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 
 Every account has its own private workspace; an administrator’s invoice permissions remain
 limited to that administrator’s own workspace. Account management responses never include
-passwords/hashes. Delivery supports Resend (default), Google send-only authorization (`AUTH_EMAIL_PROVIDER=gmail_oauth`), or the explicit legacy Gmail app-password SMTP option (`gmail`). Google OAuth requests/accepts only `gmail.send`, uses private refresh credentials and caches short-lived access tokens in memory. Invitation links use URL fragments to keep tokens out of access logs and require an explicit acceptance POST; GETs/email scanners do not consume them. Recipients remain registered account inboxes; Gmail failures never fall back to Resend.
+passwords/hashes. The selected email delivery service is Resend (default) or Brevo (`AUTH_EMAIL_PROVIDER=brevo`); Gmail/Outlook addresses are recipients. No Gmail SMTP/app password or Google OAuth sender connection is used. Invitation links use URL fragments to keep tokens out of access logs and require an explicit acceptance POST; GETs/email scanners do not consume them. Recipients remain registered account inboxes. The Resend test sender is restricted to its account owner; a verified sender domain enables other recipients.
 Every approved account requires an emailed security code; password-only and
 old authenticator sessions cannot access protected resources. Challenges expire after five
 minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
