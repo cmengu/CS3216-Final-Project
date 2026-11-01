@@ -77,11 +77,11 @@ export function useProjectMaster(projectId: string | null) {
 }
 
 export function useProjectEvents(projects: Project[]) {
-  const [events, setEvents] = useState<MasterListEvent[]>([]);
+  const [events, setEvents] = useState<(MasterListEvent & { projectId: string })[]>([]);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    Promise.all(projects.map((p) => request<MasterListEvent[]>(`/master-list/events?project_id=${encodeURIComponent(p.id)}`)))
+    Promise.all(projects.map((p) => request<MasterListEvent[]>(`/master-list/events?project_id=${encodeURIComponent(p.id)}`).then((history) => history.map((event) => ({ ...event, projectId: p.id })))))
       .then((lists) => { if (active) { setEvents(lists.flat()); setError(null); } },
         () => { if (active) setError("Could not load project master-list history."); });
     return () => { active = false; };

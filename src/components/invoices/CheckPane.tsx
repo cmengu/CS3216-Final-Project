@@ -44,7 +44,7 @@ export function DecisionBar({ inv, onPayAnyway, onRaise }: { inv: SupplierInvoic
     setBusy(false);
   };
   return (
-    <div className="ic-decide" aria-label="Decision" role="region">
+    <div className={`ic-decide${d.mode !== "decided" ? " ic-decide--actions" : ""}`} aria-label="Decision" role="region">
       {d.mode === "decided" && inv.outcome ? (
         <>
           <div className="sum" style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -77,17 +77,6 @@ export function DecisionBar({ inv, onPayAnyway, onRaise }: { inv: SupplierInvoic
         </>
       ) : (
         <>
-          <div className="sum">
-            {d.mode === "pay" ? (
-              <span className="ic-ok" style={{ color: "var(--ink)", fontWeight: 600 }}>
-                <Icon name="tick" />
-                {d.title}
-              </span>
-            ) : (
-              <b>{d.title}</b>
-            )}
-            {d.sub ? <span className="muted">{d.sub}</span> : null}
-          </div>
           {d.mode === "raise" || d.mode === "anyway" ? (
             <button type="button" className="ic-btn ic-btn--secondary" onClick={onPayAnyway}>
               Pay anyway…
@@ -179,7 +168,7 @@ export function CheckPane({
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <h1 className="ic-h1 ic-h1--pane">{failed ? inv.fileName : (inv.supplier ?? inv.fileName)}</h1>
           </div>
-          {failed ? <span className="muted" style={{ fontSize: 14 }}>
+          {failed ? <span className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>
             {meta.filter(Boolean).join(" · ")}
           </span> : null}
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -280,13 +269,13 @@ export function CheckPane({
                 <h2 id="tt-h">Totals</h2>
               </div>
               <div className="ic-sum">
-                <span className="muted" style={{ fontSize: 14 }}>
+                <span className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>
                   Subtotal
                 </span>
                 <span className="num" style={{ textAlign: "right" }}>
                   {inv.subtotal === null ? "—" : money(inv.subtotal, null)}
                 </span>
-                <span className="muted" style={{ fontSize: 14 }}>
+                <span className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>
                   {taxLabel(inv.taxRate)}
                 </span>
                 <span className="num" style={{ textAlign: "right" }}>

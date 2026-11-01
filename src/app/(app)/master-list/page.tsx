@@ -86,7 +86,7 @@ function MasterListView() {
       <div className="ic-headrow">
         <div className="ic-titleblock">
           <h1 className="ic-h1">Master list</h1>
-          <p className="muted" style={{ fontSize: 14 }}>
+          <p className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>
             {masterList.file} · Uploaded {whenLabel(masterList.uploadedAt)}
           </p>
         </div>
@@ -134,7 +134,7 @@ function MasterListView() {
                     <td className="r num">{n + 1}</td>
                     <td>{i.supplier}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{i.po}</td>
-                    <td className="mono" style={{ whiteSpace: "nowrap", fontSize: 13 }}>
+                    <td className="mono" style={{ whiteSpace: "nowrap", fontSize: "calc(13px * var(--text-scale))" }}>
                       {i.item}
                     </td>
                     <td className="trunc" title={i.name}>
