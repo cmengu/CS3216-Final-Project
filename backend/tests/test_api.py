@@ -602,6 +602,7 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
 
     app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
     with TestClient(app) as client:
+        client.headers.update({"X-Requested-With": "InvoiceChecker"})
         # 1. Protected endpoints reject unauthenticated requests and unsigned headers
         assert client.get("/invoices").status_code == 401
         assert client.get("/master-list").status_code == 401
@@ -688,6 +689,7 @@ def test_session_cookie_crosses_sites_only_over_https(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_PASSWORD", "invoice-checker")
     login = {"username": "demo-account", "password": "invoice-checker"}
     with TestClient(create_app(storage_dir=tmp_path)) as client:
+        client.headers.update({"X-Requested-With": "InvoiceChecker"})
         # Railway's proxy ends HTTPS and forwards plain http with X-Forwarded-Proto.
         deployed = (
             client.post("/auth/sign-in", json=login, headers={"X-Forwarded-Proto": "https"})

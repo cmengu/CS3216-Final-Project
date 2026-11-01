@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import time
 from uuid import uuid4
 
 import pytest
@@ -135,3 +136,18 @@ def test_postgres_app_keeps_outlook_in_a_separate_sqlite_store(tmp_path, monkeyp
         assert response.status_code == 200
         assert response.json()["connected"] is False
     assert closed == [True]
+
+
+def test_revocation_is_isolated_persistent_and_never_shortened(session_store, monkeypatch):
+    store = session_store
+    now = int(time.time())
+    assert not store.is_session_revoked("alice")
+    store.revoke_session("alice", now + 3600)
+    store.revoke_session("alice", now + 30)
+    monkeypatch.setattr("api.storage.time.time", lambda: now + 60)
+    assert store.is_session_revoked("alice")
+    assert not store.is_session_revoked("bob")
+    if isinstance(store, Store):
+        assert Store(store.directory).is_session_revoked("alice")
+    store.revoke_session("expired", now - 1)
+    assert not store.is_session_revoked("expired")

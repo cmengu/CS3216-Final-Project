@@ -26,8 +26,8 @@ The checker is conservative by design. A step that cannot do its job fails with 
 
 ## Operating Context
 
-- An invoice is uploaded as a PDF (drop or file picker; PDF only, up to 20 MB and 1 to 30 pages).
-- The service reads it (Docling OCR), extracts the printed fields with a model, and checks each line against a price sheet (CSV or Excel).
+- Invoices are uploaded as PDFs (up to 20 MiB and 1 to 30 pages) or Vietnamese HDon XML files (up to 20 MiB). ZIP/RAR archives up to 50 MiB are unpacked locally, including folders, with limits of 100 MiB expanded and 1,000 entries. Nested/password-protected archives are unsupported.
+- For PDFs, the service reads with Docling OCR and extracts printed fields with a model. XML fields are read directly without OCR or a model. Both use the same price-sheet checks (CSV or Excel) and preserve uncertainty for review.
 - Matching uses supplier, PO, invoice date, currency, item code and unit. Charges with no code need an exact description match. Printed discounts, tax rates and printed exchange rates are applied; price differences above 0.005 are flagged, undercharges included.
 - Each invoice's check is labelled by what it found: an amount over, Needs a person, Unknown part, Could not read or Could not check, Checking, or All match. A checked invoice whose total the service will not stand behind needs a person, never "All match". Each invoice page shows the invoice as read, the lines that need a look, and the amount over.
 - The clerk ends each invoice with an outcome: Ready to pay (only when checked in full and every line matches), Ready to pay anyway (with a reason), or Raise with supplier (when a line is over the sheet price). The list's piles are To decide and Done. Ready-to-pay invoices export as a CSV, and an overcharge gives a dispute note to copy; nothing is sent from the app.

@@ -72,6 +72,11 @@ const freight01: ServiceInvoice = {
 };
 
 describe("toSupplierInvoice", () => {
+  it("keeps missing XML totals unknown instead of calculating or defaulting them", () => {
+    const converted = toSupplierInvoice({ ...invoice02, filename: "invoice.xml", invoice: { ...invoice02.invoice!, subtotal: null, tax: null } });
+    expect(converted.subtotal).toBeNull();
+    expect(converted.tax).toBeNull();
+  });
   it("shows the invoice price the service compared, in the invoice's currency, not the printed foreign price", () => {
     const invoice = toSupplierInvoice(freight01);
     expect(invoice.lines.map((line) => [line.unitPrice, line.sheetPrice])).toEqual([

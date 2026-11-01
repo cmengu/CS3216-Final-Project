@@ -89,7 +89,7 @@ Without a current master, invoice upload returns 409. Explicit legacy `standard`
 
 ### `POST /invoices`
 
-Uploads one invoice PDF, then **reads, extracts and checks it in the same request** and returns the saved result. The request can take a minute in live mode.
+Uploads one PDF or Vietnamese HDon XML invoice, then **reads, extracts and checks it in the same request** and returns the saved result. The request can take a minute in live mode. ZIP/RAR archives are unpacked locally by the frontend and submitted as individual PDF/XML requests. XML fields are mapped directly without OCR/model calls; the same master-list checks and review safeguards apply.
 
 **Request**
 
@@ -98,9 +98,9 @@ Uploads one invoice PDF, then **reads, extracts and checks it in the same reques
 
 **Accepted files**
 
-- **PDF only.** The filename must end in `.pdf`; otherwise `415 "Upload a PDF"`.
-- **Up to 20 MiB.** Otherwise `413 "PDF exceeds 20 MiB"`. Before reading, a `Content-Length` over 20 MiB + 64 KiB gets `413 "Upload exceeds 20 MiB"`.
-- **1 to 30 pages**, and it must be a valid PDF. Otherwise `422` with the reason, for example "PDF must contain 1–30 pages".
+- **PDF or Vietnamese HDon XML.** The filename must end in `.pdf` or `.xml`; otherwise 415. XML requires live mode; fixture mode returns 422. Unknown XML vocabularies, malformed XML and DTD/entity declarations return 422 before anything is saved.
+- **Up to 20 MiB.** Otherwise `413 "Invoice exceeds 20 MiB"`. Before reading, a `Content-Length` over 20 MiB + 64 KiB gets `413 "Upload exceeds 20 MiB"`.
+- **PDF: 1 to 30 pages**, and it must be a valid PDF. Otherwise `422` with the reason, for example "PDF must contain 1–30 pages".
 
 **Responses**
 
@@ -110,7 +110,7 @@ Uploads one invoice PDF, then **reads, extracts and checks it in the same reques
 | `422` | `SavedInvoice` | The file was saved but a step failed. `status: "failed"`; `error` names the step and the reason, for example `"reading: …"`, `"extracting: …"` or `"checking: …"`. |
 | `422` | `{"detail": "..."}` | Invalid PDF (page count, unreadable). Nothing saved. |
 | `413` | `{"detail": "..."}` | Over 20 MiB. |
-| `415` | `{"detail": "Upload a PDF"}` | Not a `.pdf`. |
+| `415` | `{"detail": "Upload a PDF or Vietnamese HDon XML invoice"}` | Not a `.pdf` or `.xml`. |
 | `429` | `{"detail": "An invoice is processing; retry after it finishes"}` | Another upload is running. One at a time; `Retry-After: 5`. |
 | `503` | `{"detail": "..."}` | `INVOICE_MODE` not set. |
 | `400` | `{"detail": "Invalid Content-Length"}` | Bad header. |
@@ -139,10 +139,10 @@ One invoice in full.
 
 ### `GET /invoices/{invoice_id}/file`
 
-The original PDF exactly as uploaded.
+The original PDF or XML exactly as uploaded.
 
-- **200:** `application/pdf`, `Content-Disposition: inline; filename=<original name>`.
-- **404:** `"Invoice not found"` or `"Original PDF is unavailable"`.
+- **200:** PDF: `application/pdf`, inline disposition. XML: `application/xml`, attachment disposition. Both keep the original name; XML uses `X-Content-Type-Options: nosniff`.
+- **404:** `"Invoice not found"` or `"Original invoice is unavailable"`.
 
 ---
 

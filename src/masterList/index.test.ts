@@ -10,6 +10,7 @@ it("uploads actual files and selected mappings, and publishes server rows", asyn
   expect(await uploadMasterList(file, options)).toEqual({ ok: true, list });
   const request = fetch.mock.calls[0][1];
   expect(request.method).toBe("POST");
+  expect(request.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
   expect(request.body.get("file").name).toBe("prices.xlsx");
   expect(JSON.parse(request.body.get("options"))).toEqual(options);
   expect(getMasterList()).toEqual(list);
@@ -32,6 +33,7 @@ it("previews Excel through the backend instead of returning seed rows", async ()
   vi.stubGlobal("fetch", fetch);
   expect(await previewMasterList(new File(["xls"], "prices.xls"))).toEqual({ sheets: [] });
   expect(fetch.mock.calls[0][0]).toContain("/master-list/preview");
+  expect(fetch.mock.calls[0][1].headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
 });
 
 it("never lets an older read overwrite a successful replacement", async () => {
@@ -83,6 +85,7 @@ it("serializes replacements so the last submitted file is the last committed ver
   const writes: string[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
     if (options?.method === "PUT") {
+      expect(options.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
       writes.push(((options.body as FormData).get("file") as File).name);
       return writes.length === 1 ? delayed : Promise.resolve(Response.json({ ...list, version: "last" }));
     }
@@ -103,7 +106,8 @@ it("refreshes a sibling-tab change received while a save is in progress", async 
   let started = false;
   let reads = 0;
   vi.stubGlobal("fetch", vi.fn((url: string, options?: RequestInit) => {
-    if (options?.method === "PUT") { started = true; return delayed; }
+    if (options?.method === "PUT") {
+      expect(options.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" }); started = true; return delayed; }
     if (url.endsWith("/events")) return Promise.resolve(Response.json([]));
     ++reads;
     return Promise.resolve(Response.json({ ...list, version: "other-tab" }));

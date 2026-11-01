@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signIn, useUser, type SignInResult } from "@/auth";
 import { Icon } from "@/components/icons";
+import { useMasterList } from "@/masterList";
 
 export default function SignIn() {
   const user = useUser();
+  const ml = useMasterList();
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -14,23 +17,25 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
 
+  const nextRoute = ml === null ? "/master-list" : "/invoices";
+
   useEffect(() => {
-    if (user) router.replace("/");
-  }, [user, router]);
+    if (user && ml !== undefined) router.replace(nextRoute);
+  }, [user, ml, nextRoute, router]);
 
   const finish = (r: SignInResult) => {
-    if (r.ok) router.replace("/");
+    if (r.ok) router.replace(nextRoute);
     else setWrong(true);
   };
 
   return (
     <div className="ic-auth">
-      <div className="ic-brand">
+      <Link className="ic-brand" href="/">
         <span className="ic-mark" aria-hidden="true">
           <Icon name="tick" size="ui" />
         </span>
         Invoice Checker
-      </div>
+      </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
         <form

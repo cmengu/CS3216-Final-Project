@@ -202,3 +202,41 @@ def test_legacy_file_checker_cannot_override_project_master(tmp_path):
         p = project(client, "Expenses")
         assert upload(client, p["id"]).status_code == 503
         assert client.get("/invoices").json() == []
+
+
+def test_project_mutation_retains_cookie_csrf_protection(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.setenv("AUTH_USERNAME", "project-test")
+    monkeypatch.setenv("AUTH_PASSWORD", "project-test-password")
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+        csrf = {"X-Requested-With": "InvoiceChecker"}
+        assert (
+            client.post(
+                "/auth/sign-in",
+                json={"username": "project-test", "password": "project-test-password"},
+                headers=csrf,
+            ).status_code
+            == 200
+        )
+        payload = {"name": "Expenses", "comparison_mode": "totals_only"}
+        assert client.post("/projects", json=payload).status_code == 403
+        assert client.post("/projects", json=payload, headers=csrf).status_code == 201
+
+
+def test_xml_totals_project_skips_models_and_master_check(client, monkeypatch):
+    from test_xml_invoice import XML
+
+    monkeypatch.setattr(
+        "api.csv_live.LiveStages.extract", lambda *_: pytest.fail("XML called model")
+    )
+    monkeypatch.setattr(
+        "api.csv_live.LiveStages.check", lambda *_: pytest.fail("Totals called checker")
+    )
+    p = project(client, "XML expenses")
+    response = client.post(
+        f"/invoices?project_id={p['id']}", files={"file": ("demo.xml", XML, "application/xml")}
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["check"] is None
+    assert response.json()["comparison_mode"] == "totals_only"
+    assert client.get(f"/projects/{p['id']}").json()["totals"] == {"VND": "21.87"}

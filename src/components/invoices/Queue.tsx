@@ -111,6 +111,7 @@ export function Queue({
           </button> : null}
         </div>
       </div>
+      {project ? <p className="muted" style={{ margin: "0 16px 12px", fontSize: 12 }}>PDF, XML, ZIP or RAR</p> : null}
       <Search label={project ? "Search invoices" : "Search projects"} value={q} onChange={onQ} full />
       {project && !totalsOnly ? <div className="ic-seg ic-seg--fill" role="group" aria-label="Invoice status">
         <button type="button" aria-pressed={segment === "decide"} onClick={() => setSegment("decide")}>
@@ -142,7 +143,7 @@ export function Queue({
               <span />
             </div>
             <span className="muted">
-              Checking…{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
+              {current.status === "unpacking" ? "Unpacking…" : "Checking…"}{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
             </span>
           </div>
         ) : null}

@@ -10,7 +10,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Queue card | Result pill (Matches / Price differs / Not on master list / Needs you) and the attention line ("SGD 159.60 over") | `src/components/invoices/Queue.tsx` `Card` ← `src/checker/present.ts` `statusPill`, `checkPill`, `queueAttention` |
 | Lines card | Pill on the card header ("1 of 2 differ"), flagged lines first, each line's pill, attention line and comparison row | `src/components/invoices/CheckPane.tsx` `CheckPane` ← `present.ts` `linesPill`, `orderedLines`, `LINE_PILL`, `lineAttention`, `lineDelta`, `unit` |
 | Decision bar | Which actions are offered. Every line `match` → Ready to pay. An overcharge → Raise with supplier. Otherwise Pay anyway only. | `CheckPane.tsx` `DecisionBar` ← `present.ts` `decision` ← `src/checker/review.ts` `choices`, `overSheet` |
-| PDF highlight | Which lines get a highlight on the page | `src/app/(app)/invoices/page.tsx` `Workspace` (`marks`) → `src/components/PdfView.tsx` `placeMarks` |
+| Original invoice | Shared preview frame, price-comparison sidebar, line selection, zoom and download for PDF/XML; original PDF pages or readable original XML fields | `src/app/(app)/invoices/page.tsx` `Workspace` (`marks`) → `src/components/InvoicePreview.tsx`; `PdfView.tsx` `placeMarks` or `XmlView.tsx` |
 | Compare drawer | Master list vs invoice price and the difference per item | `src/components/invoices/Dialogs.tsx` `CompareDrawer` ← `present.ts` `unit`, `signed`, `shortDescription` |
 | Raise with supplier email | The lines listed in the pre-written message | `Dialogs.tsx` `RaiseDialog`; `CheckPane.tsx` `DecisionBar` (Copy email) ← `present.ts` `raiseEmail`, `mailto` |
 | Invoices tab count | Amber count of invoices to decide | `src/components/AppShell.tsx` `Switcher` ← `src/checker/summary.ts` `summarize` (`piles.decide`) |
@@ -24,7 +24,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Queue card | Checking… / Couldn't read | `Queue.tsx` `Card` ← `present.ts` `checkPill`, `queueAttention`, `failureSentence` |
 | Check pane | The "Couldn't read" card and its Try again button | `CheckPane.tsx` `Failed` ← `present.ts` `failureSentence`; `src/checker/api.ts` `retryInvoice` |
 | Decision bar | No decision while checking (409); only Pay anyway when failed | `CheckPane.tsx` `DecisionBar` ← `present.ts` `decision` ← `review.ts` `choices` |
-| Upload queue | Progress, waiting, errors (415, 413, 422, 429) | `src/checker/uploads.ts` `precheck`, `refusal`, `run`; `api.ts` `uploadInvoice`; shown in `Queue.tsx` and `invoices/page.tsx` `GuidedSetup` |
+| Upload queue | Archive unpacking, skipped files, duplicate invoices, progress, waiting and errors (415, 413, 422, 429) | `src/checker/uploads.ts` `precheck`, `refusal`, `run`; `src/checker/archives.ts` `unpackInvoices`; `api.ts` `uploadInvoice`; shown in `Queue.tsx` and `invoices/page.tsx` `GuidedSetup` |
 | Guided setup | When setup ends and the workspace appears | `AppShell.tsx` `phaseOf`, `Stepper`; `invoices/page.tsx` `InvoicesView`, `GuidedSetup` |
 
 ## Invoice totals: `check.overcharge_total`, `invoice.subtotal`, `tax`, `invoice_total`

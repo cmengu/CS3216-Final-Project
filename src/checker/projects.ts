@@ -19,7 +19,7 @@ export interface Project {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${SERVICE_URL}${path}`, {
     ...options, credentials: "include", cache: "no-store",
-    headers: sessionHeaders(options?.headers as Record<string, string> | undefined),
+    headers: sessionHeaders(options?.headers as Record<string, string> | undefined, !!options?.method && options.method !== "GET"),
     signal: AbortSignal.timeout(15_000),
   });
   const body = await response.json();

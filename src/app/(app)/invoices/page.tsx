@@ -9,16 +9,18 @@ import { useProjectMaster } from "@/checker/projects";
 import { ProjectAssignment } from "@/components/invoices/ProjectAssignment";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
+import { INVOICE_ACCEPT } from "@/checker/upload-formats";
 import { enqueue, useUploads } from "@/checker/uploads";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
 import { CheckPane } from "@/components/invoices/CheckPane";
 import { OutlookDialog } from "@/components/invoices/OutlookDialog";
 import { Queue } from "@/components/invoices/Queue";
+import { XmlView } from "@/components/XmlView";
 import { PdfView } from "@/components/PdfView";
 import { useFilePicker } from "@/components/ui";
 
-const PDF = "application/pdf,.pdf";
+
 
 function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
   const { invoices, invoiceError, projects, projectError, projectsLoading, reloadProjects } = useApp();
@@ -45,7 +47,7 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
   const inv: SupplierInvoice | null = projectInvoices.find((i) => i.id === selectedId) ?? null;
   const { masterList } = useProjectMaster(project?.comparison_mode === "master_list" ? project.id : null);
   const canUpload = !!project && (project.comparison_mode === "totals_only" || project.has_master_list);
-  const picker = useFilePicker(PDF, true, (files) => { if (canUpload) enqueue(files, known, project.id); });
+  const picker = useFilePicker(INVOICE_ACCEPT, true, (files) => { if (canUpload) enqueue(files, known, project.id); });
   const selectProject = (id: string) => {
     setQ("");
     router.push(`/invoices?project=${encodeURIComponent(id)}`, { scroll: false });
@@ -173,7 +175,9 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
           </section>}
         </div></section>
       )}
-      {inv && pdfOpen ? (
+      {inv && pdfOpen && /\.xml$/i.test(inv.fileName) ? (
+        <XmlView key={`xml-${inv.id}`} inv={inv} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} focus={focus} onSelectLine={(n) => setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }))} onClose={closePdf} />
+      ) : inv && pdfOpen ? (
         <PdfView
           key={`pdf-${inv.id}`}
           inv={inv}

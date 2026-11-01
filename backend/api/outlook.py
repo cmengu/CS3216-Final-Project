@@ -26,6 +26,7 @@ from fastapi.responses import RedirectResponse, Response
 from openai import OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .auth import extract_request_claims, is_auth_required, session_cookie_options
 from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id, request_session_id
 
 router = APIRouter(tags=["outlook"])
@@ -36,6 +37,7 @@ _ACTIVE_OUTLOOK_SESSION: contextvars.ContextVar[str] = contextvars.ContextVar(
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 OAUTH_SCOPES = "openid profile email offline_access User.Read Mail.Read"
 STATE_TTL_SECONDS = 900  # 15 minutes
+OAUTH_BROWSER_COOKIE = "ic_outlook_oauth"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS outlook_oauth_states (
@@ -43,7 +45,8 @@ CREATE TABLE IF NOT EXISTS outlook_oauth_states (
     code_verifier TEXT NOT NULL,
     return_to TEXT NOT NULL,
     created_at REAL NOT NULL,
-    session_id TEXT NOT NULL DEFAULT 'default'
+    session_id TEXT NOT NULL DEFAULT 'default',
+    browser_nonce_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS outlook_connections (
@@ -227,6 +230,8 @@ def initialize(store: Store) -> None:
             conn.execute(
                 "ALTER TABLE outlook_oauth_states ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
             )
+        if "browser_nonce_hash" not in present:
+            conn.execute("ALTER TABLE outlook_oauth_states ADD COLUMN browser_nonce_hash TEXT")
 
 
 def _keystream(enc_key: bytes, salt: bytes, length: int) -> bytes:
@@ -556,6 +561,8 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
     sid = request_session_id(request)
     state = secrets.token_urlsafe(32)
     verifier, challenge = _pkce_pair()
+    browser_nonce = secrets.token_urlsafe(32)
+    nonce_hash = hashlib.sha256(browser_nonce.encode("ascii")).hexdigest()
     safe_return = _sanitize_return_to(return_to)
     now = time.time()
 
@@ -566,10 +573,10 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
         )
         conn.execute(
             """
-            INSERT INTO outlook_oauth_states (state, code_verifier, return_to, created_at, session_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO outlook_oauth_states (state, code_verifier, return_to, created_at, session_id, browser_nonce_hash)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (state, verifier, safe_return, now, sid),
+            (state, verifier, safe_return, now, sid, nonce_hash),
         )
 
     query = urlencode(
@@ -585,7 +592,17 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
             "prompt": "select_account",
         }
     )
-    return RedirectResponse(url=f"{cfg.authorize_url}?{query}", status_code=302)
+    response = RedirectResponse(url=f"{cfg.authorize_url}?{query}", status_code=302)
+    response.set_cookie(
+        OAUTH_BROWSER_COOKIE,
+        browser_nonce,
+        httponly=True,
+        path="/",
+        max_age=STATE_TTL_SECONDS,
+        samesite="lax",
+        secure=session_cookie_options(request)["secure"],
+    )
+    return response
 
 
 @router.get("/auth/outlook/callback")
@@ -603,11 +620,10 @@ def outlook_callback(
     if state:
         with store.connect() as conn:
             row = conn.execute(
-                "SELECT code_verifier, return_to, created_at, session_id "
+                "SELECT code_verifier, return_to, created_at, session_id, browser_nonce_hash "
                 "FROM outlook_oauth_states WHERE state = ?",
                 (state,),
             ).fetchone()
-            conn.execute("DELETE FROM outlook_oauth_states WHERE state = ?", (state,))
     else:
         row = None
 
@@ -616,36 +632,58 @@ def outlook_callback(
         return_to = str(row["return_to"] or "/invoices")
         sid = normalize_session_id(str(row["session_id"] or DEFAULT_SESSION_ID))
 
+    def finish(params):
+        response = _frontend_redirect(cfg, return_to, params)
+        response.delete_cookie(
+            OAUTH_BROWSER_COOKIE,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            secure=session_cookie_options(request)["secure"],
+        )
+        return response
+
+    invalid = {
+        "outlook_error": "Invalid or expired Outlook connection request. Start connecting again."
+    }
+    if row is None or float(row["created_at"]) < time.time() - STATE_TTL_SECONDS:
+        return finish(invalid)
+    browser_nonce = request.cookies.get(OAUTH_BROWSER_COOKIE, "")
+    expected_nonce = row["browser_nonce_hash"]
+    actual_nonce = hashlib.sha256(browser_nonce.encode("utf-8")).hexdigest()
+    claims = extract_request_claims(request)
+    if (
+        not browser_nonce
+        or not expected_nonce
+        or not hmac.compare_digest(actual_nonce, expected_nonce)
+        or (is_auth_required() and claims is None)
+        or (claims is not None and normalize_session_id(claims["session_id"]) != sid)
+    ):
+        return finish(
+            {
+                "outlook_error": "This Outlook request does not match your browser or sign-in. Start connecting again."
+            }
+        )
+
+    # Consume only a browser-bound state and do so atomically, before exchanging a code.
+    with store.connect() as conn:
+        consumed = conn.execute(
+            "DELETE FROM outlook_oauth_states WHERE state=? AND browser_nonce_hash=?",
+            (state, expected_nonce),
+        ).rowcount
+    if consumed != 1:
+        return finish(invalid)
     if error:
-        msg = (error_description or error).strip()
-        return _frontend_redirect(cfg, return_to, {"outlook_error": msg[:240]})
-
-    if row is None or not code:
-        return _frontend_redirect(
-            cfg,
-            return_to,
-            {
-                "outlook_error": "Invalid or expired OAuth state. Please try connecting Outlook again."
-            },
-        )
-
-    if float(row["created_at"]) < time.time() - STATE_TTL_SECONDS:
-        return _frontend_redirect(
-            cfg,
-            return_to,
-            {
-                "outlook_error": "OAuth login session timed out. Please try connecting Outlook again."
-            },
-        )
+        return finish({"outlook_error": (error_description or error).strip()[:240]})
+    if not code:
+        return finish(invalid)
 
     try:
         token_data = _exchange_code_for_tokens(cfg, code, str(row["code_verifier"]))
     except HTTPException as exc:
-        return _frontend_redirect(cfg, return_to, {"outlook_error": str(exc.detail)[:240]})
+        return finish({"outlook_error": str(exc.detail)[:240]})
     except Exception as exc:
-        return _frontend_redirect(
-            cfg,
-            return_to,
+        return finish(
             {"outlook_error": f"Could not reach Microsoft token endpoint: {exc}"[:240]},
         )
 
@@ -653,9 +691,7 @@ def outlook_callback(
     refresh_token = str(token_data.get("refresh_token") or "")
     expires_in = int(token_data.get("expires_in") or 3600)
     if not access_token:
-        return _frontend_redirect(
-            cfg, return_to, {"outlook_error": "Microsoft did not return an access token."}
-        )
+        return finish({"outlook_error": "Microsoft did not return an access token."})
 
     profile = _fetch_graph_profile(access_token)
     claims = _decode_id_token_claims(token_data.get("id_token"))
@@ -706,7 +742,7 @@ def outlook_callback(
                 (str(email), str(display_name), encrypted, connected_at),
             )
 
-    return _frontend_redirect(cfg, return_to, {"outlook": "connected"})
+    return finish({"outlook": "connected"})
 
 
 @router.get("/outlook/status", response_model=OutlookStatusResponse)

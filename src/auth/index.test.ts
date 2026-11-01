@@ -28,6 +28,7 @@ describe("HttpOnly cookie authentication", () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/auth/sign-in")) {
         expect(init?.credentials).toBe("include");
+        if (init?.method === "POST") expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
         return new Response(
           JSON.stringify({
             ok: true,
@@ -39,6 +40,7 @@ describe("HttpOnly cookie authentication", () => {
       }
       if (url.endsWith("/auth/me")) {
         expect(init?.credentials).toBe("include");
+        if (init?.method === "POST") expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
         return new Response(
           JSON.stringify({
             ok: true,
@@ -51,6 +53,7 @@ describe("HttpOnly cookie authentication", () => {
       }
       if (url.endsWith("/auth/sign-out")) {
         expect(init?.credentials).toBe("include");
+        if (init?.method === "POST") expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
       return new Response("[]", { status: 200 });
@@ -73,4 +76,19 @@ describe("HttpOnly cookie authentication", () => {
     await signOut();
     expect(currentUser()).toBeNull();
   });
+});
+
+
+it.each(["server rejection", "network failure"])("keeps the user signed in after a sign-out %s so they can retry", async (failure) => {
+  vi.stubGlobal("window", {});
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true, user: { email: "security-test" } })));
+  expect((await signIn("security-test", "test-password")).ok).toBe(true);
+  vi.stubGlobal("fetch", failure === "network failure"
+    ? vi.fn().mockRejectedValue(new TypeError("offline"))
+    : vi.fn().mockResolvedValue(new Response("{}", { status: 503 })));
+  await expect(signOut()).rejects.toThrow("Couldn’t sign out securely");
+  expect(currentUser()).toEqual({ email: "security-test" });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true })));
+  await signOut();
+  expect(currentUser()).toBeNull();
 });
