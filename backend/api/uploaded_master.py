@@ -203,8 +203,21 @@ class UploadedMasterStages:
         self.model = model
         self.client = client
 
-    def bind(self, store, *, session_id: str = DEFAULT_SESSION_ID):
-        document = current_master(store, session_id=session_id)
+    def bind(
+        self,
+        store,
+        *,
+        session_id: str = DEFAULT_SESSION_ID,
+        project_id: str | None = None,
+        totals_only: bool = False,
+    ):
+        if totals_only:
+            return LiveStages(
+                UploadedPriceSheet({"version": "", "items": []}),
+                model=self.model,
+                client=self.client,
+            )
+        document = current_master(store, session_id=session_id, project_id=project_id)
         if document is None:
             raise ValueError("Upload a master list before checking invoices.")
         return LiveStages(UploadedPriceSheet(document), model=self.model, client=self.client)

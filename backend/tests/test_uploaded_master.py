@@ -56,7 +56,7 @@ def test_replacement_changes_new_checks_and_preserves_old_versions(tmp_path):
     with TestClient(
         create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
     ) as client:
-        assert client.get("/health").json()["processing_configured"] is False
+        assert client.get("/health").json()["processing_configured"] is True
         assert upload(client).status_code == 409
         first = import_csv(client)
         assert first.status_code == 201, first.text
@@ -183,7 +183,7 @@ def test_live_uploaded_mode_does_not_require_csv_configuration(tmp_path, monkeyp
     monkeypatch.setenv("OPENAI_API_KEY", "test-only-not-a-real-key")
     monkeypatch.delenv("INVOICE_PRICE_SHEET", raising=False)
     with TestClient(create_app(storage_dir=tmp_path)) as client:
-        assert client.get("/health").json()["processing_configured"] is False
+        assert client.get("/health").json()["processing_configured"] is True
         assert import_csv(client).status_code == 201
         assert client.get("/health").json()["processing_configured"] is True
 

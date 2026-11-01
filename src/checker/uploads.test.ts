@@ -72,3 +72,11 @@ it("keeps an old upload response out of the next user's invoice list", async () 
   expect(useUploads().lastDone?.fileName).toBe("new.xml");
   expect(rememberInvoice).toHaveBeenCalledTimes(1);
 });
+
+
+it("keeps an archive's project on every extracted invoice", async () => {
+  vi.mocked(unpackInvoices).mockResolvedValue({ files: [file("one.xml"), file("two.pdf")], skipped: 0 });
+  enqueue([file("batch.zip")], () => [], "project-a");
+  await vi.waitFor(() => expect(useUploads().doneCount).toBe(2));
+  expect(vi.mocked(uploadInvoice).mock.calls.map(([, projectId]) => projectId)).toEqual(["project-a", "project-a"]);
+});

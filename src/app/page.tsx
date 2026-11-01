@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { useUser } from "@/auth";
 import { Icon, type IconName } from "@/components/icons";
-import { useMasterList } from "@/masterList";
 
 // TODO: replace with the real contact address before launch.
 const CONTACT_EMAIL = "hello@invoicechecker.com";
@@ -125,9 +124,8 @@ const stepAnchor = (el: HTMLElement) => {
 
 export default function LandingPage() {
   const user = useUser();
-  const ml = useMasterList();
   const signedIn = Boolean(user);
-  const workspaceHref = signedIn ? (ml === null ? "/master-list" : "/invoices") : "/sign-in";
+  const workspaceHref = signedIn ? "/invoices" : "/sign-in";
   const ctaLabel = signedIn ? "Open workspace" : "Sign in to workspace";
 
   const [stage, setStage] = useState<Stage>(0);

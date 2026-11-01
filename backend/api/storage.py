@@ -19,6 +19,7 @@ from fastapi import Request
 
 from .auth import extract_request_claims, is_auth_required
 from .contracts import InvoiceSummary, SavedInvoice
+from .project_storage import ProjectStore, legacy_project_id
 
 DEFAULT_SESSION_ID = "default"
 _SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -27,7 +28,7 @@ INTERRUPTED = "Processing was interrupted by a service restart; upload again to 
 # The AP clerk's decision. Added after the first release, so older databases gain the columns.
 OUTCOME_COLUMNS = ("outcome", "outcome_reason", "decided_at")
 SUMMARY = (
-    "id,filename,document_hash,status,mode,created_at,updated_at,error,price_sheet_version,"
+    "id,filename,document_hash,status,mode,created_at,updated_at,error,price_sheet_version,project_id,comparison_mode,"
     + ",".join(OUTCOME_COLUMNS)
 )
 
@@ -94,7 +95,7 @@ def _loaded(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
-class Store:
+class Store(ProjectStore):
     """SQLite in one directory. One uvicorn worker only."""
 
     def __init__(self, directory: Path):
@@ -147,6 +148,33 @@ class Store:
                 "ON master_lists(session_id, created_at DESC)"
             )
 
+            db.execute("""CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY, session_id TEXT NOT NULL, name TEXT NOT NULL,
+                comparison_mode TEXT NOT NULL CHECK(comparison_mode IN ('master_list','totals_only')),
+                created_at TEXT NOT NULL, UNIQUE(id,session_id))""")
+            for table in ("invoices", "master_lists"):
+                columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+                if "project_id" not in columns:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN project_id TEXT")
+                if table == "invoices" and "comparison_mode" not in columns:
+                    db.execute(
+                        "ALTER TABLE invoices ADD COLUMN comparison_mode TEXT NOT NULL DEFAULT 'master_list'"
+                    )
+                db.execute(f"""INSERT OR IGNORE INTO projects
+                    SELECT 'legacy:' || session_id,session_id,'Existing invoices','master_list',MIN(created_at)
+                    FROM {table} WHERE project_id IS NULL GROUP BY session_id""")
+                db.execute(
+                    f"UPDATE {table} SET project_id='legacy:' || session_id WHERE project_id IS NULL"
+                )
+                db.execute(
+                    f"CREATE INDEX IF NOT EXISTS {table}_project_idx ON {table}(session_id,project_id,created_at)"
+                )
+                for action in ("INSERT", "UPDATE"):
+                    db.execute(f"""CREATE TRIGGER IF NOT EXISTS {table}_project_{action.lower()}
+                        BEFORE {action} ON {table} WHEN NOT EXISTS
+                        (SELECT 1 FROM projects WHERE id=NEW.project_id AND session_id=NEW.session_id)
+                        BEGIN SELECT RAISE(ABORT, 'Invalid project owner'); END""")
+
     @contextmanager
     def connect(self):
         db = sqlite3.connect(self.database, timeout=30.0)
@@ -196,16 +224,30 @@ class Store:
         mode,
         price_sheet_version,
         *,
+        project_id: str | None = None,
+        comparison_mode: str = "master_list",
         session_id: str = DEFAULT_SESSION_ID,
     ):
+        project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
         at = now()
         sid = normalize_session_id(session_id)
         with self.connect() as db:
             db.execute(
                 """INSERT INTO invoices
-                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id)
-                VALUES (?,?,?,'reading',?,?,?,?,?)""",
-                (invoice_id, filename, document_hash, mode, at, at, price_sheet_version, sid),
+                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode)
+                VALUES (?,?,?,'reading',?,?,?,?,?,?,?)""",
+                (
+                    invoice_id,
+                    filename,
+                    document_hash,
+                    mode,
+                    at,
+                    at,
+                    price_sheet_version,
+                    sid,
+                    project_id,
+                    comparison_mode,
+                ),
             )
 
     def update(self, invoice_id, status, *, document=None, invoice=None, check=None, error=None):
@@ -269,54 +311,67 @@ class Store:
         return SavedInvoice(**data, file_url=f"/invoices/{invoice_id}/file")
 
     def list(
-        self, limit: int, offset: int, *, session_id: str | None = None
+        self,
+        limit: int,
+        offset: int,
+        *,
+        session_id: str | None = None,
+        project_id: str | None = None,
     ) -> list[InvoiceSummary]:
+        clauses, params = [], []
+        if session_id is not None:
+            clauses.append("session_id=?")
+            params.append(normalize_session_id(session_id))
+        if project_id is not None:
+            clauses.append("project_id=?")
+            params.append(project_id)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self.connect() as db:
-            if session_id is None:
-                rows = db.execute(
-                    """SELECT id,filename,document_hash,status,mode,created_at,
-                    updated_at,error,price_sheet_version,outcome,outcome_reason,decided_at
-                    FROM invoices
-                    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
-                    (limit, offset),
-                ).fetchall()
-            else:
-                sid = normalize_session_id(session_id)
-                rows = db.execute(
-                    """SELECT id,filename,document_hash,status,mode,created_at,
-                    updated_at,error,price_sheet_version,outcome,outcome_reason,decided_at
-                    FROM invoices
-                    WHERE session_id=?
-                    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
-                    (sid, limit, offset),
-                ).fetchall()
+            rows = db.execute(
+                f"SELECT {SUMMARY} FROM invoices{where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
         return [InvoiceSummary(**dict(row)) for row in rows]
 
-    def latest_master_list(self, *, session_id: str = DEFAULT_SESSION_ID) -> dict | None:
+    def latest_master_list(
+        self, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
+    ) -> dict | None:
         with self.connect() as db:
             row = db.execute(
-                "SELECT document FROM master_lists WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
-                (normalize_session_id(session_id),),
+                "SELECT document FROM master_lists WHERE session_id=? AND project_id=? ORDER BY rowid DESC LIMIT 1",
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                ),
             ).fetchone()
         return _loaded(row["document"]) if row else None
 
     def master_list_version(
-        self, version: str, *, session_id: str = DEFAULT_SESSION_ID
+        self, version: str, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
     ) -> dict | None:
         """The newest saved master list with this version, or None."""
         with self.connect() as db:
             row = db.execute(
-                "SELECT document FROM master_lists WHERE session_id=? AND json_extract(document, '$.version') = ? "
+                "SELECT document FROM master_lists WHERE session_id=? AND project_id=? AND json_extract(document, '$.version') = ? "
                 "ORDER BY rowid DESC LIMIT 1",
-                (normalize_session_id(session_id), version),
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                    version,
+                ),
             ).fetchone()
         return _loaded(row["document"]) if row else None
 
-    def master_list_events(self, *, session_id: str = DEFAULT_SESSION_ID) -> list[dict]:
+    def master_list_events(
+        self, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
+    ) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                "SELECT event FROM master_lists WHERE session_id=? ORDER BY rowid DESC",
-                (normalize_session_id(session_id),),
+                "SELECT event FROM master_lists WHERE session_id=? AND project_id=? ORDER BY rowid DESC",
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                ),
             ).fetchall()
         return [_loaded(row["event"]) for row in rows]
 
@@ -328,21 +383,26 @@ class Store:
         *,
         replace: bool,
         session_id: str = DEFAULT_SESSION_ID,
+        project_id: str | None = None,
     ):
         """Save one version. The first upload must find none; a replacement must find one."""
+        project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
         with self.connect() as db:
             # One transaction serialises replacements and keeps the version order.
             db.execute("BEGIN IMMEDIATE")
             exists = (
                 db.execute(
-                    "SELECT 1 FROM master_lists WHERE session_id=? LIMIT 1",
-                    (normalize_session_id(session_id),),
+                    "SELECT 1 FROM master_lists WHERE session_id=? AND project_id=? LIMIT 1",
+                    (
+                        normalize_session_id(session_id),
+                        project_id or legacy_project_id(normalize_session_id(session_id)),
+                    ),
                 ).fetchone()
                 is not None
             )
             _check_state(exists, replace)
             db.execute(
-                "INSERT INTO master_lists (id,created_at,document,event,source,session_id) VALUES (?,?,?,?,?,?)",
+                "INSERT INTO master_lists (id,created_at,document,event,source,session_id,project_id) VALUES (?,?,?,?,?,?,?)",
                 (
                     document["id"],
                     document["uploadedAt"],
@@ -350,6 +410,7 @@ class Store:
                     json.dumps(event),
                     source,
                     normalize_session_id(session_id),
+                    project_id,
                 ),
             )
 
@@ -392,7 +453,7 @@ CREATE INDEX IF NOT EXISTS master_lists_session_idx ON {schema}.master_lists (se
 """
 
 
-class PostgresStore:
+class PostgresStore(ProjectStore):
     """Postgres, in its own schema so it can share a Supabase project with other apps.
 
     PDFs are kept in the database and copied to `directory/files` when the reader or the file
@@ -421,6 +482,12 @@ class PostgresStore:
         )
         with self.connect() as db:
             db.execute(POSTGRES_TABLES.format(schema=self.schema))
+            migration = (Path(__file__).parents[1] / "migrations/001_projects.sql").read_text()
+            db.execute(
+                migration.replace("invoice_checker", self.schema)
+                .replace("BEGIN;", "")
+                .replace("COMMIT;", "")
+            )
 
     @contextmanager
     def connect(self):
@@ -477,16 +544,19 @@ class PostgresStore:
         mode,
         price_sheet_version,
         *,
+        project_id: str | None = None,
+        comparison_mode: str = "master_list",
         session_id: str = DEFAULT_SESSION_ID,
     ):
         # The upload has already been written to path(); keep the bytes with the row.
+        project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
         at = now()
         content = self.path(invoice_id).read_bytes()
         with self.connect() as db:
             db.execute(
                 f"""INSERT INTO {self.schema}.invoices
-                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id)
-                VALUES (%s,%s,%s,'reading',%s,%s,%s,%s,%s)""",
+                (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode)
+                VALUES (%s,%s,%s,'reading',%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     invoice_id,
                     filename,
@@ -496,6 +566,8 @@ class PostgresStore:
                     at,
                     price_sheet_version,
                     normalize_session_id(session_id),
+                    project_id,
+                    comparison_mode,
                 ),
             )
             db.execute(
@@ -548,46 +620,67 @@ class PostgresStore:
         return None if row is None else _saved(row, invoice_id)
 
     def list(
-        self, limit: int, offset: int, *, session_id: str | None = None
+        self,
+        limit: int,
+        offset: int,
+        *,
+        session_id: str | None = None,
+        project_id: str | None = None,
     ) -> list[InvoiceSummary]:
-        clause = "" if session_id is None else " WHERE session_id=%s"
-        params = (
-            (limit, offset)
-            if session_id is None
-            else (normalize_session_id(session_id), limit, offset)
-        )
+        clauses, params = [], []
+        if session_id is not None:
+            clauses.append("session_id=%s")
+            params.append(normalize_session_id(session_id))
+        if project_id is not None:
+            clauses.append("project_id=%s")
+            params.append(project_id)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT {SUMMARY} FROM {self.schema}.invoices{clause} ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
-                params,
+                f"SELECT {SUMMARY} FROM {self.schema}.invoices{where} ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",
+                (*params, limit, offset),
             ).fetchall()
         return [InvoiceSummary(**row) for row in rows]
 
-    def latest_master_list(self, *, session_id: str = DEFAULT_SESSION_ID) -> dict | None:
+    def latest_master_list(
+        self, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
+    ) -> dict | None:
         with self.connect() as db:
             row = db.execute(
-                f"SELECT document FROM {self.schema}.master_lists WHERE session_id=%s ORDER BY seq DESC LIMIT 1",
-                (normalize_session_id(session_id),),
+                f"SELECT document FROM {self.schema}.master_lists WHERE session_id=%s AND project_id=%s ORDER BY seq DESC LIMIT 1",
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                ),
             ).fetchone()
         return row["document"] if row else None
 
     def master_list_version(
-        self, version: str, *, session_id: str = DEFAULT_SESSION_ID
+        self, version: str, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
     ) -> dict | None:
         """The newest saved master list with this version, or None."""
         with self.connect() as db:
             row = db.execute(
-                f"SELECT document FROM {self.schema}.master_lists WHERE session_id=%s AND document->>'version' = %s "
+                f"SELECT document FROM {self.schema}.master_lists WHERE session_id=%s AND project_id=%s AND document->>'version' = %s "
                 "ORDER BY seq DESC LIMIT 1",
-                (normalize_session_id(session_id), version),
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                    version,
+                ),
             ).fetchone()
         return row["document"] if row else None
 
-    def master_list_events(self, *, session_id: str = DEFAULT_SESSION_ID) -> list[dict]:
+    def master_list_events(
+        self, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
+    ) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT event FROM {self.schema}.master_lists WHERE session_id=%s ORDER BY seq DESC",
-                (normalize_session_id(session_id),),
+                f"SELECT event FROM {self.schema}.master_lists WHERE session_id=%s AND project_id=%s ORDER BY seq DESC",
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                ),
             ).fetchall()
         return [row["event"] for row in rows]
 
@@ -599,19 +692,25 @@ class PostgresStore:
         *,
         replace: bool,
         session_id: str = DEFAULT_SESSION_ID,
+        project_id: str | None = None,
     ):
         from psycopg.types.json import Jsonb
+
+        project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
 
         with self.connect() as db, db.transaction():
             db.execute(f"LOCK TABLE {self.schema}.master_lists IN SHARE ROW EXCLUSIVE MODE")
             exists = db.execute(
-                f"SELECT 1 FROM {self.schema}.master_lists WHERE session_id=%s LIMIT 1",
-                (normalize_session_id(session_id),),
+                f"SELECT 1 FROM {self.schema}.master_lists WHERE session_id=%s AND project_id=%s LIMIT 1",
+                (
+                    normalize_session_id(session_id),
+                    project_id or legacy_project_id(normalize_session_id(session_id)),
+                ),
             ).fetchone()
             _check_state(exists is not None, replace)
             db.execute(
-                f"""INSERT INTO {self.schema}.master_lists (id, created_at, document, event, source, session_id)
-                VALUES (%s,%s,%s,%s,%s,%s)""",
+                f"""INSERT INTO {self.schema}.master_lists (id, created_at, document, event, source, session_id, project_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     document["id"],
                     document["uploadedAt"],
@@ -619,5 +718,6 @@ class PostgresStore:
                     Jsonb(event),
                     source,
                     normalize_session_id(session_id),
+                    project_id,
                 ),
             )

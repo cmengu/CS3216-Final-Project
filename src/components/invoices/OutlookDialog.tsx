@@ -33,7 +33,9 @@ export function OutlookDialog({
   onImportFiles,
   initialNotice,
   onClearInitialNotice,
+  returnTo = "/invoices",
 }: {
+  returnTo?: string;
   open: boolean;
   onClose: () => void;
   onImportFiles: (files: File[]) => void;
@@ -173,20 +175,17 @@ export function OutlookDialog({
     setScanSummary(null);
   };
 
-  const handleImportAttachment = async (
-    messageId: string,
-    att: OutlookAttachmentSummary
-  ) => {
-    setImportingId(att.id);
-    setError(null);
-    const res = await downloadOutlookAttachmentFile(messageId, att);
-    setImportingId(null);
-    if (!res.ok) {
-      setError(res.message);
-      return;
+  const handleImportAttachments = async (messageId: string, attachments: OutlookAttachmentSummary[]) => {
+    setImportingId(attachments[0]?.id ?? null); setError(null);
+    const files: File[] = [];
+    const selected: Record<string, boolean> = {};
+    for (const att of attachments) {
+      const res = await downloadOutlookAttachmentFile(messageId, att);
+      if (res.ok) { files.push(res.value); selected[att.id] = true; }
+      else setError(res.message);
     }
-    onImportFiles([res.value]);
-    setImportedIds((prev) => ({ ...prev, [att.id]: true }));
+    setImportingId(null);
+    if (files.length) { setImportedIds((old) => ({ ...old, ...selected })); onImportFiles(files); }
   };
 
   const handleAiScanAndExtract = async () => {
@@ -271,7 +270,7 @@ export function OutlookDialog({
             <span className="muted num">
               Showing {messages.length} email(s) in chronological order
               {scanSummary
-                ? ` · ${scanSummary.queuedFileCount} invoice PDF(s) queued for extraction`
+                ? ` · ${scanSummary.queuedFileCount} invoice PDF(s) downloaded for invoice selection`
                 : ""}
             </span>
           ) : (
@@ -301,7 +300,7 @@ export function OutlookDialog({
         <div className="ic-outlook-connect">
           <p>
             Connect your Microsoft Outlook or Microsoft 365 inbox to read supplier emails
-            and import PDF invoice attachments directly into the checking queue.
+            and select which invoice PDFs to import into the open project.
           </p>
           {status && !status.configured ? (
             <Notice tone="warn">
@@ -316,7 +315,7 @@ export function OutlookDialog({
           <div>
             <a
               className="ic-btn ic-btn--primary"
-              href={outlookLoginUrl("/invoices")}
+              href={outlookLoginUrl(returnTo)}
               aria-disabled={status ? !status.configured : false}
             >
               <Icon name="mail" size="ui" />
@@ -392,8 +391,8 @@ export function OutlookDialog({
               {scanning === "classifying"
                 ? "AI reading & classifying emails…"
                 : scanning === "extracting"
-                ? "Fetching invoice PDFs & queuing extraction…"
-                : "AI Scan & Extract Invoices"}
+                ? "Fetching invoice PDFs…"
+                : "Find invoice PDFs"}
             </button>
           </div>
 
@@ -407,7 +406,7 @@ export function OutlookDialog({
                           ? ` (${dateFrom || "any"} to ${dateTo || "any"})`
                           : ""
                       } & classifying supplier invoices…`
-                    : "Step 2 of 2: Downloading matched invoice PDFs & queuing extraction…"}
+                    : "Step 2 of 2: Downloading matched invoice PDFs for invoice selection…"}
                 </span>
                 <Pill pill={{ tone: "warn", text: "Running" }} />
               </div>
@@ -429,9 +428,8 @@ export function OutlookDialog({
                   ? ` in range ${dateFrom || "any"} to ${dateTo || "any"}`
                   : ""}
                 , classified <b className="num">{scanSummary.invoiceEmailCount}</b> as
-                supplier invoice email(s), and automatically sent{" "}
-                <b className="num">{scanSummary.queuedFileCount}</b> invoice PDF(s) to the
-                extraction & price checking queue.
+                supplier invoice email(s), and downloaded{" "}
+                <b className="num">{scanSummary.queuedFileCount}</b> invoice PDF(s) for invoice selection.
               </span>
               {scanSummary.queuedFileCount > 0 ? (
                 <button
@@ -439,7 +437,7 @@ export function OutlookDialog({
                   className="ic-btn ic-btn--secondary ic-btn--sm"
                   onClick={onClose}
                 >
-                  View queue
+                  Back to invoices
                   <Icon name="arrowR" arrow />
                 </button>
               ) : null}
@@ -634,11 +632,7 @@ export function OutlookDialog({
                             type="button"
                             className="ic-btn ic-btn--primary ic-btn--sm"
                             disabled={importingId !== null}
-                            onClick={async () => {
-                              for (const att of pdfAttachments) {
-                                await handleImportAttachment(resolvedDetail.id, att);
-                              }
-                            }}
+                            onClick={() => void handleImportAttachments(resolvedDetail.id, pdfAttachments)}
                           >
                             <Icon name="upload" size="ui" />
                             Import all PDFs ({pdfAttachments.length})
@@ -670,12 +664,12 @@ export function OutlookDialog({
                                   }
                                   disabled={busy}
                                   onClick={() =>
-                                    void handleImportAttachment(resolvedDetail.id, att)
+                                    void handleImportAttachments(resolvedDetail.id, [att])
                                   }
                                 >
                                   <Icon name={imported ? "check" : "upload"} size="ui" />
                                   {busy
-                                    ? "Importing…"
+                                    ? "Downloading…"
                                     : imported
                                     ? "Queued for checking"
                                     : "Import PDF"}

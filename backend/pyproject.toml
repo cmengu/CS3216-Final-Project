@@ -50,6 +50,7 @@ packages = ["invoice_processing", "read", "api", "dummy", "check", "extract", "e
 
 [tool.hatch.build.targets.wheel.force-include]
 "schema.py" = "schema.py"
+"migrations" = "migrations"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

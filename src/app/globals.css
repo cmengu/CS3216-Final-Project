@@ -421,6 +421,29 @@ a { color: var(--accent); }
 .ic-pdfmodal-item .ic-line-comparison th, .ic-pdfmodal-item .ic-line-comparison td { padding: 5px 8px 5px 0; }
 .ic-pdfmodal-item .ic-line-comparison thead th { font-size: 11px; }
 
+/* File explorer navigation: projects, then one project's invoices. */
+.ic-project-name { display: flex; align-items: center; gap: 8px; min-width: 0; text-align: left; border: 0; background: none; color: inherit; cursor: pointer; }
+.ic-project-name b { overflow-wrap: anywhere; flex: 1; }
+.ic-project-name svg { flex-shrink: 0; }
+.ic-project-entry { width: 100%; padding: 14px 10px; border-radius: 8px; }
+.ic-project-entry:hover, .ic-project-entry:focus-visible { background: var(--soft, #f3eade); }
+.ic-project-location { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.ic-project-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 4px 0; color: var(--ink2); font: inherit; font-size: 13px; cursor: pointer; }
+.ic-project-back:hover { color: var(--ink); text-decoration: underline; }
+.ic-project-location h1 { overflow-wrap: anywhere; }
+.ic-project-overview { display: flex; flex-direction: column; gap: 20px; padding: 24px; overflow: auto; }
+.ic-project-overview h1, .ic-project-overview h2, .ic-project-overview p { margin: 0; }
+
+.ic-project-table { table-layout: fixed; min-width: 680px; }
+.ic-project-table th, .ic-project-table td { text-align: left; vertical-align: middle; padding: 14px 16px; }
+.ic-project-table th:not(:last-child), .ic-project-table td:not(:last-child) { border-right: 1px solid var(--line); }
+.ic-project-table th:first-child { width: 64px; }
+.ic-project-table th:nth-child(2) { width: 34%; }
+.ic-project-table th:nth-child(3) { width: 18%; }
+.ic-project-table th:nth-child(4) { width: 14%; }
+.ic-project-table th:nth-child(3), .ic-project-table td:nth-child(3),
+.ic-project-table th:nth-child(4), .ic-project-table td:nth-child(4) { text-align: center; }
+.ic-project-table .ic-link { min-height: 0; padding: 0; }
 
 /* Landing page. One sample invoice is checked on screen while the page scrolls.
    Rule for the card: every box has a fixed size, and only opacity, transform and colour animate. */

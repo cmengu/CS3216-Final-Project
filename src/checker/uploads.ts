@@ -11,6 +11,7 @@ import type { SupplierInvoice } from "./types";
 import { isArchive, MAX_ARCHIVE_BYTES, MAX_INVOICE_BYTES } from "./upload-formats";
 
 export interface QueueItem {
+  projectId?: string;
   key: string;
   name: string;
   status: "waiting" | "unpacking" | "checking";
@@ -82,6 +83,7 @@ export function refusal(name: string, e: unknown): string {
   if (e.status === 422 && /page/i.test(e.detail ?? "")) return `${name} must have 1 to 30 pages.`;
   if (e.status === 422 && /\.xml$/i.test(name) && e.detail) return `${name}: ${e.detail}`;
   if (e.status === 422 || e.status === 400) return `${name} couldn't be read.`;
+  if (e.status === 409 || e.status === 404) return e.detail ?? e.message;
   if (e.status === 503) return "The checking service isn't ready.";
   return `${name} couldn't be uploaded.`;
 }
@@ -123,7 +125,7 @@ async function run(known: () => SupplierInvoice[]) {
           extracted = result.files.map((invoice) => {
             const key = `u${++seq}`;
             files.set(key, invoice);
-            return { key, name: invoice.name, status: "waiting" };
+            return { key, projectId: item.projectId, name: invoice.name, status: "waiting" };
           });
           if (result.skipped) notice({ kind: "skipped", text: `${file.name}: skipped ${result.skipped} unsupported, empty or oversized file${result.skipped === 1 ? "" : "s"}. Only PDF and XML invoices up to 20 MB each are checked; nested archives aren't unpacked.` });
         } catch (error) {
@@ -139,15 +141,15 @@ async function run(known: () => SupplierInvoice[]) {
       set({ items: state.items.map((x, i) => (i === 0 ? { ...x, status: "checking" } : x)) });
       const hash = await sha256(file);
       if (session !== currentSession) return;
-      const dup = hash ? (known().find((inv) => inv.documentHash === hash) ?? sent.get(hash)) : undefined;
+      const dup = hash ? (known().find((inv) => inv.documentHash === hash && inv.projectId === item.projectId) ?? sent.get(`${item.projectId ?? ""}:${hash}`)) : undefined;
       if (dup) {
         notice({ kind: "duplicate", text: `You already uploaded ${dup.number ?? dup.fileName} on ${shortDate(dup.uploadedAt)}.`, invoiceId: dup.id });
       } else {
         for (; session === currentSession;) {
           try {
-            const saved = await uploadInvoice(file);
+            const saved = await uploadInvoice(file, item.projectId);
             if (session !== currentSession) return;
-            if (hash) sent.set(hash, saved);
+            if (hash) sent.set(`${item.projectId ?? ""}:${hash}`, saved);
             rememberInvoice(saved);
             set({ lastDone: saved, doneCount: state.doneCount + 1 });
             break;
@@ -172,7 +174,7 @@ async function run(known: () => SupplierInvoice[]) {
 }
 
 /** Queue files for checking. `known` lists invoices already uploaded, for the duplicate check. */
-export function enqueue(list: FileList | File[], known: () => SupplierInvoice[]) {
+export function enqueue(list: FileList | File[], known: () => SupplierInvoice[], projectId?: string) {
   const add: QueueItem[] = [];
   for (const file of Array.from(list)) {
     const problem = precheck(file);
@@ -182,7 +184,7 @@ export function enqueue(list: FileList | File[], known: () => SupplierInvoice[])
     }
     const key = `u${++seq}`;
     files.set(key, file);
-    add.push({ key, name: file.name, status: "waiting" });
+    add.push({ key, projectId, name: file.name, status: "waiting" });
   }
   if (!add.length) return;
   set({ items: [...state.items, ...add] });

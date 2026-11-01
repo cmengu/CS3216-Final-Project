@@ -219,11 +219,12 @@ export function CheckPane({
               {inv.lines.length ? (
                 <div role="list" aria-label="Invoice lines">
                   {orderedLines(inv).map(({ line, n }) => {
-                    const flagged = line.result !== "match";
+                    const totalsOnly = inv.comparisonMode === "totals_only";
+                    const flagged = !totalsOnly && line.result !== "match";
                     const quantityUnit = line.unit?.toUpperCase() === "M3" ? "m³" : line.unit;
                     const qty = line.quantity === null ? null : `${line.quantity.toLocaleString("en-SG")}${quantityUnit ? " " + quantityUnit : ""}`;
                     const priceUnit = quantityUnit ? ` / ${quantityUnit}` : "";
-                    const comparedCurrency = line.result === "match" || line.result === "price_mismatch" ? cur : null;
+                    const comparedCurrency = totalsOnly ? (line.priceCurrency ?? cur) : line.result === "match" || line.result === "price_mismatch" ? cur : null;
                     const price = line.unitPrice === null ? "—" : `${comparedCurrency ? comparedCurrency + " " : ""}${unit(line.unitPrice)}${priceUnit}`;
                     const total = line.lineTotal === null ? "—" : money(line.lineTotal, cur);
                     return (
@@ -235,7 +236,7 @@ export function CheckPane({
                         onClick={() => onShow(n)}
                         style={{ cursor: "pointer" }}
                       >
-                        {flagged ? (
+                        {totalsOnly ? <Icon name="doc" size="row" /> : flagged ? (
                           <span style={{ color: "var(--warn)" }}>
                             <Icon name="warn" size="row" style={{ color: "var(--warn)" }} />
                           </span>
@@ -301,7 +302,7 @@ export function CheckPane({
         )}
       </div>
 
-      <DecisionBar inv={inv} onPayAnyway={() => setDialog("pay")} onRaise={() => setDialog("raise")} />
+      {inv.comparisonMode !== "totals_only" ? <DecisionBar inv={inv} onPayAnyway={() => setDialog("pay")} onRaise={() => setDialog("raise")} /> : null}
 
       <PayAnywayDialog inv={inv} open={dialog === "pay"} onClose={() => setDialog(null)} onSubmit={(reason) => decide(inv, "ready_to_pay_anyway", reason)} />
       <RaiseDialog inv={inv} open={dialog === "raise"} onClose={() => setDialog(null)} onRecord={() => decide(inv, "raise_with_supplier")} />

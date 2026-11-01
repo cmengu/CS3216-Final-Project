@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
 from .master_import import normalize, preview, read_tables
+from .projects import require_project
 from .storage import DEFAULT_SESSION_ID, MasterListExists, NoMasterList, now, request_session_id
 
 router = APIRouter(prefix="/master-list")
@@ -33,21 +34,32 @@ def read_upload(file):
 
 
 @router.get("")
-def current(request: Request):
-    return current_master(request.app.state.store, session_id=request_session_id(request))
+def current(request: Request, project_id: str | None = None):
+    if project_id:
+        require_project(request.app.state.store, project_id, request_session_id(request))
+    return current_master(
+        request.app.state.store, session_id=request_session_id(request), project_id=project_id
+    )
 
 
-def current_master(store, version=None, *, session_id: str = DEFAULT_SESSION_ID):
+def current_master(
+    store, version=None, *, session_id: str = DEFAULT_SESSION_ID, project_id: str | None = None
+):
     """The latest master list, or the one saved with this version; None when there is none."""
     if version is None:
-        return store.latest_master_list(session_id=session_id)
-    return store.master_list_version(version, session_id=session_id)
+        return store.latest_master_list(session_id=session_id, project_id=project_id)
+    return store.master_list_version(version, session_id=session_id, project_id=project_id)
 
 
 @router.get("/versions/{version}")
-def historical(version: str, request: Request):
+def historical(version: str, request: Request, project_id: str | None = None):
+    if project_id:
+        require_project(request.app.state.store, project_id, request_session_id(request))
     document = current_master(
-        request.app.state.store, version, session_id=request_session_id(request)
+        request.app.state.store,
+        version,
+        session_id=request_session_id(request),
+        project_id=project_id,
     )
     if document is None:
         raise HTTPException(404, "The master list used for this check is unavailable.")
@@ -55,8 +67,12 @@ def historical(version: str, request: Request):
 
 
 @router.get("/events")
-def events(request: Request):
-    return request.app.state.store.master_list_events(session_id=request_session_id(request))
+def events(request: Request, project_id: str | None = None):
+    if project_id:
+        require_project(request.app.state.store, project_id, request_session_id(request))
+    return request.app.state.store.master_list_events(
+        session_id=request_session_id(request), project_id=project_id
+    )
 
 
 @router.post("/preview")
@@ -70,8 +86,18 @@ def inspect(file: UploadFile):
 
 @router.post("", status_code=201)
 @router.put("")
-def upload(request: Request, file: UploadFile, options: str = Form("{}")):
+def upload(
+    request: Request, file: UploadFile, options: str = Form("{}"), project_id: str | None = None
+):
     try:
+        if project_id:
+            project = require_project(
+                request.app.state.store, project_id, request_session_id(request)
+            )
+            if project["comparison_mode"] != "master_list":
+                raise HTTPException(
+                    409, "This project only tracks invoice totals and does not use a master list"
+                )
         filename, data, tables = read_upload(file)
         try:
             selection = json.loads(options)
@@ -112,7 +138,12 @@ def upload(request: Request, file: UploadFile, options: str = Form("{}")):
         }
         try:
             request.app.state.store.add_master_list(
-                document, event, data, replace=replace, session_id=request_session_id(request)
+                document,
+                event,
+                data,
+                replace=replace,
+                session_id=request_session_id(request),
+                project_id=project_id,
             )
         except MasterListExists:
             raise HTTPException(409, "A master list already exists. Use Replace file.") from None
