@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from . import security_mail
 from .access_store import AccessStore
 from .admin_setup import AdministratorSetup
 from .enrollment import Enrollment
@@ -164,7 +165,29 @@ class Accounts(AccessStore):
             ).fetchone()
         return dict(row) if row else None
 
+    def resolve_login_name(self, identifier):
+        identifier = str(identifier or "").strip().lower()
+        with self.connect() as db:
+            # Preserve existing email-shaped usernames; never try another account's password.
+            if self.execute(
+                db,
+                f"SELECT 1 FROM {self.table('approved_accounts')} WHERE username=?",
+                (identifier,),
+            ).fetchone():
+                return identifier
+            try:
+                email = security_mail.normalize_email(identifier)
+            except ValueError:
+                return identifier
+            row = self.execute(
+                db,
+                f"SELECT a.username FROM {self.table('approved_accounts')} a JOIN {self.table('account_email')} e ON e.user_id=a.id WHERE e.email=?",
+                (email,),
+            ).fetchone()
+        return row["username"] if row else identifier
+
     def authenticate(self, username, password):
+        username = self.resolve_login_name(username)
         with self.connect() as db:
             row = self.execute(
                 db,

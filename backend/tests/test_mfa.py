@@ -400,3 +400,76 @@ def test_duplicate_or_invalid_email_is_rejected_atomically(app, mail):
             response = client.post("/admin/accounts", headers=HEADERS, json={"email": email})
             assert response.status_code in {409, 422}
         assert len(client.get("/admin/accounts").json()) == 1
+
+
+@pytest.mark.parametrize("field", ["username", "email"])
+def test_registered_email_can_sign_in_but_still_requires_email_code(app, mail, field):
+    with TestClient(app) as client:
+        response = client.post(
+            "/auth/sign-in",
+            headers=HEADERS,
+            json={field: " OWNER@EXAMPLE.COM ", "password": ADMIN["password"]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["mfa_required"] and "session_id" not in response.json()
+        assert mail[-1][0] == OWNER
+        assert client.get("/admin/accounts").status_code == 401
+        assert verify(client, response.json(), mail[-1][1]).status_code == 200
+        assert client.get("/auth/me").json()["user"]["email"] == ADMIN["username"]
+        assert client.get("/admin/accounts").status_code == 200
+
+
+def test_username_and_email_share_the_same_failed_login_allowance(app, mail):
+    with TestClient(app) as client:
+        for identifier in [ADMIN["username"], OWNER] * 4:
+            response = client.post(
+                "/auth/sign-in",
+                headers=HEADERS,
+                json={"username": identifier, "password": "incorrect"},
+            )
+            assert response.status_code == 401
+        response = client.post(
+            "/auth/sign-in", headers=HEADERS, json={"email": OWNER, "password": ADMIN["password"]}
+        )
+        assert response.status_code == 429 and "Retry-After" in response.headers
+        assert not mail
+
+
+def test_email_alias_does_not_enable_a_disabled_account(app, mail):
+    with TestClient(app) as client:
+        accounts = app.state.accounts
+        owner = accounts.authenticate(ADMIN["username"], ADMIN["password"])
+        member = accounts.create_user(
+            MEMBER["username"], MEMBER["password"], "member", email=MEMBER_EMAIL
+        )
+        accounts.update_user(member["id"], actor=owner["id"], active=False)
+        response = client.post(
+            "/auth/sign-in",
+            headers=HEADERS,
+            json={"email": MEMBER_EMAIL, "password": MEMBER["password"]},
+        )
+        assert response.status_code == 401 and not mail
+
+
+def test_email_shaped_username_never_falls_back_to_another_accounts_password(app):
+    with TestClient(app):
+        accounts = app.state.accounts
+        other = accounts.create_user(OWNER, MEMBER["password"], "member", email=MEMBER_EMAIL)
+        assert accounts.authenticate(OWNER, ADMIN["password"]) is None
+        assert accounts.authenticate(OWNER, MEMBER["password"])["id"] == other["id"]
+        assert accounts.authenticate(ADMIN["username"], ADMIN["password"])["role"] == "admin"
+
+
+def test_registered_email_longer_than_username_limit_is_supported(app, mail):
+    with TestClient(app) as client:
+        email = "a" * 64 + "@" + "b" * 40 + ".com"
+        app.state.accounts.create_user(
+            MEMBER["username"], MEMBER["password"], "member", email=email
+        )
+        response = client.post(
+            "/auth/sign-in",
+            headers=HEADERS,
+            json={"username": email, "password": MEMBER["password"]},
+        )
+        assert response.status_code == 200 and response.json()["mfa_required"]
+        assert mail[-1][0] == email

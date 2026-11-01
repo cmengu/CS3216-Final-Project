@@ -77,9 +77,10 @@ def clear_windows(client):
         db.execute("DELETE FROM request_limits")
 
 
+@pytest.mark.parametrize("use_email", [False, True])
 @pytest.mark.parametrize("credentials,email", [(ADMIN, OWNER), (MEMBER, EMAIL)])
 def test_reset_revokes_all_sessions_preserves_workspace_and_requires_new_login(
-    client, environment, credentials, email
+    client, environment, credentials, email, use_email
 ):
     first = login(client, environment[0], credentials)
     clear_windows(client)
@@ -121,7 +122,12 @@ def test_reset_revokes_all_sessions_preserves_workspace_and_requires_new_login(
     assert complete(client, grant).status_code == 401
     clear_windows(client)
     challenge = client.post(
-        "/auth/sign-in", headers=HEADERS, json={**credentials, "password": NEW_PASSWORD}
+        "/auth/sign-in",
+        headers=HEADERS,
+        json={
+            "username": email if use_email else credentials["username"],
+            "password": NEW_PASSWORD,
+        },
     ).json()
     assert challenge["mfa_required"] and "session_id" not in challenge
     assert client.get("/invoices").status_code == 401

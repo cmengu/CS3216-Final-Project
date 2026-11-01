@@ -177,7 +177,8 @@ five attempts with an additional per-account limit. Recovery grants are stored o
 and code HMACs use a purpose separate from sign-in and initial account setup. All reset
 mutations require the browser protection header, including before sign-in.
 
-Every approved account signs in with its password plus a six-digit code sent to its registered
+Every approved account can sign in with its username or registered email, plus its password
+and a six-digit code sent to its registered
 email address. The first administrator's destination is configured by the operator using
 `AUTH_ADMIN_EMAIL`; the setup form cannot choose a different destination. Administrators
 approve an email before each new account can be created. Email ownership is verified before

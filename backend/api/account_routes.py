@@ -21,8 +21,8 @@ router = APIRouter()
 
 
 class SignIn(BaseModel):
-    username: str | None = Field(default=None, max_length=80)
-    email: str | None = Field(default=None, max_length=80)
+    username: str | None = Field(default=None, max_length=254)
+    email: str | None = Field(default=None, max_length=254)
     password: str = Field(max_length=128)
 
 
@@ -171,11 +171,11 @@ def complete_administrator_setup(body: CompleteSetup, request: Request):
 @router.post("/auth/sign-in")
 def sign_in(body: SignIn, request: Request):
     ip = request.client.host if request.client else "unknown"
-    username = (body.username or body.email or "").strip().lower()
+    username = request.app.state.accounts.resolve_login_name(body.username or body.email or "")
     request.app.state.limits.take("login-account-ip", f"{username}:{ip}", maximum=8, seconds=600)
     user = request.app.state.accounts.authenticate(username, body.password)
     if user is None:
-        raise HTTPException(401, "Invalid username or password.")
+        raise HTTPException(401, "Invalid username/email or password.")
     return begin_sign_in(request, user)
 
 

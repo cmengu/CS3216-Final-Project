@@ -30,7 +30,7 @@ export default function SignIn() {
     else if (r.error === "two_factor") { setPassword(""); setError(""); setChallenge(r.challenge); }
     else {
       setWrong(r.error === "invalid");
-      setError(r.message ?? (r.error === "unreachable" ? "The sign-in service could not be reached. Try again." : "Username or password is incorrect."));
+      setError(r.message ?? (r.error === "unreachable" ? "The sign-in service could not be reached. Try again." : "Username/email or password is incorrect."));
     }
   };
 
@@ -44,7 +44,7 @@ export default function SignIn() {
       </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
-        <p className="ic-hint">Use your approved account. We’ll email a security code after checking your password.</p>
+        <p className="ic-hint">Use your username or registered email. We’ll email a security code after checking your password.</p>
         {challenge ? <TwoFactor key={challenge.challenge_id} challenge={challenge} onVerify={async (id, code) => { const verified = await verifySecondFactor(id, code); completeSignIn(verified.user); router.replace(nextRoute); }} onResend={resendSecondFactor} onCancel={() => { setChallenge(null); setError(""); }} /> : <form
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           onSubmit={async (e) => {
@@ -55,13 +55,14 @@ export default function SignIn() {
           }}
         >
           <div className="ic-field">
-            <label htmlFor="username">Username</label>
+            <label htmlFor="username">Username or email</label>
             <input
               id="username"
               className={`ic-input${wrong ? " ic-input--error" : ""}`}
               type="text"
               autoComplete="username"
-              placeholder="Your approved username"
+              placeholder="Your username or registered email"
+              maxLength={254}
               required
               value={username}
               onChange={(e) => {

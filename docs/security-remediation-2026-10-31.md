@@ -39,6 +39,23 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Email sign-in after password reset, 2 November 2026
+
+A completed email password reset previously still required the chosen username at sign-in,
+which rejected users who entered their registered inbox with the new password. Sign-in now
+resolves either the chosen username or registered email to the same approved account before
+applying the failed-login allowance and checking the password. The UI labels both options.
+Registered email input supports the full email length rather than the username's 80-character
+limit. Existing email-shaped usernames keep precedence, and password verification never tries
+a second account after a mismatch. Disabled-account protection and mandatory email codes remain.
+
+66 targeted account, MFA and recovery tests passed; two optional database cases were skipped.
+Production build, TypeScript and frontend/backend lint passed. No real password was inspected
+or changed during diagnosis. Chrome QA also passed administrator email sign-in, email password
+reset, rejection of the old password, and email sign-in with the replacement password while
+preserving administrator access and mandatory security codes. Mail was captured in a synthetic
+fixture; no real email was sent.
+
 ## Email password recovery, 2 November 2026
 
 The sign-in page now links to `/forgot-password`. Administrators and members request a code

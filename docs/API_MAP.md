@@ -35,6 +35,7 @@ Only approved active accounts can sign in. Authentication uses a signed HttpOnly
 registered server-side login session, with a separate persistent account/workspace identity.
 The backend requires an independent `AUTH_SECRET`; there are no public demo credentials or
 offline browser login fallback. First-admin setup verifies the operator-configured email before accepting a password. No environment password or setup token is required.
+Username/email aliases share the same failed-login allowance. Exact existing usernames take precedence over email aliases; password verification never falls back to a second account.
 Passwords use salted Argon2id. Tokens are invalidated by logout and account access/password changes.
 
 | Method | Endpoint | Purpose |
@@ -45,7 +46,7 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 | POST | `/auth/setup/resend` | Resend to the same approved inbox after cooldown; retire the old code challenge |
 | POST | `/auth/setup/complete` | Verified setup grant plus chosen username/password; atomically create the first administrator and issue an email-verified session |
 | POST | `/auth/setup` | Retired token/password setup endpoint; returns 410 |
-| POST | `/auth/sign-in` | Approved username/password; return an expiring MFA challenge, without a login session |
+| POST | `/auth/sign-in` | Approved username or registered email plus password; return an expiring MFA challenge, without a login session |
 | POST | `/auth/mfa/verify` | Challenge ID plus emailed security code; verify the approved inbox and issue the session cookie |
 | GET | `/auth/mfa/status` | Verified account's registered security email and verification state |
 | POST | `/auth/mfa/resend` | Existing unexpired challenge; send a new code to the same registered email after the cooldown |
