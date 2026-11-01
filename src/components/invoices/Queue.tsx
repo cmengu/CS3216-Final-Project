@@ -91,7 +91,7 @@ export function Queue({
     <aside id="invoice-sidebar" className="ic-queue" aria-label="Invoices">
       <div className="ic-queue-h">
         <div className="ic-queue-title">
-          <div className="ic-project-location">{project ? <button type="button" className="ic-project-back" onClick={onBack} aria-label="Back to projects"><Icon name="chevL" />Projects</button> : null}<h1>{project?.name ?? "Projects"}</h1></div>
+          <div className="ic-project-location">{project ? <button type="button" className="ic-project-back" onClick={onBack} aria-label="Back to invoice groups"><Icon name="chevL" />Invoice groups</button> : null}<h1>{project?.name ?? "Invoice groups"}</h1></div>
           {onCollapse ? <button type="button" className="ic-icobtn" onClick={onCollapse} aria-label="Collapse invoice sidebar" aria-expanded={true} aria-controls="invoice-sidebar" title="Collapse sidebar"><Icon name="panelClose" /></button> : null}
         </div>
         <div className="ic-queue-actions">
@@ -113,7 +113,7 @@ export function Queue({
         </div>
       </div>
       {project ? <p className="muted" style={{ margin: "0 16px 12px", fontSize: "calc(12px * var(--text-scale))" }}>PDF, XML, ZIP or RAR</p> : null}
-      <Search label={project ? "Search invoices" : "Search projects"} value={q} onChange={onQ} full />
+      <Search label={project ? "Search invoices" : "Search groups"} value={q} onChange={onQ} full />
       {project && !totalsOnly ? <div className="ic-seg ic-seg--fill" role="group" aria-label="Invoice status">
         <button type="button" aria-pressed={segment === "decide"} onClick={() => setSegment("decide")}>
           To decide <span className={projectDecide.length ? "ic-pill ic-pill--warn" : "n"}>{projectDecide.length}</span>
@@ -164,7 +164,7 @@ export function Queue({
             <Icon name="folder" /><b>{p.name}</b><span className="muted">{p.invoice_count}</span><Icon name="chev" />
           </button>
         ))}
-        {!projects.length ? <p className="ic-hint">Create a project to add invoices.</p> : null}
+        {!projects.length ? <p className="ic-hint">Create an invoice group to add invoices.</p> : null}
       </div>
     </aside>
   );

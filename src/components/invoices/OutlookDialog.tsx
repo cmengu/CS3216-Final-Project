@@ -300,7 +300,7 @@ export function OutlookDialog({
         <div className="ic-outlook-connect">
           <p>
             Connect your Microsoft Outlook or Microsoft 365 inbox to read supplier emails
-            and select which invoice PDFs to import into the open project.
+            and select which invoice PDFs to import into the open invoice group.
           </p>
           {status && !status.configured ? (
             <Notice tone="warn">

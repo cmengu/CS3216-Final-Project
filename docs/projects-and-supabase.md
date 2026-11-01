@@ -1,16 +1,20 @@
-# Invoice projects and database migration
+# Invoice groups and database migration
 
-Create a project from the Invoices sidebar, then choose one of two modes:
+Create an invoice group from the Invoices sidebar, then choose one of two modes:
 
 - **Compare with a master list:** upload the project's CSV/Excel master list first. Each invoice keeps the exact master version used for its check. Replacing a project's master does not change old checks or another project's master.
 - **Totals only:** upload PDFs or Vietnamese HDon XML immediately. The backend extracts the invoice fields and skips price comparison. The UI labels these invoices **Extracted**, with no match claims or payment decision controls.
 
-The sidebar opens the default project on load (the migrated Existing invoices project when present, otherwise the first-created project), selecting its first invoice when available. Back to projects shows the folder listing; clicking a folder shows only its invoices. The project-list URL preserves that view across refresh and browser navigation. Empty projects show their summary and upload controls. Uploads go to the selected project; selecting an invoice also selects its project. The same PDF can be uploaded to different projects; the browser duplicate check operates within a project.
+The sidebar opens the default project on load (the migrated Existing invoices project when present, otherwise the first-created project), selecting its first invoice when available. Back to invoice groups shows the folder listing; clicking a folder shows only its invoices. The project-list URL preserves that view across refresh and browser navigation. Empty projects show their summary and upload controls. Uploads go to the selected project; selecting an invoice also selects its project. The same PDF can be uploaded to different projects; the browser duplicate check operates within a project.
 
 Outlook is available only inside an open project's invoice sidebar. After downloading attachments (including the AI scan), the **Import Outlook invoices** screen lists PDFs with checkboxes. Users tick the files to import into the project they opened; none are selected initially. The destination is captured when Outlook opens and preserved through OAuth reconnects. No upload occurs until **Import invoices** is clicked. Cancel discards the pending selection. PDFs are held in browser memory until submitted; refreshing discards unsubmitted files.
 
 
 Projects belong to approved accounts' stable private workspaces. Administrators manage credentials but cannot read another account's projects through the app. ZIP/RAR files are expanded in the browser, then uploaded as complete project-specific background batches. Keep the page open until upload finishes; afterward checking continues while the backend runs. Duplicate detection stays within each project. The selected comparison mode and original master version survive worker restart.
+
+The UI calls these folders **Invoice groups**, with **Group name** and **Group master lists**
+labels. Existing API routes, URL parameters and database identifiers retain `projects` and
+`project_id` for compatibility; this wording change requires no database migration.
 
 ## Database structure
 

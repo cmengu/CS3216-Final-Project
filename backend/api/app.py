@@ -354,7 +354,7 @@ def create_app(
                 and not isinstance(selected, UploadedMasterStages)
             ):
                 raise HTTPException(
-                    503, "Project uploads require INVOICE_CHECKER=master_list or csv_context."
+                    503, "Invoice group uploads require INVOICE_CHECKER=master_list or csv_context."
                 )
             totals_only = project is not None and project["comparison_mode"] == "totals_only"
             if (
@@ -363,7 +363,7 @@ def create_app(
                 and current_master(store, session_id=session_id, project_id=project_id) is None
             ):
                 raise HTTPException(
-                    409, "Upload a master list for this project before uploading invoices."
+                    409, "Upload a master list for this group before uploading invoices."
                 )
             if isinstance(selected, UploadedMasterStages):
                 try:
@@ -508,7 +508,7 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     line a match. Anything else that is finished can still be paid, but only with a reason.
     """
     if saved.comparison_mode == "totals_only" and outcome is not None:
-        return 409, "This project tracks totals only; no price-check decision is available"
+        return 409, "This group tracks totals only; no price-check decision is available"
     if outcome is None:
         return (422, "Clearing an outcome takes no reason") if reason else None
     if saved.status not in ("completed", "failed"):

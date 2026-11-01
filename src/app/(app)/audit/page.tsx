@@ -54,9 +54,9 @@ export default function Audit() {
         <div style={{ flex: "1 1 280px", maxWidth: 420 }}>
           <Search label="Search audit trail" placeholder="Search supplier or invoice number" value={q} onChange={setQ} full />
         </div>
-        <label className="ic-field">Project
+        <label className="ic-field">Invoice group
           <select className="ic-select" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(e) => setProjectId(e.target.value)}>
-            {!projects.length ? <option value="">No projects</option> : null}
+            {!projects.length ? <option value="">No invoice groups</option> : null}
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>

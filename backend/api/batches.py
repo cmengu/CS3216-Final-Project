@@ -34,7 +34,7 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
         totals_only = project is not None and project["comparison_mode"] == "totals_only"
         if project and selected.mode == "live" and not isinstance(selected, UploadedMasterStages):
             raise HTTPException(
-                503, "Project uploads require INVOICE_CHECKER=master_list or csv_context."
+                503, "Invoice group uploads require INVOICE_CHECKER=master_list or csv_context."
             )
         if (
             project
@@ -42,7 +42,7 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
             and current_master(store, session_id=workspace, project_id=project_id) is None
         ):
             raise HTTPException(
-                409, "Upload a master list for this project before uploading invoices."
+                409, "Upload a master list for this group before uploading invoices."
             )
         project_id = project_id or store.ensure_legacy_project(workspace)
         if isinstance(selected, UploadedMasterStages):

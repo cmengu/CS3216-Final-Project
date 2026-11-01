@@ -105,7 +105,7 @@ def upload(
             )
             if project["comparison_mode"] != "master_list":
                 raise HTTPException(
-                    409, "This project only tracks invoice totals and does not use a master list"
+                    409, "This group only tracks invoice totals and does not use a master list"
                 )
         filename, data, tables = read_upload(file)
         try:
