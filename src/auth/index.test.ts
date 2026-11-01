@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifySecondFactor } from "./index";
+import { beginAdministratorSetup, completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifyAdministratorEmail, verifySecondFactor } from "./index";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -136,11 +136,11 @@ it("activates frontend auth state only after a verified email-code response", as
   expect(currentUser()).toEqual(verified.user);
 });
 
-it("administrator setup returns a challenge and clears any existing frontend identity", async () => {
+it("administrator setup starts with an email challenge and no submitted password", async () => {
   vi.stubGlobal("window", {});
   const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", destination: "a***@example.com", expires_in: 300, resend_after: 60 };
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(challenge)));
-  expect(await setupAdministrator("private-operator-setup-token", "admin", "a-real-test-password")).toEqual(challenge);
+  expect(await beginAdministratorSetup()).toEqual(challenge);
   expect(currentUser()).toBeNull();
 });
 
@@ -156,4 +156,24 @@ it("resends using only the existing challenge, never a caller-selected email", a
   expect(JSON.parse(String(init.body))).toEqual({ challenge_id: "current-private-challenge-id" });
   expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
   expect(currentUser()).toBeNull();
+});
+
+
+it("email proof for setup does not sign the user in before password creation", async () => {
+  vi.stubGlobal("window", {});
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ setup_grant: "verified-private-setup-grant" })));
+  expect(await verifyAdministratorEmail("private-challenge-id", "123456")).toEqual({ setup_grant: "verified-private-setup-grant" });
+  expect(currentUser()).toBeNull();
+});
+
+it("creates the administrator only using a verified setup grant", async () => {
+  vi.stubGlobal("window", {});
+  const user = { email: "chosen-admin", role: "admin" as const };
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ user }));
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await setupAdministrator("verified-private-setup-grant", "chosen-admin", "a-real-test-password")).toEqual(user);
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("/auth/setup/complete");
+  expect(JSON.parse(String(init.body))).toEqual({ setup_grant: "verified-private-setup-grant", username: "chosen-admin", password: "a-real-test-password" });
+  expect(currentUser()).toEqual(user);
 });

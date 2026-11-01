@@ -34,13 +34,17 @@ The backend endpoints behind the three core features: master list, invoice uploa
 Only approved active accounts can sign in. Authentication uses a signed HttpOnly cookie and a
 registered server-side login session, with a separate persistent account/workspace identity.
 The backend requires an independent `AUTH_SECRET`; there are no public demo credentials or
-offline browser login fallback. First-admin setup requires an operator-prepared one-time code.
+offline browser login fallback. First-admin setup verifies the operator-configured email before accepting a password. No environment password or setup token is required.
 Passwords use salted Argon2id. Tokens are invalidated by logout and account access/password changes.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/auth/setup-status` | Whether first-admin setup is pending |
-| POST | `/auth/setup` | One-time code, username and password; create the first administrator and return an email-verification challenge, without a login session |
+| POST | `/auth/setup/start` | Send a five-minute code only to the configured administrator email; no account is created |
+| POST | `/auth/setup/verify` | Verify that code and return a single-use, five-minute password-creation grant; no login/account yet |
+| POST | `/auth/setup/resend` | Resend to the same approved inbox after cooldown; retire the old code challenge |
+| POST | `/auth/setup/complete` | Verified setup grant plus chosen username/password; atomically create the first administrator and issue an email-verified session |
+| POST | `/auth/setup` | Retired token/password setup endpoint; returns 410 |
 | POST | `/auth/sign-in` | Approved username/password; return an expiring MFA challenge, without a login session |
 | POST | `/auth/mfa/verify` | Challenge ID plus emailed security code; verify the approved inbox and issue the session cookie |
 | GET | `/auth/mfa/status` | Verified account's registered security email and verification state |
@@ -57,7 +61,7 @@ passwords/hashes. Every approved account requires an emailed security code; pass
 old authenticator sessions cannot access protected resources. Challenges expire after five
 minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
 Resending uses only the challenge, never a caller-selected email address. Delivery failures do
-not authenticate. Admin creation requires a registered email; changes to an existing security
+not authenticate. Initial admin creation requires a verified email and atomically consumes its setup grant. Later admin account creation requires a registered email; changes to an existing security
 email require the audited operator CLI. Password resets preserve email verification.
 There is no public registration. Login and expensive operations have persistent
 rate limits; 429 includes `Retry-After`. All browser mutations require

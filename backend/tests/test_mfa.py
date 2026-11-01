@@ -82,31 +82,39 @@ def cooldown(app, user_id=None):
         db.execute("DELETE FROM request_limits")
 
 
-def test_first_admin_can_only_use_owner_email_and_gains_no_password_only_access(
+def test_first_admin_verifies_the_owner_email_before_choosing_credentials(
     tmp_path, monkeypatch, mail
 ):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     monkeypatch.delenv("AUTH_USERNAME", raising=False)
     monkeypatch.delenv("AUTH_PASSWORD", raising=False)
-    token = "isolated-first-administrator-setup-token-2026"
-    monkeypatch.setenv("AUTH_SETUP_TOKEN", token)
+    monkeypatch.delenv("AUTH_SETUP_TOKEN", raising=False)
     app = create_app(storage_dir=tmp_path, start_worker=False)
     with TestClient(app) as client:
         response = client.post(
-            "/auth/setup",
-            headers=HEADERS,
-            json={**ADMIN, "token": token, "email": "attacker@example.com"},
+            "/auth/setup/start", headers=HEADERS, json={"email": "attacker@example.com"}
         )
         assert response.status_code == 200, response.text
         challenge = response.json()
         assert mail[-1][0] == OWNER
         assert challenge["destination"] == "o***@example.com"
-        assert "enrollment" not in challenge and "recovery_codes" not in challenge
+        assert not app.state.accounts.has_accounts()
         assert client.get("/admin/accounts").status_code == 401
-        assert client.get("/invoices").status_code == 401
-        assert verify(client, challenge, mail[-1][1]).status_code == 200
+        verified = client.post(
+            "/auth/setup/verify",
+            headers=HEADERS,
+            json={"challenge_id": challenge["challenge_id"], "code": mail[-1][1]},
+        )
+        assert verified.status_code == 200
+        assert not app.state.accounts.has_accounts()
+        completed = client.post(
+            "/auth/setup/complete",
+            headers=HEADERS,
+            json={**ADMIN, **verified.json(), "email": "attacker@example.com"},
+        )
+        assert completed.status_code == 200
         assert client.get("/admin/accounts").status_code == 200
-        # Neither the code nor bearer challenge is stored in plaintext.
+        assert client.get("/auth/mfa/status").json()["email"] == OWNER
         cooldown(app)
         pending = start(client)
         with app.state.store.connect() as db:
@@ -295,9 +303,8 @@ def test_missing_sender_configuration_does_not_consume_first_admin_setup(tmp_pat
     app = create_app(storage_dir=tmp_path, start_worker=False)
     with TestClient(app) as client:
         response = client.post(
-            "/auth/setup",
+            "/auth/setup/start",
             headers=HEADERS,
-            json={**ADMIN, "token": "isolated-admin-setup-token-with-32-characters"},
         )
         assert response.status_code == 503
         assert not app.state.accounts.has_accounts()

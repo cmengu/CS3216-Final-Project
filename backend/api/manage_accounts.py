@@ -41,7 +41,6 @@ def prepare_setup(env_file, store, accounts):
     secret = os.environ.get("AUTH_SECRET", "")
     if len(secret) < 32:
         secret = secrets.token_urlsafe(48)
-    setup_token = secrets.token_urlsafe(32)
     mfa_key = os.environ.get("AUTH_MFA_KEY", "").strip() or secrets.token_urlsafe(48)
     original = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
     kept = [
@@ -59,7 +58,6 @@ def prepare_setup(env_file, store, accounts):
             [
                 *kept,
                 f"AUTH_SECRET={secret}",
-                f"AUTH_SETUP_TOKEN={setup_token}",
                 f"AUTH_MFA_KEY={mfa_key}",
                 "",
             ]
@@ -69,13 +67,11 @@ def prepare_setup(env_file, store, accounts):
     os.chmod(env_file, 0o600)
     url_file = store.directory / "admin-setup.url"
     frontend = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
-    url_file.write_text(
-        f"[InternetShortcut]\nURL={frontend}/setup#token={setup_token}\n", encoding="utf-8"
-    )
+    url_file.write_text(f"[InternetShortcut]\nURL={frontend}/setup\n", encoding="utf-8")
     os.chmod(url_file, 0o600)
-    print(f"One-time administrator setup link saved to: {url_file}")
+    print(f"Administrator setup link saved to: {url_file}")
     print(
-        "Restart the backend, then open that link and choose your administrator username and password."
+        "Restart the backend, open the link, verify the approved email, then choose your administrator credentials."
     )
 
 

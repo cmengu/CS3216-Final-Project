@@ -1,7 +1,5 @@
 """Administrator-approved accounts and registered, revocable login sessions."""
 
-import hashlib
-import hmac
 import os
 import re
 import secrets
@@ -11,6 +9,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from .access_store import AccessStore
+from .admin_setup import AdministratorSetup
 from .mfa import TwoFactor
 from .passwords import hash_password, verify_password
 
@@ -60,6 +59,7 @@ class Accounts(AccessStore):
         # Hash once, so unknown and disabled accounts perform the same password work as real ones.
         self.dummy_password = _DUMMY_PASSWORD_HASH
         self.mfa = TwoFactor(self)
+        self.administrator_setup = AdministratorSetup(self)
 
     def _lock(self, db):
         self.execute(
@@ -137,31 +137,6 @@ class Accounts(AccessStore):
                     user_id = self._insert(db, username, password_hash, "admin", None, None)
                     if os.environ.get("AUTH_ADMIN_EMAIL"):
                         self.mfa.assign_email(db, user_id, self.mfa.admin_email())
-
-    def setup(self, token, username, password):
-        configured = os.environ.get("AUTH_SETUP_TOKEN", "")
-        if len(configured) < 32 or not hmac.compare_digest(
-            hashlib.sha256(str(token).encode()).digest(),
-            hashlib.sha256(configured.encode()).digest(),
-        ):
-            raise HTTPException(
-                403, "The setup link is invalid. Ask the operator for a new setup link."
-            )
-        username = clean_username(username)
-        email = self.mfa.admin_email() if self.mfa.required(None) else None
-        password_hash = hash_password(password)
-        with self.connect() as db:
-            self._lock(db)
-            if self.execute(
-                db, f"SELECT 1 FROM {self.table('approved_accounts')} LIMIT 1"
-            ).fetchone():
-                raise HTTPException(
-                    409, "Administrator setup is already complete. Sign in instead."
-                )
-            user_id = self._insert(db, username, password_hash, "admin", "company", None)
-            if email:
-                self.mfa.assign_email(db, user_id, email)
-        return self.get_user(user_id)
 
     def create_user(self, username, password, role, actor=None, actor_session=None, email=None):
         username = clean_username(username)

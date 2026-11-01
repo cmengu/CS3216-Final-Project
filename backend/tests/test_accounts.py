@@ -194,30 +194,17 @@ def test_unregistered_signed_session_and_self_access_changes_are_denied(approved
         assert client.get("/auth/me").status_code == 200
 
 
-def test_one_time_setup_requires_token_and_cannot_be_replayed(tmp_path, monkeypatch):
+def test_legacy_setup_token_cannot_create_an_administrator(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     monkeypatch.delenv("AUTH_USERNAME", raising=False)
     monkeypatch.delenv("AUTH_PASSWORD", raising=False)
-    token = "isolated-one-time-setup-token-2026-for-tests"
+    token = "isolated-legacy-setup-token-longer-than-32"
     monkeypatch.setenv("AUTH_SETUP_TOKEN", token)
     with TestClient(create_app(storage_dir=tmp_path, start_worker=False)) as client:
-        assert client.get("/auth/setup-status").json()["setup_required"]
-        assert (
-            client.post(
-                "/auth/setup",
-                headers=HEADERS,
-                json={**ADMIN, "token": "incorrect-setup-token-with-32-characters"},
-            ).status_code
-            == 403
-        )
-        assert client.post("/auth/setup", json={**ADMIN, "token": token}).status_code == 403
         response = client.post("/auth/setup", headers=HEADERS, json={**ADMIN, "token": token})
-        assert response.status_code == 200 and response.json()["user"]["role"] == "admin"
-        assert not client.get("/auth/setup-status").json()["setup_required"]
-        assert (
-            client.post("/auth/setup", headers=HEADERS, json={**MEMBER, "token": token}).status_code
-            == 409
-        )
+        assert response.status_code == 410
+        assert not client.app.state.accounts.has_accounts()
+        assert client.post("/auth/setup", json={**ADMIN, "token": token}).status_code == 403
 
 
 @pytest.mark.parametrize("problem", ["missing_secret", "short_secret", "default_credentials"])
@@ -274,9 +261,9 @@ def test_validation_never_echoes_passwords_or_setup_codes(approved_app):
         assert all("input" not in error for error in response.json()["detail"])
 
 
-def test_setup_tool_keeps_the_one_time_code_in_local_files(tmp_path, monkeypatch, capsys):
-    from urllib.parse import parse_qs, urlparse
-
+def test_setup_tool_generates_a_clean_link_without_passwords_or_setup_token(
+    tmp_path, monkeypatch, capsys
+):
     from api.accounts import Accounts
     from api.manage_accounts import prepare_setup
     from api.storage import Store
@@ -288,12 +275,11 @@ def test_setup_tool_keeps_the_one_time_code_in_local_files(tmp_path, monkeypatch
     env_file = tmp_path / ".env"
     prepare_setup(env_file, store, accounts)
     link = (tmp_path / "admin-setup.url").read_text().split("URL=", 1)[1].strip()
-    code = parse_qs(urlparse(link).fragment)["token"][0]
-    assert len(code) >= 32
-    assert code not in capsys.readouterr().out
+    assert link.endswith("/setup") and "#" not in link
+    assert "AUTH_PASSWORD=" not in env_file.read_text()
+    assert "AUTH_SETUP_TOKEN=" not in env_file.read_text()
     assert not accounts.has_accounts()
-    monkeypatch.setenv("AUTH_SETUP_TOKEN", code)
-    assert accounts.setup(code, "chosen-admin", "chosen-admin-password-2026")["role"] == "admin"
+    assert "AUTH_SECRET=" not in capsys.readouterr().out
 
 
 def test_legacy_recovery_is_explicit_private_and_refuses_an_approved_owner(

@@ -183,12 +183,28 @@ export function useUser(): User | null | undefined {
 }
 
 
-export async function setupAdministrator(token: string, username: string, password: string): Promise<TwoFactorChallenge> {
+export async function beginAdministratorSetup(): Promise<TwoFactorChallenge> {
   const { accountRequest } = await import("./accounts");
-  const result = await accountRequest<TwoFactorChallenge>("/auth/setup", { method: "POST", body: JSON.stringify({ token, username, password }) });
-  if (!result.mfa_required || !result.challenge_id) throw new Error("Two-factor setup could not be started. Sign in to continue setup.");
+  const result = await accountRequest<TwoFactorChallenge>("/auth/setup/start", { method: "POST" });
   setSessionState(null);
   return result;
+}
+
+export async function verifyAdministratorEmail(challengeId: string, code: string): Promise<{ setup_grant: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/setup/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendAdministratorEmail(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/setup/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
+}
+
+export async function setupAdministrator(grant: string, username: string, password: string): Promise<User> {
+  const { accountRequest } = await import("./accounts");
+  const result = await accountRequest<{ user: User }>("/auth/setup/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
+  setSessionState(result.user);
+  return result.user;
 }
 
 export async function verifySecondFactor(challengeId: string, code: string): Promise<TwoFactorResult> {

@@ -110,14 +110,9 @@ def create_app(
         )
         if app.state.accounts:
             app.state.accounts.bootstrap_configured_admin()
-            if (
-                is_auth_required()
-                and not app.state.accounts.has_accounts()
-                and len(os.environ.get("AUTH_SETUP_TOKEN", "")) < 32
-            ):
-                raise ValueError(
-                    "Prepare a one-time admin setup link or configure a non-default bootstrap admin."
-                )
+            if is_auth_required() and not app.state.accounts.has_accounts():
+                if app.state.accounts.mfa.required(None):
+                    app.state.accounts.mfa.admin_email()
         app.state.jobs = (
             InvoiceJobs(app.state.store) if hasattr(app.state.store, "connect") else None
         )
@@ -201,13 +196,18 @@ def create_app(
         # Custom headers cannot be submitted by cross-site HTML forms. Browser AJAX from
         # other origins additionally has to pass the credentialed CORS preflight allowlist.
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            browser_mutation = bool(request.cookies.get(COOKIE_NAME)) or path in {
-                "/auth/sign-in",
-                "/auth/sign-out",
-                "/auth/setup",
-                "/auth/mfa/verify",
-                "/auth/mfa/resend",
-            }
+            browser_mutation = (
+                bool(request.cookies.get(COOKIE_NAME))
+                or path.startswith("/auth/setup/")
+                or path
+                in {
+                    "/auth/sign-in",
+                    "/auth/sign-out",
+                    "/auth/setup",
+                    "/auth/mfa/verify",
+                    "/auth/mfa/resend",
+                }
+            )
             if browser_mutation:
                 origin = request.headers.get("origin")
                 trusted = origin is None or (
@@ -229,14 +229,22 @@ def create_app(
                     )
         if (
             path in {"/auth/sign-in", "/auth/mfa/verify", "/auth/mfa/resend"}
-            and request.method == "POST"
-        ):
+            or path.startswith("/auth/setup/")
+        ) and request.method == "POST":
             ip = request.client.host if request.client else "unknown"
             try:
                 request.app.state.limits.take(
-                    "mfa-ip" if path.startswith("/auth/mfa/") else "login-ip",
+                    "admin-setup-ip"
+                    if path.startswith("/auth/setup/")
+                    else "mfa-ip"
+                    if path.startswith("/auth/mfa/")
+                    else "login-ip",
                     ip,
-                    maximum=30 if path.startswith("/auth/mfa/") else 20,
+                    maximum=20
+                    if path.startswith("/auth/setup/")
+                    else 30
+                    if path.startswith("/auth/mfa/")
+                    else 20,
                     seconds=600,
                 )
             except HTTPException as exc:

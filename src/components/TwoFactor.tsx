@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { resendSecondFactor, verifySecondFactor, type TwoFactorChallenge, type User } from "@/auth";
+import type { TwoFactorChallenge } from "@/auth";
 import styles from "./TwoFactor.module.css";
 
-export function TwoFactor({ challenge: initial, onComplete, onCancel }: {
+export function TwoFactor({ challenge: initial, onVerify, onResend, onCancel }: {
   challenge: TwoFactorChallenge;
-  onComplete: (user: User) => void;
+  onVerify: (challengeId: string, code: string) => Promise<void>;
+  onResend: (challengeId: string) => Promise<TwoFactorChallenge>;
   onCancel?: () => void;
 }) {
   const [challenge, setChallenge] = useState(initial);
@@ -26,8 +27,8 @@ export function TwoFactor({ challenge: initial, onComplete, onCancel }: {
     <form className={styles.flow} onSubmit={async event => {
       event.preventDefault(); setBusy(true); setError(""); setNotice("");
       try {
-        const verified = await verifySecondFactor(challenge.challenge_id, code.trim());
-        setCode(""); onComplete(verified.user);
+        await onVerify(challenge.challenge_id, code.trim());
+        setCode("");
       } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not verify that code."); }
       finally { setBusy(false); }
     }}>
@@ -39,7 +40,7 @@ export function TwoFactor({ challenge: initial, onComplete, onCancel }: {
         <button className="ic-link" type="button" disabled={busy || remaining > 0} onClick={async () => {
           setBusy(true); setError(""); setNotice("");
           try {
-            const next = await resendSecondFactor(challenge.challenge_id);
+            const next = await onResend(challenge.challenge_id);
             setChallenge(next); setRemaining(next.resend_after); setResendAt(Date.now() + next.resend_after * 1000); setCode(""); setNotice("A new code was sent. Only the most recent code will work.");
           } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not resend the code."); }
           finally { setBusy(false); }

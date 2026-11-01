@@ -39,6 +39,32 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Email-first administrator creation, 1 November 2026
+
+Normal first-admin setup now uses only the operator-configured administrator inbox, mail delivery
+and server signing secret. `AUTH_PASSWORD` and `AUTH_SETUP_TOKEN` are not required. `/setup` first
+requests an email code, then verifies it, then displays the username/password form. Email proof
+returns an expiring, single-use setup grant; neither requesting nor verifying a code creates an
+account or a login session. Only final completion hashes the chosen password and atomically
+creates the first administrator and verified email. Concurrent completions cannot create two
+initial administrators. The old token/password endpoint is retired (410), so leaked legacy setup
+codes cannot reserve the first account. Existing accounts and private data are untouched.
+
+Setup codes expire after five minutes and allow five attempts. Password-creation grants expire
+after five minutes, are bound to the configured inbox, and are stored only as hashes. Code HMACs
+use a separate setup purpose. Changing the approved inbox invalidates outstanding proof. Sending
+has global cooldown/hourly caps and IP/verification limits. Requesting another code does not
+invalidate a previously verified owner's unexpired grant; public requests cannot block that
+owner from finishing. Initial setup closes when any account exists. The legacy explicit env
+bootstrap remains an operator-only option but is not used by this flow.
+
+348 backend tests and 156 frontend tests passed; 15 optional Postgres/model cases were skipped.
+Production build, TypeScript, frontend lint and backend lint/format passed. Chrome QA verified
+that credentials remain hidden until email proof, no account/session exists before final
+completion, incorrect codes fail, and the desktop/mobile flow works. Regression QA covered
+approved-account sign-in, resend, private projects and ZIP processing after browser closure.
+Emails were captured by an isolated test service; no real email was sent by automated checks.
+
 ## Email security codes, 1 November 2026
 
 At the owner's request, the active sign-in flow now uses passwords plus security codes delivered

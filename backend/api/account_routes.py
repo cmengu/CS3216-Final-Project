@@ -16,6 +16,7 @@ from .auth import (
     extract_request_claims,
     session_cookie_options,
 )
+from .mfa import masked_email
 
 router = APIRouter()
 
@@ -26,8 +27,10 @@ class SignIn(BaseModel):
     password: str = Field(max_length=128)
 
 
-class Setup(SignIn):
-    token: str = Field(min_length=32, max_length=256)
+class CompleteSetup(BaseModel):
+    setup_grant: str = Field(min_length=32, max_length=128)
+    username: str = Field(min_length=2, max_length=80)
+    password: str = Field(min_length=15, max_length=128)
 
 
 class CreateAccount(BaseModel):
@@ -111,25 +114,51 @@ def clear_cookie(request, response):
 
 @router.get("/auth/setup-status")
 def setup_status(request: Request):
+    needed = not request.app.state.accounts.has_accounts()
+    try:
+        destination = masked_email(request.app.state.accounts.mfa.admin_email()) if needed else None
+    except HTTPException:
+        destination = None
     return {
-        "setup_required": not request.app.state.accounts.has_accounts(),
+        "setup_required": needed,
+        "setup_destination": destination,
         "email_delivery_configured": security_mail.configured(),
     }
 
 
 @router.post("/auth/setup")
-def setup_admin(body: Setup, request: Request):
-    ip = request.client.host if request.client else "unknown"
-    request.app.state.limits.take("admin-setup", ip, maximum=5, seconds=3600)
-    if request.app.state.accounts.mfa.required(None):
-        security_mail.ensure_ready(request.app.state.accounts.mfa.admin_email())
+def retired_setup():
+    raise HTTPException(410, "Start administrator setup by verifying the configured email address.")
+
+
+@router.post("/auth/setup/start")
+def start_administrator_setup(request: Request):
+    return clear_cookie(
+        request, JSONResponse(request.app.state.accounts.administrator_setup.start())
+    )
+
+
+@router.post("/auth/setup/resend")
+def resend_administrator_setup(body: ResendFactor, request: Request):
+    return request.app.state.accounts.administrator_setup.resend(body.challenge_id)
+
+
+@router.post("/auth/setup/verify")
+def verify_administrator_setup(body: VerifyFactor, request: Request):
+    return request.app.state.accounts.administrator_setup.verify(
+        body.challenge_id, body.code.strip()
+    )
+
+
+@router.post("/auth/setup/complete")
+def complete_administrator_setup(body: CompleteSetup, request: Request):
     try:
-        user = request.app.state.accounts.setup(
-            body.token, body.username or body.email, body.password
+        user = request.app.state.accounts.administrator_setup.complete(
+            body.setup_grant, body.username, body.password
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    return begin_sign_in(request, user)
+    return login_response(request, user, mfa_verified=True)
 
 
 @router.post("/auth/sign-in")

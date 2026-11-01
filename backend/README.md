@@ -187,9 +187,9 @@ AUTH_EMAIL_FROM=onboarding@resend.dev
 AUTH_EMAIL_TEST_RECIPIENT=owner@example.com
 ```
 
-4. Restart the backend, open the private administrator setup link, choose credentials, and enter
-   the code received by the approved inbox. If delivery fails after the credentials were saved,
-   sign in again after fixing mail configuration; do not recreate the administrator.
+4. Restart the backend and open `/setup`. Request a code sent only to `AUTH_ADMIN_EMAIL`,
+   verify the code, then choose the administrator username and password. No account is created
+   or reserved before email verification. No `AUTH_PASSWORD` or `AUTH_SETUP_TOKEN` is required.
 5. To serve other approved users, verify a domain you own in Resend and change `AUTH_EMAIL_FROM`
    to an address on that domain, such as `security@your-company.example`. The test sender is
    deliberately blocked from sending another user's codes to the test owner. Do not try to
@@ -213,24 +213,32 @@ initializes `account_email`, `email_challenges`, and `email_verified_sessions` a
 the private schema. Older accounts without a registered email need this explicit operator step.
 Old authenticator tables may remain as inactive legacy data; they grant no login access.
 
-Configure `AUTH_SECRET` as an independent random secret of at least 32 characters. Production
-startup rejects missing/short secrets and demo bootstrap credentials. Authentication cannot
-be disabled outside automated tests. Prepare the first administrator from `backend/`:
+Configure `AUTH_SECRET` as an independent random secret of at least 32 characters and configure
+`AUTH_ADMIN_EMAIL` plus Resend delivery. Administrator setup is email-first: the configured inbox
+receives a five-minute code; verifying it grants five minutes to choose credentials. The grant
+is single-use, bound to the configured email and stored only as a hash. Account creation and
+proof consumption happen atomically, so concurrent requests cannot create two initial admins.
+Further code requests cannot invalidate an already verified, unexpired password-creation grant.
+Once any approved account exists, all initial-setup endpoints refuse additional creation.
+
+The public `/setup` page does not accept a caller-selected inbox. First-account setup requires
+neither an environment password nor a private link token. Failed delivery, wrong codes and
+abandoned verification do not reserve the administrator account. Setup has persistent global
+send cooldown/hourly caps plus IP and verification limits to bound mail abuse and guessing.
+The old `POST /auth/setup` token/password endpoint returns 410 and cannot create an account.
+
+Optionally prepare server secrets and a convenient local setup shortcut from `backend/`:
 
 ```sh
 .venv/bin/python -m api.manage_accounts prepare-setup
 ```
 
-This writes private settings to ignored `.env` and an ignored `admin-setup.url` file in the
-configured data directory. It prints the file location, never the token. It retires the known
-public demo credentials if they were configured. Restart the API, open that one-time link,
-and choose your administrator username and password, then confirm the emailed security code. The setup code travels in a URL fragment, is
-removed from the address bar, and is checked on the server; setup cannot create a second admin
-once any account exists. Configure email delivery before using setup. For managed deployments, provide `AUTH_SECRET`, `AUTH_SETUP_TOKEN` and the email settings
-through the deployment’s secret settings and open `/setup` to enter the code. Existing deployments
-may bootstrap their first admin using explicitly configured, non-default `AUTH_USERNAME` and
-`AUTH_PASSWORD`; those settings never become an ongoing credential fallback. Remove them after
-initial setup. Do not set `NEXT_PUBLIC_AUTH_PASSWORD`.
+This writes private secrets to ignored `.env` and a clean `/setup` shortcut to the configured
+data directory. It does not store an administrator password or generate a setup token. Normal
+onboarding only needs `AUTH_SECRET`, the approved email and the email-delivery settings.
+Existing explicit non-default `AUTH_USERNAME`/`AUTH_PASSWORD` bootstrap settings remain a legacy
+operator-only alternative; they are not required and never become a continuing login fallback.
+Existing accounts are retained. Authentication cannot be disabled outside automated tests.
 
 Old session-owned data is preserved but is never automatically assigned to a new person. An
 operator who knows the owner can explicitly recover one old workspace into an empty private
