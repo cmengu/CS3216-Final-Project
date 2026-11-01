@@ -6,7 +6,7 @@ import { auditRows, exportReadyToPay, whenLabel, type AuditKind } from "@/checke
 import { csvName } from "@/checker/review";
 import { useApp } from "@/components/AppShell";
 import { download, Pill, Search } from "@/components/ui";
-import { getMasterListEvents } from "@/masterList";
+import { useProjectEvents } from "@/checker/projects";
 
 const FILTERS: [AuditKind | "all", string][] = [
   ["all", "All"],
@@ -19,38 +19,63 @@ const FILTERS: [AuditKind | "all", string][] = [
 const COLS = "150px minmax(0, 1.3fr) 170px minmax(0, 1.6fr) 60px";
 
 export default function Audit() {
-  const { invoices, invoiceError, masterList } = useApp();
+  const { invoices, invoiceError, projects } = useApp();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<AuditKind | "all">("all");
-  // The events change only when the master list does.
-  const events = useMemo(() => (masterList ? getMasterListEvents() : []), [masterList]);
+  const [projectId, setProjectId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const { events, error: eventsError } = useProjectEvents(projects);
   const rows = useMemo(() => auditRows(invoices ?? [], events), [invoices, events]);
   const ql = q.trim().toLowerCase();
-  const shown = rows.filter((r) => (filter === "all" || r.kind === filter) && (!ql || `${r.title} ${r.sub} ${r.details}`.toLowerCase().includes(ql)));
+  const selectedProjectId = projects.some((p) => p.id === projectId) ? projectId : projects[0]?.id;
+  const invalidDates = !!dateFrom && !!dateTo && dateFrom > dateTo;
+  const shown = rows.filter((r) => {
+    const at = new Date(r.at);
+    const start = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const end = dateTo ? new Date(`${dateTo}T00:00:00`) : null;
+    if (end) end.setDate(end.getDate() + 1);
+    return !invalidDates && (filter === "all" || r.kind === filter)
+      && r.projectId === selectedProjectId
+      && (!start || at >= start) && (!end || at < end)
+      && (!ql || `${r.title} ${r.sub} ${r.details}`.toLowerCase().includes(ql));
+  });
 
   return (
     <div className="ic-page">
+      {eventsError ? <p role="alert">{eventsError}</p> : null}
       <div className="ic-headrow">
         <h1 className="ic-h1">Audit trail</h1>
         <button type="button" className="ic-btn ic-btn--secondary" onClick={() => download(csvName(), exportReadyToPay(invoices ?? []))} disabled={!invoices}>
           Export ready to pay
         </button>
       </div>
-      <div className="ic-controls">
+      <div className="ic-controls" style={{ alignItems: "flex-end" }}>
         <div style={{ flex: "1 1 280px", maxWidth: 420 }}>
           <Search label="Search audit trail" placeholder="Search supplier or invoice number" value={q} onChange={setQ} full />
         </div>
-        <div className="ic-seg" role="group" aria-label="Show">
-          {FILTERS.map(([k, l]) => (
-            <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>
-              {l}
-            </button>
-          ))}
-        </div>
+        <label className="ic-field">Project
+          <select className="ic-select" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(e) => setProjectId(e.target.value)}>
+            {!projects.length ? <option value="">No projects</option> : null}
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <label className="ic-field">Status
+          <select className="ic-select" value={filter} onChange={(e) => setFilter(e.target.value as AuditKind | "all")}>
+            {FILTERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label className="ic-field">From
+          <input className="ic-input" type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label className="ic-field">To
+          <input className="ic-input" type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} />
+        </label>
       </div>
+      {invalidDates ? <p className="ic-hint ic-hint--error" role="alert">The end date must be on or after the start date.</p> : null}
       <section className="ic-card" aria-label="Audit trail" style={{ padding: "8px 24px" }}>
         <div role="table" aria-label="Audit trail">
-          <div role="row" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "8px 0", fontSize: 13, color: "var(--ink2)" }}>
+          <div role="row" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "8px 0", fontSize: "calc(13px * var(--text-scale))", color: "var(--ink2)" }}>
             <span role="columnheader">When</span>
             <span role="columnheader">Invoice</span>
             <span role="columnheader">Decision</span>

@@ -4,127 +4,58 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { invoiceFileUrl, reloadInvoices } from "@/checker/api";
-import { exportReadyToPay, whenLabel } from "@/checker/present";
-import { csvName } from "@/checker/review";
+import { money } from "@/checker/present";
+import { useProjectMaster } from "@/checker/projects";
+import { ProjectAssignment } from "@/components/invoices/ProjectAssignment";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
 import { INVOICE_ACCEPT } from "@/checker/upload-formats";
 import { enqueue, useUploads } from "@/checker/uploads";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
-import { AllDecided, CheckPane } from "@/components/invoices/CheckPane";
+import { CheckPane } from "@/components/invoices/CheckPane";
 import { OutlookDialog } from "@/components/invoices/OutlookDialog";
 import { Queue } from "@/components/invoices/Queue";
-import { PdfView } from "@/components/PdfView";
 import { XmlView } from "@/components/XmlView";
-import { download, Dropzone, Notice, useFilePicker } from "@/components/ui";
+import { PdfView } from "@/components/PdfView";
+import { useFilePicker } from "@/components/ui";
 
 
 
-function MasterPanel() {
-  const { masterList } = useApp();
-  if (!masterList) return null;
-  return (
-    <aside className="ic-panel" aria-label="Master list">
-      <div className="ic-grp">
-        <h3>Master list</h3>
-        <div className="ic-fact">
-          <Icon name="sheet" size="ui" />
-          <span className="v">
-            <span>{masterList.file}</span>
-            <span className="muted">Uploaded {whenLabel(masterList.uploadedAt)}</span>
-          </span>
-        </div>
-        <div className="ic-fact">
-          <Icon name="list" size="ui" />
-          <span className="v">
-            <span>{masterList.items.length} items</span>
-            <span className="muted">{masterList.supplierCount} suppliers</span>
-          </span>
-        </div>
-        <Link className="ic-link" href="/master-list">
-          View master list
-          <Icon name="arrowR" arrow />
-        </Link>
-      </div>
-    </aside>
-  );
-}
-
-function GuidedSetup({ onOutlook }: { onOutlook: () => void }) {
-  const { invoices } = useApp();
-  const uploads = useUploads();
-  const known = () => invoices ?? [];
-  const add = (files: File[]) => enqueue(files, known);
-  const busy = uploads.items.length > 0;
-  return (
-    <div className="ic-page" style={{ paddingTop: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h1 className="ic-h1" style={{ margin: 0 }}>Upload your first invoice</h1>
-        <button type="button" className="ic-btn ic-btn--secondary" onClick={onOutlook}>
-          <Icon name="mail" size="ui" />
-          Import from Outlook
-        </button>
-      </div>
-      <div className="ic-split">
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {uploads.notices.map((n) => (
-            <Notice key={n.key} tone={n.kind === "queued" ? undefined : "warn"}>
-              {n.text}
-            </Notice>
-          ))}
-          {busy ? (
-            <>
-              <section className="ic-card" aria-label="Uploads" role="status" aria-live="polite">
-                {uploads.items.map((it, i) => (
-                  <div key={it.key} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 0", borderTop: i ? "1px solid var(--line)" : 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <Icon name="doc" size="row" />
-                      <span style={{ flex: 1, fontWeight: i === 0 ? 600 : 400 }}>{it.name}</span>
-                      <span className="muted">{it.status === "uploading" ? "Uploading…" : it.status === "unpacking" ? "Unpacking…" : "Waiting"}</span>
-                    </div>
-                    {it.status !== "waiting" ? (
-                      <div className="ic-progress ic-progress--full">
-                        <span />
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </section>
-              <p className="muted" style={{ margin: 0 }}>
-                Keep this page open until the batch finishes uploading. Checking will then continue on the server.
-              </p>
-              <Dropzone size="sm" title="Drop more invoices or archives, or" hint="" accept={INVOICE_ACCEPT} multiple inputLabel="More invoices or archives" onFiles={add} />
-            </>
-          ) : (
-            <Dropzone title="Drop invoices or archives here" hint="PDF or XML up to 20 MB each. ZIP or RAR up to 50 MB; 100 MB unpacked." accept={INVOICE_ACCEPT} multiple inputLabel="Invoice PDFs, XMLs or archives" onFiles={add} />
-          )}
-        </div>
-        <MasterPanel />
-      </div>
-    </div>
-  );
-}
-
-function Workspace({ onOutlook }: { onOutlook: () => void }) {
-  const { invoices, invoiceError, masterList } = useApp();
+function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
+  const { invoices, invoiceError, projects, projectError, projectsLoading, reloadProjects } = useApp();
   const uploads = useUploads();
   const params = useSearchParams();
   const router = useRouter();
-  const [seg, setSeg] = useState<"decide" | "done">("decide");
   const [q, setQ] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pdfId, setPdfId] = useState<string | null>(null);
   const [focusState, setFocus] = useState<{ id: string; n: number; seq: number } | null>(null);
   const known = () => invoices ?? [];
-  const picker = useFilePicker(INVOICE_ACCEPT, true, (files) => enqueue(files, known));
 
   const piles = useMemo(() => summarize(invoices ?? []).piles, [invoices]);
   const all = invoices ?? [];
   const idParam = params.get("id");
-  const fallback = piles.decide[0]?.id ?? null;
-  const selectedId = idParam && all.some((i) => i.id === idParam) ? idParam : fallback;
-  const inv: SupplierInvoice | null = all.find((i) => i.id === selectedId) ?? null;
+  // An explicit project-list URL keeps Back from reopening the default folder.
+  const browsingProjects = params.get("view") === "projects";
+  const linkedInvoice = all.find((i) => i.id === idParam);
+  const defaultProject = projects.find((p) => p.id.startsWith("legacy:")) ?? projects[0];
+  const projectId = browsingProjects ? null : (params.get("project") ?? linkedInvoice?.projectId ?? defaultProject?.id ?? null);
+  const project = projects.find((p) => p.id === projectId);
+  const projectInvoices = all.filter((i) => i.projectId === projectId);
+  const selectedId = browsingProjects ? null : (projectInvoices.find((i) => i.id === idParam)?.id ?? projectInvoices[0]?.id ?? null);
+  const inv: SupplierInvoice | null = projectInvoices.find((i) => i.id === selectedId) ?? null;
+  const { masterList } = useProjectMaster(project?.comparison_mode === "master_list" ? project.id : null);
+  const canUpload = !!project && (project.comparison_mode === "totals_only" || project.has_master_list);
+  const picker = useFilePicker(INVOICE_ACCEPT, true, (files) => { if (canUpload) enqueue(files, known, project.id); });
+  const selectProject = (id: string) => {
+    setQ("");
+    router.push(`/invoices?project=${encodeURIComponent(id)}`, { scroll: false });
+  };
+  const backToProjects = () => {
+    setQ("");
+    router.push("/invoices?view=projects", { scroll: false });
+  };
 
   // Each upload that finishes while this page is open is selected.
   const doneCount = uploads.doneCount;
@@ -133,9 +64,15 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
   useEffect(() => {
     if (doneCount > seen.current && lastId) {
       seen.current = doneCount;
+      reloadProjects();
       router.replace(`/invoices?id=${lastId}`, { scroll: false });
     }
-  }, [doneCount, lastId, router]);
+  }, [doneCount, lastId, router, reloadProjects]);
+
+  // Refresh project counts and currency totals as server-owned batches finish.
+  useEffect(() => {
+    reloadProjects();
+  }, [invoices, reloadProjects]);
 
   // "Show" focus belongs to the invoice it was clicked on.
   const focus = focusState && focusState.id === selectedId ? focusState : null;
@@ -163,29 +100,31 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pdfOpen]);
 
-  const exportCsv = () => download(csvName(), exportReadyToPay(all));
 
   return (
     <div className={`ic-work ic-work--no-pdf${sidebarCollapsed ? " ic-work--sidebar-collapsed" : ""}`}>
       {picker.node}
       {sidebarCollapsed ? (
         <aside id="invoice-sidebar" className="ic-sidebar-collapsed" aria-label="Invoice navigation">
-          <button type="button" className="ic-icobtn" onClick={() => setSidebarCollapsed(false)} aria-label="Expand invoice sidebar" aria-expanded={false} aria-controls="invoice-sidebar" title="Expand sidebar"><Icon name="chev" /></button>
+          <button type="button" className="ic-icobtn" onClick={() => setSidebarCollapsed(false)} aria-label="Expand invoice sidebar" aria-expanded={false} aria-controls="invoice-sidebar" title="Expand sidebar"><Icon name="panelOpen" /></button>
         </aside>
       ) : <Queue
         decideList={piles.decide}
         doneList={piles.done}
-        seg={seg}
-        onSeg={setSeg}
+        projects={projects}
+        activeProject={projectId}
+        onProject={selectProject}
+        onBack={backToProjects}
+        canUpload={canUpload}
         q={q}
         onQ={setQ}
         selected={selectedId}
         uploads={uploads.items}
         notices={uploads.notices}
         onUpload={picker.open}
-        onOutlook={onOutlook}
-        loadError={invoices === null ? invoiceError : null}
-        onRetryLoad={reloadInvoices}
+        onOutlook={project ? () => onOutlook(project.id) : undefined}
+        loadError={projectError ?? (invoices === null ? invoiceError : null)}
+        onRetryLoad={() => { reloadInvoices(); reloadProjects(); }}
         onCollapse={() => setSidebarCollapsed(true)}
       />}
       {inv ? (
@@ -206,7 +145,40 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
           </div>
         </section>
       ) : (
-        <AllDecided count={piles.done.length} onUpload={picker.open} onExport={exportCsv} />
+        <section className="ic-check"><div className="ic-check-body ic-project-overview">
+          <h1>{project?.name ?? (projectsLoading ? "Loading projects…" : "Projects")}</h1>
+          {project ? <>
+            <p className="muted">{project.comparison_mode === "totals_only" ? "Totals only · No master list" : "Invoices compared with this project’s master list"}</p>
+            <section className="ic-card"><h2>Invoice totals</h2>
+              {Object.entries(project.totals).map(([currency, total]) => <p key={currency} className="ic-h1">{money(Number(total), currency)}</p>)}
+              {!Object.keys(project.totals).length ? <p>No completed invoice totals yet.</p> : null}
+              <p className="muted">{project.included_count} of {project.invoice_count} invoices included</p>
+              {project.excluded_count ? <p role="status">{project.excluded_count} excluded: still running, or missing a total or currency.</p> : null}
+            </section>
+            <div className="ic-controls">
+              <button className="ic-btn ic-btn--primary" disabled={!canUpload} onClick={picker.open}>Upload invoices</button>
+              {project.comparison_mode === "master_list" ? <Link className="ic-btn ic-btn--secondary" href={`/master-list?project=${encodeURIComponent(project.id)}`}>{project.has_master_list ? "View master list" : "Upload master list"}</Link> : null}
+            </div>
+            {!canUpload ? <p>Upload a master list for this project before adding invoices.</p> : null}
+          </> : <section className="ic-card" style={{ padding: 0, overflowX: "auto" }}>
+            <table className="ic-grid ic-project-table" aria-label="Projects">
+              <thead><tr><th scope="col">No.</th><th scope="col">Project name</th><th scope="col">Number of invoices</th><th scope="col">Master list</th><th scope="col">Total sum</th></tr></thead>
+              <tbody>
+                {projects.map((p, index) => <tr key={p.id}>
+                  <td className="num">{index + 1}</td>
+                  <td><Link className="ic-link" href={`/invoices?project=${encodeURIComponent(p.id)}`} scroll={false}>{p.name}</Link></td>
+                  <td className="num">{p.invoice_count}</td>
+                  <td>{p.has_master_list ? "Yes" : "No"}</td>
+                  <td className="num">
+                    {Object.entries(p.totals).length ? Object.entries(p.totals).map(([currency, total]) => <div key={currency} style={{ whiteSpace: "nowrap" }}>{money(Number(total), currency)}</div>) : "—"}
+                    {p.excluded_count ? <div className="ic-hint">{p.excluded_count} invoice{p.excluded_count === 1 ? "" : "s"} excluded</div> : null}
+                  </td>
+                </tr>)}
+                {!projects.length ? <tr><td colSpan={5} className="muted">{projectsLoading ? "Loading projects…" : projectError ? "Projects could not be loaded." : "No projects yet. Create one in the sidebar."}</td></tr> : null}
+              </tbody>
+            </table>
+          </section>}
+        </div></section>
       )}
       {inv && pdfOpen && /\.xml$/i.test(inv.fileName) ? (
         <XmlView key={`xml-${inv.id}`} inv={inv} url={invoiceFileUrl(inv.id)} fileName={inv.fileName} focus={focus} onSelectLine={(n) => setFocus((f) => ({ id: inv.id, n, seq: (f?.seq ?? 0) + 1 }))} onClose={closePdf} />
@@ -229,16 +201,20 @@ function Workspace({ onOutlook }: { onOutlook: () => void }) {
 }
 
 function InvoicesView() {
-  const { phase, invoices } = useApp();
+  const { invoices, projects } = useApp();
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const router = useRouter();
   const params = useSearchParams();
   const [manualOpen, setManualOpen] = useState(false);
+  const [outlookProjectId, setOutlookProjectId] = useState<string | null>(null);
+  const destinationId = outlookProjectId ?? params.get("project");
+  const destination = projects.find((p) => p.id === destinationId);
   const [dismissedQueryNotice, setDismissedQueryNotice] = useState(false);
 
   const outlookParam = params.get("outlook");
   const outlookError = params.get("outlook_error");
   const openFromQuery = Boolean(outlookParam || outlookError);
-  const outlookOpen = manualOpen || openFromQuery;
+  const outlookOpen = !!destination && (manualOpen || openFromQuery);
 
   const initialNotice = useMemo(() => {
     if (dismissedQueryNotice) return null;
@@ -250,8 +226,9 @@ function InvoicesView() {
   }, [dismissedQueryNotice, outlookError, outlookParam]);
 
   const clearOutlookQuery = () => {
-    const id = params.get("id");
-    router.replace(id ? `/invoices?id=${encodeURIComponent(id)}` : "/invoices", { scroll: false });
+    const next = new URLSearchParams(params.toString());
+    next.delete("outlook"); next.delete("outlook_error");
+    router.replace(`/invoices?${next}`, { scroll: false });
   };
 
   const closeOutlook = () => {
@@ -260,28 +237,18 @@ function InvoicesView() {
     if (openFromQuery) clearOutlookQuery();
   };
 
-  useEffect(() => {
-    if (phase === "first") router.replace("/master-list");
-  }, [phase, router]);
-  if (phase === "first") return null;
-  if (phase === "loading")
-    return (
-      <div className="ic-page">
-        <p className="muted">Loading…</p>
-      </div>
-    );
   const known = () => invoices ?? [];
   return (
     <>
-      {phase === "setup" ? (
-        <GuidedSetup onOutlook={() => setManualOpen(true)} />
-      ) : (
-        <Workspace onOutlook={() => setManualOpen(true)} />
-      )}
+      {pendingFiles.length && destination ? <ProjectAssignment key={destination.id} files={pendingFiles} project={destination} onCancel={() => setPendingFiles([])} onSubmit={(files) => {
+        enqueue(files, known, destination.id);
+        setPendingFiles([]);
+      }} /> : <Workspace onOutlook={(projectId) => { setOutlookProjectId(projectId); setManualOpen(true); }} />}
       <OutlookDialog
         open={outlookOpen}
+        returnTo={`/invoices?project=${encodeURIComponent(destinationId ?? "")}`}
         onClose={closeOutlook}
-        onImportFiles={(files) => enqueue(files, known)}
+        onImportFiles={(files) => { setPendingFiles((old) => [...old, ...files]); closeOutlook(); }}
         initialNotice={initialNotice}
         onClearInitialNotice={() => setDismissedQueryNotice(true)}
       />

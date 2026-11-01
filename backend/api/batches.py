@@ -9,6 +9,8 @@ from read.reader import MAX_BYTES, validate_pdf
 from read.xml_invoice import read_xml_invoice
 
 from .limits import charge_checks, reserve_upload
+from .master_list import current_master
+from .projects import require_project
 from .storage import request_session_id
 from .uploaded_master import UploadedMasterStages
 
@@ -18,7 +20,7 @@ MAX_BATCH_FILES = 1000
 
 
 @router.post("", status_code=202)
-def upload_batch(request: Request, files: list[UploadFile]):
+def upload_batch(request: Request, files: list[UploadFile], project_id: str | None = None):
     store, selected = request.app.state.store, request.app.state.stages
     workspace = request_session_id(request)
     temporary, accepted, duplicates, documents = [], [], [], []
@@ -28,12 +30,29 @@ def upload_batch(request: Request, files: list[UploadFile]):
             raise HTTPException(503, "The checking service is not configured.")
         if not 1 <= len(files) <= MAX_BATCH_FILES:
             raise HTTPException(413, "Upload 1 to 1,000 invoices in one batch.")
+        project = require_project(store, project_id, workspace) if project_id else None
+        totals_only = project is not None and project["comparison_mode"] == "totals_only"
+        if project and selected.mode == "live" and not isinstance(selected, UploadedMasterStages):
+            raise HTTPException(
+                503, "Project uploads require INVOICE_CHECKER=master_list or csv_context."
+            )
+        if (
+            project
+            and not totals_only
+            and current_master(store, session_id=workspace, project_id=project_id) is None
+        ):
+            raise HTTPException(
+                409, "Upload a master list for this project before uploading invoices."
+            )
+        project_id = project_id or store.ensure_legacy_project(workspace)
         if isinstance(selected, UploadedMasterStages):
             try:
-                selected = selected.bind(store, session_id=workspace)
+                selected = selected.bind(
+                    store, session_id=workspace, project_id=project_id, totals_only=totals_only
+                )
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
-        version = selected.price_sheet_version
+        version = "" if totals_only else selected.price_sheet_version
         total_bytes = 0
         seen = set()
         for file in files:
@@ -69,7 +88,7 @@ def upload_batch(request: Request, files: list[UploadFile]):
                     document_hash, _ = validate_pdf(path)
             except ValueError as exc:
                 raise HTTPException(422, f"{filename}: {exc}") from exc
-            existing = request.app.state.jobs.existing(workspace, document_hash)
+            existing = request.app.state.jobs.existing(workspace, document_hash, project_id)
             if existing or document_hash in seen:
                 duplicates.append({"filename": filename, "existing_id": existing})
                 continue
@@ -90,7 +109,11 @@ def upload_batch(request: Request, files: list[UploadFile]):
         )
         reserved = reserve_upload(request, sum(item["size"] for item in documents))
         batch_id, accepted, raced_duplicates = request.app.state.jobs.enqueue(
-            workspace, documents, version
+            workspace,
+            documents,
+            version,
+            project_id=project_id,
+            comparison_mode="totals_only" if totals_only else "master_list",
         )
         duplicates.extend(
             {"filename": item["filename"], "existing_id": item["existing_id"]}

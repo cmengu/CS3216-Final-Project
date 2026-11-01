@@ -33,7 +33,13 @@ Persistent, atomic limits bound login attempts, invoice checks, PDF/model checks
 
 The landing page now names PDF, Vietnamese HDon XML, ZIP and RAR support and explains background processing after complete upload. The placeholder contact email/form is removed until a real address is supplied.
 
-## Verification
+## Main merge, 1 November 2026
+
+Merged main at `8fa909d`, including project folders, per-project masters and typography/audit updates. Background uploads now retain their selected project, comparison mode and original master version through restart. Duplicate detection is scoped to each project. Totals-only PDF/XML jobs skip price checks. Legacy recovery transfers complete project ownership without bypassing database ownership constraints. Project totals refresh when queued invoices finish.
+
+After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
+
+## Original verification, 31 October 2026
 
 - Full backend suite: **304 passed, 12 skipped**. Skips require Postgres or external models. The SQLite/Postgres account, quota and queue contract tests are parametrized; only SQLite was exercised locally.
 - Frontend suite: **143 passed**. Lint, TypeScript, backend Ruff lint/format and production build passed.

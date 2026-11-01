@@ -156,13 +156,13 @@ export class UploadError extends Error {
  * Send one PDF or XML invoice. A 201 is the checked invoice. A 422 that carries a saved record is an invoice
  * the service kept but could not check; it is returned too, so its page can say why.
  */
-export async function uploadInvoice(file: File): Promise<SupplierInvoice> {
+export async function uploadInvoice(file: File, projectId?: string): Promise<SupplierInvoice> {
   const body = new FormData();
   body.append("file", file);
   const headers = sessionHeaders(undefined, true);
   let response: Response;
   try {
-    response = await fetch(`${SERVICE_URL}/invoices`, {
+    response = await fetch(`${SERVICE_URL}/invoices${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`, {
       method: "POST",
       body,
       credentials: "include",
@@ -200,7 +200,7 @@ export async function retryInvoice(inv: SupplierInvoice): Promise<SupplierInvoic
   if (response.status === 404) throw new Error("The original PDF is no longer kept, so it cannot be checked again. Upload it again.");
   if (!response.ok) throw new Error(broken);
   const file = new File([await response.blob()], inv.fileName, { type: /\.xml$/i.test(inv.fileName) ? "application/xml" : "application/pdf" });
-  return uploadInvoice(file);
+  return uploadInvoice(file, inv.projectId ?? undefined);
 }
 
 /** One plain sentence for a decision the service refused. */
@@ -357,12 +357,12 @@ export interface BatchReceipt {
 }
 
 /** Accept the complete batch before any browser-independent checking is promised. */
-export async function uploadInvoiceBatch(files: File[]): Promise<BatchReceipt> {
+export async function uploadInvoiceBatch(files: File[], projectId?: string): Promise<BatchReceipt> {
   const body = new FormData();
   for (const file of files) body.append("files", file);
   let response: Response;
   try {
-    response = await fetch(`${SERVICE_URL}/invoice-batches`, {
+    response = await fetch(`${SERVICE_URL}/invoice-batches${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`, {
       method: "POST", body, credentials: "include", headers: sessionHeaders(undefined, true),
     });
   } catch { throw new UploadError("The batch could not be uploaded. Keep this page open and try again.", null); }

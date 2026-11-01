@@ -7,6 +7,7 @@ import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
 import { Notice, Search } from "@/components/ui";
 import { money, whenLabel } from "@/checker/present";
+import { useProjectMaster } from "@/checker/projects";
 import type { MasterItem } from "@/masterList";
 import { MasterImport } from "@/components/MasterImport";
 import { ColumnMappings } from "@/components/ColumnMappings";
@@ -20,18 +21,18 @@ const day = (iso: string | null) => {
 const valid = (i: MasterItem) => (i.validFrom || i.validTo ? `${day(i.validFrom)} – ${day(i.validTo)}` : "");
 const pct = (d: string | number | null) => (d ? `${Number((Number(d) * 100).toFixed(2))}%` : "");
 
-function FirstRun() {
-  const router = useRouter();
-  return <div className="ic-page ic-page--narrow" style={{ paddingTop: 56 }}>
-    <h1 className="ic-h1">Upload your master list</h1>
-    <MasterImport onSaved={() => router.replace("/master-list?uploaded=1")} />
-  </div>;
-}
-
 function MasterListView() {
-  const { masterList } = useApp();
+  const { projects, projectsLoading, projectError } = useApp();
   const params = useSearchParams();
   const router = useRouter();
+  const eligible = projects.filter((p) => p.comparison_mode === "master_list");
+  const requestedProject = params.get("project");
+  const project = requestedProject ? eligible.find((p) => p.id === requestedProject) : eligible[0];
+  const { masterList, loading, error, reload } = useProjectMaster(project?.id ?? null);
+  const base = `/master-list?project=${encodeURIComponent(project?.id ?? "")}`;
+  const selector = <label>Project <select className="ic-select" value={project?.id ?? ""} onChange={(e) => router.push(`/master-list?project=${encodeURIComponent(e.target.value)}`)}>
+    {eligible.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+  </select></label>;
   const [q, setQ] = useState("");
   const [supplier, setSupplier] = useState("");
   const [replace, setReplace] = useState(false);
@@ -48,29 +49,35 @@ function MasterListView() {
     );
   }, [items, q, supplier]);
 
-  if (!masterList) return <FirstRun />;
+  if (projectsLoading || loading) return <p className="ic-empty">Loading…</p>;
+  if (projectError || error) return <div className="ic-page"><p role="alert">{projectError ?? error}</p><button onClick={reload}>Retry</button></div>;
+  if (!project) return <div className="ic-page"><h1>Project master lists</h1><p>Create a project with master-list comparison to upload a price sheet.</p><Link className="ic-link" href="/invoices">Go to projects</Link></div>;
+  if (!masterList) return <div className="ic-page ic-page--narrow">{selector}<h1 className="ic-h1">Upload master list</h1>
+    <MasterImport key={project.id} projectId={project.id} onSaved={() => { reload(); router.replace(`${base}&uploaded=1`); }} />
+  </div>;
 
   const closeReplacement = () => {
     setReplace(false);
-    if (params.get("replace")) router.replace("/master-list");
+    if (params.get("replace")) router.replace(base);
   };
   if (replaceOpen) return <div className="ic-page ic-page--narrow" style={{ paddingTop: 40 }}>
     <div className="ic-headrow"><h1 className="ic-h1">Replace master list</h1>
       <button className="ic-btn ic-btn--secondary" type="button" onClick={closeReplacement}>Cancel replacement</button>
     </div>
     <p className="muted">Your current list stays in use until you confirm the replacement.</p>
-    <MasterImport replace onSaved={closeReplacement} />
+    <MasterImport key={project.id} projectId={project.id} replace onSaved={() => { reload(); closeReplacement(); }} />
   </div>;
 
   return (
     <div className="ic-page" style={{ height: "calc(100vh - var(--header-height))" }}>
+      {selector}
       {uploaded ? (
         <Notice>
           <span className="ic-ok">
             <Icon name="tick" />
             Master list uploaded.
           </span>
-          <Link className="ic-btn ic-btn--primary ic-btn--sm" href="/invoices" style={{ marginLeft: "auto" }}>
+          <Link className="ic-btn ic-btn--primary ic-btn--sm" href={`/invoices?project=${encodeURIComponent(project.id)}`} style={{ marginLeft: "auto" }}>
             <Icon name="upload" size="ui" />
             Upload invoice
           </Link>
@@ -79,7 +86,7 @@ function MasterListView() {
       <div className="ic-headrow">
         <div className="ic-titleblock">
           <h1 className="ic-h1">Master list</h1>
-          <p className="muted" style={{ fontSize: 14 }}>
+          <p className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>
             {masterList.file} · Uploaded {whenLabel(masterList.uploadedAt)}
           </p>
         </div>
@@ -127,7 +134,7 @@ function MasterListView() {
                     <td className="r num">{n + 1}</td>
                     <td>{i.supplier}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{i.po}</td>
-                    <td className="mono" style={{ whiteSpace: "nowrap", fontSize: 13 }}>
+                    <td className="mono" style={{ whiteSpace: "nowrap", fontSize: "calc(13px * var(--text-scale))" }}>
                       {i.item}
                     </td>
                     <td className="trunc" title={i.name}>

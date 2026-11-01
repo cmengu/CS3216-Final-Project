@@ -74,7 +74,7 @@ export default function SignIn() {
               <label htmlFor="password" className="lbl">
                 Password
               </label>
-              <button type="button" className="ic-link" style={{ minHeight: 0, fontSize: 13 }} onClick={() => setForgot(true)}>
+              <button type="button" className="ic-link" style={{ minHeight: 0, fontSize: "calc(13px * var(--text-scale))" }} onClick={() => setForgot(true)}>
                 Forgot password?
               </button>
             </div>

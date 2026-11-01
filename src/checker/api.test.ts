@@ -256,3 +256,25 @@ it("reports batch limits without claiming that checking has started", async () =
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Daily checking allowance reached." }, { status: 429, headers: { "Retry-After": "60" } })));
   await expect(uploadInvoiceBatch([new File(["pdf"], "one.pdf")])).rejects.toMatchObject({ status: 429, retryAfter: 60, message: "Daily checking allowance reached." });
 });
+
+it("sends complete batches to their selected project", async () => {
+  const fetchMock = vi.fn(async () => Response.json({ id: "batch", invoices: [], duplicates: [] }, { status: 202 }));
+  vi.stubGlobal("fetch", fetchMock);
+  await uploadInvoiceBatch([new File(["xml"], "one.xml")], "project a");
+  const [url] = fetchMock.mock.calls[0] as unknown as [string];
+  expect(url).toContain("/invoice-batches?project_id=project%20a");
+});
+
+it("preserves project destination on uploads and retries", async () => {
+  const record = { ...saved("Supplier", null), project_id: "project-a", comparison_mode: "totals_only" as const, check: null };
+  const fetchMock = vi.fn(async (url: string) => url.includes("/file")
+    ? new Response("%PDF fixture")
+    : new Response(JSON.stringify(record), { status: 201 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const first = await uploadInvoice(new File(["%PDF"], "test.pdf"), "project-a");
+  expect(first.projectId).toBe("project-a");
+  expect(first.comparisonMode).toBe("totals_only");
+  expect(String(fetchMock.mock.calls[0][0])).toContain("/invoices?project_id=project-a");
+  await retryInvoice(first);
+  expect(String(fetchMock.mock.calls[2][0])).toContain("/invoices?project_id=project-a");
+});

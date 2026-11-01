@@ -12,6 +12,7 @@ export interface InvoiceLine {
   description: string;
   quantity: number | null;
   unitPrice: number | null;
+  priceCurrency?: string | null;
   lineTotal: number | null;
   result: LineResult;
   /** The price sheet's unit price; null when the part is not on the sheet. */
@@ -39,6 +40,8 @@ export type Outcome = "ready_to_pay" | "ready_to_pay_anyway" | "raise_with_suppl
 export type CheckState = "checking" | "checked" | "failed";
 
 export interface SupplierInvoice {
+  projectId?: string | null;
+  comparisonMode?: "master_list" | "totals_only";
   id: string;
   fileName: string;
   /** The service's fingerprint of the PDF. Two uploads of the same file share it. */

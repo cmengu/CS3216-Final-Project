@@ -4,6 +4,7 @@ import argparse
 import os
 import secrets
 from pathlib import Path
+from uuid import uuid4
 
 from .accounts import Accounts
 from .storage import open_store
@@ -112,7 +113,7 @@ def main():
                     raise ValueError(
                         "The source has unfinished jobs. Let them finish before recovering its data."
                     )
-                for table in ("invoices", "master_lists"):
+                for table in ("invoices", "master_lists", "projects"):
                     if accounts.execute(
                         db,
                         f"SELECT 1 FROM {accounts.table(table)} WHERE session_id=? LIMIT 1",
@@ -121,10 +122,43 @@ def main():
                         raise ValueError(
                             "The target workspace already has data. No data was moved."
                         )
-                for table in ("invoices", "master_lists"):
+                projects = accounts.execute(
+                    db,
+                    f"SELECT * FROM {accounts.table('projects')} WHERE session_id=?",
+                    (args.source,),
+                ).fetchall()
+                for project in projects:
+                    project_id = (
+                        "legacy:" + target
+                        if project["id"] == "legacy:" + args.source
+                        else str(uuid4())
+                    )
                     accounts.execute(
                         db,
-                        f"UPDATE {accounts.table(table)} SET session_id=? WHERE session_id=?",
+                        f"INSERT INTO {accounts.table('projects')} (id,session_id,name,comparison_mode,created_at) VALUES (?,?,?,?,?)",
+                        (
+                            project_id,
+                            target,
+                            project["name"],
+                            project["comparison_mode"],
+                            project["created_at"],
+                        ),
+                    )
+                    for table in ("invoices", "master_lists"):
+                        accounts.execute(
+                            db,
+                            f"UPDATE {accounts.table(table)} SET session_id=?,project_id=? WHERE session_id=? AND project_id=?",
+                            (target, project_id, args.source, project["id"]),
+                        )
+                accounts.execute(
+                    db,
+                    f"DELETE FROM {accounts.table('projects')} WHERE session_id=?",
+                    (args.source,),
+                )
+                for table in ("invoice_batches", "invoice_jobs"):
+                    accounts.execute(
+                        db,
+                        f"UPDATE {accounts.table(table)} SET workspace_id=? WHERE workspace_id=?",
                         (target, args.source),
                     )
                 accounts.execute(

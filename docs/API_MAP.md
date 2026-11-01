@@ -311,7 +311,7 @@ All fields are listed; `?` marks a field that may be `null`. "dec" is a decimal 
 
 ## Durable batch upload
 
-`POST /invoice-batches` receives multipart `files`: 1–1,000 invoices, at most 20 MiB per file
+`POST /invoice-batches` accepts an optional owned `project_id` query and receives multipart `files`: 1–1,000 invoices, at most 20 MiB per file
 and 100 MiB total. It validates the complete batch, reserves storage/usage allowance, pins the
 current master version, and persists source files and jobs before returning **202**:
 `{id, invoices: SavedInvoice[], duplicates: [{filename, existing_id}], processing: "background"}`.

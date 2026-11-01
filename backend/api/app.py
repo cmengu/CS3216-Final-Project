@@ -44,6 +44,8 @@ from .master_list import router as master_list_router
 from .outlook import initialize as initialize_outlook
 from .outlook import router as outlook_router
 from .processing import process_stored_invoice
+from .projects import require_project
+from .projects import router as projects_router
 from .stages import FixtureStages, Stages
 from .storage import Store, open_store, request_session_id
 from .uploaded_master import UploadedMasterStages
@@ -171,6 +173,7 @@ def create_app(
     app.include_router(account_router)
     app.include_router(batch_router)
     app.include_router(master_list_router)
+    app.include_router(projects_router)
     app.include_router(outlook_router)
 
     @app.middleware("http")
@@ -231,6 +234,7 @@ def create_app(
                 )
         protected = path.startswith(
             (
+                "/projects",
                 "/invoices",
                 "/master-list",
                 "/outlook",
@@ -254,7 +258,15 @@ def create_app(
                 )
         response = await call_next(request)
         if path.startswith(
-            ("/master-list", "/invoices", "/outlook", "/auth", "/admin", "/invoice-batches")
+            (
+                "/projects",
+                "/master-list",
+                "/invoices",
+                "/outlook",
+                "/auth",
+                "/admin",
+                "/invoice-batches",
+            )
         ):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -271,20 +283,17 @@ def create_app(
     @app.get("/health")
     def health(request: Request):
         selected = app.state.stages
-        sid = _request_session_id(request)
         return {
             "status": "ok",
             "mode": selected.mode if selected else "unconfigured",
-            "processing_configured": selected is not None
-            and (
-                not isinstance(selected, UploadedMasterStages)
-                or current_master(app.state.store, session_id=sid) is not None
-            ),
+            "processing_configured": selected is not None,
             "contract": "proposed-v1",
         }
 
     @app.post("/invoices", response_model=SavedInvoice, status_code=201)
-    def upload(request: Request, file: UploadFile, force_ocr: bool = False):
+    def upload(
+        request: Request, file: UploadFile, force_ocr: bool = False, project_id: str | None = None
+    ):
         selected = app.state.stages
         if selected is None:
             file.file.close()
@@ -313,9 +322,29 @@ def create_app(
         inserted = False
         reserved = 0
         try:
+            project = require_project(store, project_id, session_id) if project_id else None
+            if (
+                project
+                and selected.mode == "live"
+                and not isinstance(selected, UploadedMasterStages)
+            ):
+                raise HTTPException(
+                    503, "Project uploads require INVOICE_CHECKER=master_list or csv_context."
+                )
+            totals_only = project is not None and project["comparison_mode"] == "totals_only"
+            if (
+                project
+                and not totals_only
+                and current_master(store, session_id=session_id, project_id=project_id) is None
+            ):
+                raise HTTPException(
+                    409, "Upload a master list for this project before uploading invoices."
+                )
             if isinstance(selected, UploadedMasterStages):
                 try:
-                    selected = selected.bind(store, session_id=session_id)
+                    selected = selected.bind(
+                        store, session_id=session_id, project_id=project_id, totals_only=totals_only
+                    )
                 except ValueError as exc:
                     raise HTTPException(409, str(exc)) from exc
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
@@ -349,8 +378,10 @@ def create_app(
                 filename,
                 document_hash,
                 selected.mode,
-                selected.price_sheet_version,
+                "" if totals_only else selected.price_sheet_version,
                 session_id=session_id,
+                project_id=project_id,
+                comparison_mode="totals_only" if totals_only else "master_list",
             )
             inserted = True
             completed = process_stored_invoice(
@@ -361,6 +392,7 @@ def create_app(
                 reader,
                 lambda status, **values: store.update(invoice_id, status, **values),
                 force_ocr=force_ocr,
+                totals_only=totals_only,
             )
             saved = store.get(invoice_id, session_id=session_id)
             return (
@@ -379,9 +411,12 @@ def create_app(
         request: Request,
         limit: int = Query(50, ge=1, le=100),
         offset: int = Query(0, ge=0),
+        project_id: str | None = None,
     ):
         session_id = _request_session_id(request)
-        return app.state.store.list(limit, offset, session_id=session_id)
+        if project_id:
+            require_project(app.state.store, project_id, session_id)
+        return app.state.store.list(limit, offset, session_id=session_id, project_id=project_id)
 
     @app.get("/invoices/{invoice_id}", response_model=SavedInvoice)
     def invoice(invoice_id: UUID, request: Request, session_id: str | None = None):
@@ -447,6 +482,8 @@ def _outcome_refusal(saved: SavedInvoice, outcome, reason) -> tuple[int, str] | 
     rule as the screens' All match: checked in full, a total the service stands behind, and every
     line a match. Anything else that is finished can still be paid, but only with a reason.
     """
+    if saved.comparison_mode == "totals_only" and outcome is not None:
+        return 409, "This project tracks totals only; no price-check decision is available"
     if outcome is None:
         return (422, "Clearing an outcome takes no reason") if reason else None
     if saved.status not in ("completed", "failed"):

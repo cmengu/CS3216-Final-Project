@@ -39,8 +39,9 @@ uv sync --locked --extra dev --extra docling --extra dummy
 .venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8001 --workers 1
 ```
 
-Live startup fails clearly if the key or model is missing. Upload and confirm a master list
-before uploading invoices; without one, invoice upload returns 409. Restart after editing
+Live startup fails clearly if the key or model is missing. Create a project first. Comparison
+projects require their own master list (409 until uploaded); totals-only projects extract invoices
+without a master. See [projects and Supabase migration](../docs/projects-and-supabase.md). Restart after editing
 `.env`. Provider access/quota errors can still occur on the first extraction. Extraction
 uses `store=False` and may make a correction request after its initial model request.
 
@@ -194,6 +195,11 @@ unpacking/uploading. Only after HTTP 202 does the UI promise that checking conti
 the browser. A malformed batch is rejected before any invoices/jobs are committed. Exact
 file duplicates are skipped. Results appear under the same approved account after re-login.
 `GET /invoice-batches/{id}` returns private queued/processing/completed/failed counts.
+
+An optional `project_id` query selects an owned project. Duplicate detection is scoped to
+that project. The queue pins the project's comparison mode and master version; totals-only
+projects extract fields without a master list or price check. Project counts/totals refresh
+as queued invoices finish. Omitting the project retains the legacy Existing invoices folder.
 
 Jobs and original sources are persisted before acceptance. Every job pins the uploaded
 master version. A worker starts with the API, processes one job at a time through the same

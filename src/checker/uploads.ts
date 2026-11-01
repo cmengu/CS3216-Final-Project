@@ -1,6 +1,6 @@
 /*
- * Unpack ZIP/RAR archives locally, then check each PDF/XML invoice one at a time.
- * Duplicate invoices are skipped by SHA-256; a busy service (429) is retried.
+ * Unpack ZIP/RAR archives locally, then upload complete batches to their projects.
+ * Duplicate invoices are skipped by SHA-256 within each project.
  */
 "use client";
 
@@ -11,6 +11,7 @@ import type { SupplierInvoice } from "./types";
 import { isArchive, MAX_ARCHIVE_BYTES, MAX_INVOICE_BYTES } from "./upload-formats";
 
 export interface QueueItem {
+  projectId?: string;
   key: string;
   name: string;
   status: "waiting" | "unpacking" | "uploading";
@@ -82,6 +83,7 @@ export function refusal(name: string, e: unknown): string {
   if (e.status === 422 && /page/i.test(e.detail ?? "")) return `${name} must have 1 to 30 pages.`;
   if (e.status === 422 && /\.xml$/i.test(name) && e.detail) return `${name}: ${e.detail}`;
   if (e.status === 422 || e.status === 400) return `${name} couldn't be read.`;
+  if (e.status === 409 || e.status === 404) return e.detail ?? e.message;
   if (e.status === 503) return "The checking service isn't ready.";
   return `${name} couldn't be uploaded.`;
 }
@@ -131,7 +133,7 @@ async function run(known: () => SupplierInvoice[]) {
           }
           extracted = result.files.map(invoice => {
             const key = `u${++seq}`; files.set(key, invoice);
-            return { key, name: invoice.name, status: "waiting" };
+            return { key, projectId: archive.projectId, name: invoice.name, status: "waiting" };
           });
           if (result.skipped) notice({ kind: "skipped", text: `${file.name}: skipped ${result.skipped} unsupported, empty or oversized files. Nested archives are not unpacked.` });
         } catch (error) {
@@ -142,14 +144,15 @@ async function run(known: () => SupplierInvoice[]) {
         set({ items: state.items.flatMap(item => item.key === archive.key ? extracted : [item]) });
         continue;
       }
-      const batch = [...state.items];
+      const projectId = state.items[0].projectId;
+      const batch = state.items.filter(item => item.projectId === projectId);
       const selected: File[] = [];
       const hashes = new Set<string>();
       for (const item of batch) {
         const file = files.get(item.key)!;
         const hash = await sha256(file);
         if (session !== currentSession) return;
-        const duplicate = hash ? known().find(invoice => invoice.documentHash === hash) ?? sent.get(hash) : undefined;
+        const duplicate = hash ? known().find(invoice => invoice.documentHash === hash && (invoice.projectId ?? undefined) === projectId) ?? sent.get(`${projectId ?? ""}:${hash}`) : undefined;
         if (duplicate || (hash && hashes.has(hash))) {
           notice({ kind: "duplicate", text: duplicate ? `You already uploaded ${duplicate.number ?? duplicate.fileName} on ${shortDate(duplicate.uploadedAt)}.` : `${file.name}: duplicate content in this batch was skipped.`, invoiceId: duplicate?.id });
         } else {
@@ -162,10 +165,10 @@ async function run(known: () => SupplierInvoice[]) {
         set({ items: state.items.map(item => keys.has(item.key) ? { ...item, status: "uploading" } : item) });
         try {
           if (selected.length > 1000 || selected.reduce((size, file) => size + file.size, 0) > 100 * 1024 * 1024) throw new Error("Select up to 1,000 invoices and 100 MB unpacked per batch.");
-          const receipt = await uploadInvoiceBatch(selected);
+          const receipt = await uploadInvoiceBatch(selected, projectId);
           if (session !== currentSession) return;
           for (const invoice of receipt.invoices) {
-            if (invoice.documentHash) sent.set(invoice.documentHash, invoice);
+            if (invoice.documentHash) sent.set(`${projectId ?? ""}:${invoice.documentHash}`, invoice);
             rememberInvoice(invoice);
           }
           for (const duplicate of receipt.duplicates) notice({ kind: "duplicate", text: `${duplicate.filename} was already uploaded.`, invoiceId: duplicate.existing_id ?? undefined });
@@ -186,7 +189,7 @@ async function run(known: () => SupplierInvoice[]) {
 }
 
 /** Queue files for checking. `known` lists invoices already uploaded, for the duplicate check. */
-export function enqueue(list: FileList | File[], known: () => SupplierInvoice[]) {
+export function enqueue(list: FileList | File[], known: () => SupplierInvoice[], projectId?: string) {
   const add: QueueItem[] = [];
   for (const file of Array.from(list)) {
     const problem = precheck(file);
@@ -196,7 +199,7 @@ export function enqueue(list: FileList | File[], known: () => SupplierInvoice[])
     }
     const key = `u${++seq}`;
     files.set(key, file);
-    add.push({ key, name: file.name, status: "waiting" });
+    add.push({ key, projectId, name: file.name, status: "waiting" });
   }
   if (!add.length) return;
   set({ items: [...state.items, ...add] });

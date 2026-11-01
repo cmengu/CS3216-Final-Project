@@ -98,10 +98,10 @@ export function InvoicePreview({ inv, url, fileName, activeLine, onSelectLine, o
               {orderedLines(inv).map(({ line, n }) => (
                 <div key={n} role="listitem" className="ic-pdfmodal-item" aria-current={activeLine === n ? "true" : undefined}>
                   <button type="button" className="ic-pdfmodal-line" aria-current={activeLine === n ? "true" : undefined} onClick={() => onSelectLine?.(n)}>
-                    <span className="ico">{line.result === "match" ? <Icon name="tick" style={{ color: "var(--good)", strokeWidth: 2 }} /> : <Icon name="warn" style={{ color: "var(--warn)" }} />}</span>
+                    <span className="ico">{inv.comparisonMode === "totals_only" ? <Icon name="doc" /> : line.result === "match" ? <Icon name="tick" style={{ color: "var(--good)", strokeWidth: 2 }} /> : <Icon name="warn" style={{ color: "var(--warn)" }} />}</span>
                     <span className="lbl"><span>{n} · {line.description.trim() || line.part || "No description"}</span></span>
                   </button>
-                  <PriceComparison line={line} currency={inv.currency} number={n} />
+                  {inv.comparisonMode === "totals_only" ? <p className="ic-hint">Qty: {line.quantity ?? "—"} · Unit price: {line.priceCurrency ?? inv.currency} {line.unitPrice ?? "—"} · Total: {inv.currency} {line.lineTotal ?? "—"}</p> : <PriceComparison line={line} currency={inv.currency} number={n} />}
                 </div>
               ))}
             </div>

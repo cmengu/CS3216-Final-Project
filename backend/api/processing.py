@@ -20,7 +20,7 @@ def failure_reason(exc):
 
 
 def process_stored_invoice(
-    path, filename, document_hash, selected, reader, save, *, force_ocr=False
+    path, filename, document_hash, selected, reader, save, *, force_ocr=False, totals_only=False
 ):
     stage = "reading"
     try:
@@ -36,6 +36,9 @@ def process_stored_invoice(
         save(stage, document=document)
         if not is_xml:
             invoice = selected.extract(document)
+        if totals_only:
+            save("completed", invoice=invoice)
+            return True
         stage = "checking"
         save(stage, invoice=invoice)
         check = selected.check(invoice)

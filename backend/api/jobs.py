@@ -17,16 +17,26 @@ MAX_ATTEMPTS = 3
 
 
 class InvoiceJobs(AccessStore):
-    def existing(self, workspace, document_hash):
+    def existing(self, workspace, document_hash, project_id=None):
+        project_id = project_id or self.store.ensure_legacy_project(workspace)
         with self.connect() as db:
             row = self.execute(
                 db,
-                f"SELECT id FROM {self.table('invoices')} WHERE session_id=? AND document_hash=? AND status!='failed' ORDER BY created_at DESC LIMIT 1",
-                (workspace, document_hash),
+                f"SELECT id FROM {self.table('invoices')} WHERE session_id=? AND document_hash=? AND project_id=? AND status!='failed' ORDER BY created_at DESC LIMIT 1",
+                (workspace, document_hash, project_id),
             ).fetchone()
         return row["id"] if row else None
 
-    def enqueue(self, workspace, documents, master_version):
+    def enqueue(
+        self,
+        workspace,
+        documents,
+        master_version,
+        *,
+        project_id=None,
+        comparison_mode="master_list",
+    ):
+        project_id = project_id or self.store.ensure_legacy_project(workspace)
         batch_id = str(uuid4())
         accepted, duplicates = [], []
         with self.connect() as db:
@@ -44,8 +54,8 @@ class InvoiceJobs(AccessStore):
             for item in documents:
                 duplicate = self.execute(
                     db,
-                    f"SELECT id FROM {self.table('invoices')} WHERE session_id=? AND document_hash=? AND status!='failed' ORDER BY created_at DESC LIMIT 1",
-                    (workspace, item["document_hash"]),
+                    f"SELECT id FROM {self.table('invoices')} WHERE session_id=? AND document_hash=? AND project_id=? AND status!='failed' ORDER BY created_at DESC LIMIT 1",
+                    (workspace, item["document_hash"], project_id),
                 ).fetchone()
                 if duplicate:
                     duplicates.append({**item, "existing_id": duplicate["id"]})
@@ -53,7 +63,7 @@ class InvoiceJobs(AccessStore):
                 at = now()
                 self.execute(
                     db,
-                    f"INSERT INTO {self.table('invoices')} (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id) VALUES (?,?,?,'queued',?,?,?,?,?)",
+                    f"INSERT INTO {self.table('invoices')} (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode) VALUES (?,?,?,'queued',?,?,?,?,?,?,?)",
                     (
                         item["id"],
                         item["filename"],
@@ -63,6 +73,8 @@ class InvoiceJobs(AccessStore):
                         at,
                         master_version,
                         workspace,
+                        project_id,
+                        comparison_mode,
                     ),
                 )
                 if self.schema:
@@ -270,9 +282,16 @@ class InvoiceWorker:
             selected = self.app.state.stages
             if isinstance(selected, UploadedMasterStages):
                 selected = selected.bind(
-                    self.app.state.store, session_id=workspace, version=job["master_version"]
+                    self.app.state.store,
+                    session_id=workspace,
+                    version=job["master_version"],
+                    project_id=saved.project_id,
+                    totals_only=saved.comparison_mode == "totals_only",
                 )
-            if selected is None or selected.price_sheet_version != job["master_version"]:
+            if selected is None or (
+                saved.comparison_mode != "totals_only"
+                and selected.price_sheet_version != job["master_version"]
+            ):
                 save(
                     "failed",
                     error="checking: The original master list is unavailable. Upload again to retry.",
@@ -286,6 +305,7 @@ class InvoiceWorker:
                 selected,
                 self.app.state.reader,
                 save,
+                totals_only=saved.comparison_mode == "totals_only",
             )
         except LostLease:
             pass

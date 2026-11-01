@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import type { Project } from "@/checker/projects";
+import { CreateProject } from "./CreateProject";
 import { OUTCOME_PILL, queueAttention, shortDate, statusPill, whenLabel } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
 import { dismissNotice, type QueueItem, type UploadNotice } from "@/checker/uploads";
@@ -10,7 +13,7 @@ import { Notice, Pill, Search } from "@/components/ui";
 function Card({ inv, current, done }: { inv: SupplierInvoice; current: boolean; done: boolean }) {
   const attn = done ? null : queueAttention(inv);
   return (
-    <Link className="ic-qcard" href={`/invoices?id=${inv.id}`} aria-current={current ? "true" : undefined} scroll={false}>
+    <Link className="ic-qcard" href={`/invoices?project=${encodeURIComponent(inv.projectId ?? "")}&id=${inv.id}`} aria-current={current ? "true" : undefined} scroll={false}>
       <span className="r1">
         <b>{inv.supplier ?? inv.fileName}</b>
         <span className="muted num" style={{ whiteSpace: "nowrap" }}>
@@ -40,8 +43,6 @@ function Card({ inv, current, done }: { inv: SupplierInvoice; current: boolean; 
 export function Queue({
   decideList,
   doneList,
-  seg,
-  onSeg,
   q,
   onQ,
   selected,
@@ -52,11 +53,19 @@ export function Queue({
   loadError,
   onRetryLoad,
   onCollapse,
+  projects,
+  activeProject,
+  onProject,
+  onBack,
+  canUpload,
 }: {
+  projects: Project[];
+  activeProject: string | null;
+  onProject: (id: string) => void;
+  onBack: () => void;
+  canUpload: boolean;
   decideList: SupplierInvoice[];
   doneList: SupplierInvoice[];
-  seg: "decide" | "done";
-  onSeg: (s: "decide" | "done") => void;
   q: string;
   onQ: (q: string) => void;
   selected: string | null;
@@ -68,19 +77,25 @@ export function Queue({
   onRetryLoad: () => void;
   onCollapse?: () => void;
 }) {
+  const [segment, setSegment] = useState<"decide" | "done">("decide");
+  const project = projects.find((p) => p.id === activeProject);
   const ql = q.trim().toLowerCase();
   const match = (inv: SupplierInvoice) => !ql || [inv.supplier, inv.number, inv.fileName, inv.purchaseOrder].join(" ").toLowerCase().includes(ql);
-  const list = (seg === "decide" ? decideList : doneList).filter(match);
-  const current = uploads.find(item => item.status !== "waiting") ?? uploads[0];
+  const projectDecide = decideList.filter((inv) => inv.projectId === activeProject);
+  const projectDone = doneList.filter((inv) => inv.projectId === activeProject);
+  const totalsOnly = project?.comparison_mode === "totals_only";
+  const list = (totalsOnly ? [...projectDecide, ...projectDone] : segment === "decide" ? projectDecide : projectDone).filter(match);
+  const projectUploads = uploads.filter(item => item.projectId === activeProject);
+  const current = projectUploads.find(item => item.status !== "waiting") ?? projectUploads[0];
   return (
     <aside id="invoice-sidebar" className="ic-queue" aria-label="Invoices">
       <div className="ic-queue-h">
         <div className="ic-queue-title">
-          <h1>Invoices</h1>
-          {onCollapse ? <button type="button" className="ic-icobtn" onClick={onCollapse} aria-label="Collapse invoice sidebar" aria-expanded={true} aria-controls="invoice-sidebar" title="Collapse sidebar"><Icon name="chevL" /></button> : null}
+          <div className="ic-project-location">{project ? <button type="button" className="ic-project-back" onClick={onBack} aria-label="Back to projects"><Icon name="chevL" />Projects</button> : null}<h1>{project?.name ?? "Projects"}</h1></div>
+          {onCollapse ? <button type="button" className="ic-icobtn" onClick={onCollapse} aria-label="Collapse invoice sidebar" aria-expanded={true} aria-controls="invoice-sidebar" title="Collapse sidebar"><Icon name="panelClose" /></button> : null}
         </div>
         <div className="ic-queue-actions">
-          {onOutlook ? (
+          {project && onOutlook ? (
             <button
               className="ic-btn ic-btn--secondary ic-btn--sm"
               type="button"
@@ -91,31 +106,27 @@ export function Queue({
               Outlook
             </button>
           ) : null}
-          <button className="ic-btn ic-btn--primary ic-btn--sm" type="button" onClick={onUpload}>
+          {project ? <button className="ic-btn ic-btn--primary ic-btn--sm" type="button" onClick={onUpload} disabled={!canUpload}>
             <Icon name="upload" size="ui" />
             Upload
-          </button>
+          </button> : null}
         </div>
       </div>
-      <p className="muted" style={{ margin: "0 16px 12px", fontSize: 12 }}>PDF, XML, ZIP or RAR</p>
-      <Search label="Search invoices" value={q} onChange={onQ} full />
-      <div className="ic-seg ic-seg--fill" role="group" aria-label="Show">
-        <button type="button" aria-pressed={seg === "decide"} onClick={() => onSeg("decide")}>
-          To decide{" "}
-          {decideList.length ? (
-            <span className="ic-pill ic-pill--warn">{decideList.length}</span>
-          ) : (
-            <span className="n">0</span>
-          )}
+      {project ? <p className="muted" style={{ margin: "0 16px 12px", fontSize: "calc(12px * var(--text-scale))" }}>PDF, XML, ZIP or RAR</p> : null}
+      <Search label={project ? "Search invoices" : "Search projects"} value={q} onChange={onQ} full />
+      {project && !totalsOnly ? <div className="ic-seg ic-seg--fill" role="group" aria-label="Invoice status">
+        <button type="button" aria-pressed={segment === "decide"} onClick={() => setSegment("decide")}>
+          To decide <span className={projectDecide.length ? "ic-pill ic-pill--warn" : "n"}>{projectDecide.length}</span>
         </button>
-        <button type="button" aria-pressed={seg === "done"} onClick={() => onSeg("done")}>
-          Done <span className="n">{doneList.length}</span>
+        <button type="button" aria-pressed={segment === "done"} onClick={() => setSegment("done")}>
+          Done <span className="n">{projectDone.length}</span>
         </button>
-      </div>
+      </div> : null}
+      {!project ? <CreateProject onCreated={(p) => onProject(p.id)} /> : null}
       <div className="ic-queue-list">
         {notices.map((n) => (
           <Notice key={n.key} tone={n.kind === "queued" ? undefined : "warn"} onDismiss={() => dismissNotice(n.key)}>
-            <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 13 }}>
+            <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "calc(13px * var(--text-scale))" }}>
               {n.text}
               {n.invoiceId ? (
                 <Link className="ic-link ic-link--sm" href={`/invoices?id=${n.invoiceId}`} onClick={() => dismissNotice(n.key)} style={{ minHeight: 28 }}>
@@ -133,33 +144,27 @@ export function Queue({
               <span />
             </div>
             <span className="muted">
-              {current.status === "unpacking" ? "Unpacking…" : current.status === "uploading" ? "Uploading… keep this page open" : "Waiting to upload…"}{uploads.length > 1 ? ` · ${uploads.length - 1} more waiting` : ""}
+              {current.status === "unpacking" ? "Unpacking…" : current.status === "uploading" ? "Uploading… keep this page open" : "Waiting to upload…"}{projectUploads.length > 1 ? ` · ${projectUploads.length - 1} more waiting` : ""}
             </span>
           </div>
         ) : null}
         {loadError ? (
           <Notice tone="warn">
-            <span style={{ fontSize: 13 }}>{loadError}</span>
+            <span style={{ fontSize: "calc(13px * var(--text-scale))" }}>{loadError}</span>
             <button type="button" className="ic-link ic-link--sm" onClick={onRetryLoad}>
               Try again
             </button>
           </Notice>
         ) : null}
-        {list.map((inv) => (
-          <Card key={inv.id} inv={inv} current={inv.id === selected} done={seg === "done"} />
+        {project ? <>
+          {list.map((inv) => <Card key={inv.id} inv={inv} current={inv.id === selected} done={!!inv.outcome} />)}
+          {!list.length && !loadError ? <p className="ic-hint">{ql ? "No invoices match." : totalsOnly ? "No invoices yet." : segment === "done" ? "No decided invoices yet." : "No invoices to decide."}</p> : null}
+        </> : projects.filter((p) => !ql || p.name.toLowerCase().includes(ql)).map((p) => (
+          <button type="button" className="ic-project-name ic-project-entry" key={p.id} onClick={() => onProject(p.id)}>
+            <Icon name="folder" /><b>{p.name}</b><span className="muted">{p.invoice_count}</span><Icon name="chev" />
+          </button>
         ))}
-        {!list.length && !loadError ? (
-          seg === "decide" && !ql ? (
-            <p className="ic-ok" style={{ padding: "8px 4px" }}>
-              <Icon name="tick" />
-              Nothing to decide.
-            </p>
-          ) : (
-            <p className="ic-empty" style={{ padding: "8px 4px" }}>
-              {ql ? "No invoices match." : "No decided invoices yet."}
-            </p>
-          )
-        ) : null}
+        {!projects.length ? <p className="ic-hint">Create a project to add invoices.</p> : null}
       </div>
     </aside>
   );

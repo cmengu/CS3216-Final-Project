@@ -105,3 +105,10 @@ it("bounds accumulated expanded data across an archive and loose invoices", asyn
   expect(useUploads().doneCount).toBe(0);
   expect(useUploads().items).toEqual([]);
 });
+
+it("keeps the destination project on every invoice expanded from an archive", async () => {
+  vi.mocked(unpackInvoices).mockResolvedValue({ files: [file("one.xml"), file("two.pdf")], skipped: 0 });
+  enqueue([file("project.zip")], () => [], "project-destination");
+  await vi.waitFor(() => expect(useUploads().doneCount).toBe(2));
+  expect(uploadInvoiceBatch).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ name: "one.xml" }), expect.objectContaining({ name: "two.pdf" })]), "project-destination");
+});

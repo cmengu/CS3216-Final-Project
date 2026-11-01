@@ -8,7 +8,7 @@ import { previewMasterList, replaceMasterList, uploadMasterList, type ImportOpti
 const ACCEPT = ".csv,.xlsx,.xls";
 
 /** Preview with AI column mapping and open the mapping dialog so the user only needs to confirm. */
-export function MasterImport({ replace = false, onSaved }: { replace?: boolean; onSaved: () => void }) {
+export function MasterImport({ replace = false, onSaved, projectId }: { replace?: boolean; onSaved: () => void; projectId?: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [sheet, setSheet] = useState("");
@@ -26,7 +26,7 @@ export function MasterImport({ replace = false, onSaved }: { replace?: boolean; 
   async function save(chosen: File, selection: ImportOptions) {
     setBusy("saving"); setError("");
     try {
-      const result = await (replace ? replaceMasterList : uploadMasterList)(chosen, selection);
+      const result = await (replace ? replaceMasterList : uploadMasterList)(chosen, selection, projectId);
       if (result.ok) { setMappingOpen(false); onSaved(); }
       else { setError(result.reason); setMappingOpen(true); }
     } finally { setBusy(null); }
