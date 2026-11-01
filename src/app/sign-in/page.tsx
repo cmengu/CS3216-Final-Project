@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { completeSignIn, signIn, useUser, type SignInResult, type TwoFactorChallenge } from "@/auth";
+import { completeSignIn, resendSecondFactor, signIn, useUser, verifySecondFactor, type SignInResult, type TwoFactorChallenge } from "@/auth";
 import { Icon } from "@/components/icons";
 import { useMasterList } from "@/masterList";
-import { AuthenticatorFlow } from "@/components/AuthenticatorFlow";
+import { TwoFactor } from "@/components/TwoFactor";
 
 export default function SignIn() {
   const user = useUser();
@@ -44,8 +44,8 @@ export default function SignIn() {
       </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
-        <p className="ic-hint">Use your username or registered email, password and authenticator app.</p>
-        {challenge ? <AuthenticatorFlow key={challenge.challenge_id} initial={challenge} onComplete={verified => { completeSignIn(verified); router.replace(nextRoute); }} onCancel={() => { setChallenge(null); setError(""); }} /> : <form
+        <p className="ic-hint">Use your username or registered email. We’ll email a security code after checking your password.</p>
+        {challenge ? <TwoFactor key={challenge.challenge_id} challenge={challenge} onVerify={async (id, code) => { const verified = await verifySecondFactor(id, code); completeSignIn(verified.user); router.replace(nextRoute); }} onResend={resendSecondFactor} onCancel={() => { setChallenge(null); setError(""); }} /> : <form
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           onSubmit={async (e) => {
             e.preventDefault();

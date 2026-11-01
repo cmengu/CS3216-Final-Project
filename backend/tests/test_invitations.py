@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from test_accounts import ADMIN, HEADERS, MEMBER
-from test_mfa import finish_setup, login
+from test_mfa import login
 
 from api import security_mail
 from api.app import create_app
@@ -84,8 +84,6 @@ def test_approval_emails_personal_link_and_link_creates_only_that_email(client, 
         headers=HEADERS,
         json={**MEMBER, "setup_grant": proof.json()["setup_grant"]},
     )
-    assert result.status_code == 200 and result.json()["method"] == "totp_setup"
-    result = finish_setup(client, result)
     assert result.status_code == 200 and result.json()["user"]["role"] == "member"
     row = client.app.state.accounts.get_user(result.json()["user"]["id"])
     assert row["email"] == EMAIL and row["workspace_id"] != admin["user"]["id"]
@@ -251,14 +249,7 @@ def test_invitation_storage_is_hashed_and_portable(session_store, environment):
     accounts = Accounts(session_store)
     owner = accounts.create_user(ADMIN["username"], ADMIN["password"], "admin", email=OWNER)
     challenge = accounts.mfa.begin(owner)
-    import pyotp
-
-    from api.authenticator import now_seconds
-
-    setup = accounts.mfa.verify(challenge["challenge_id"], environment[0][-1][1])
-    user, _ = accounts.mfa.verify(
-        setup["challenge_id"], pyotp.TOTP(setup["secret"]).at(now_seconds())
-    )
+    user, _ = accounts.mfa.verify(challenge["challenge_id"], environment[0][-1][1])
     sid, _ = accounts.create_session(user, 3600, mfa_verified=True)
     approval = accounts.enrollment.approve(EMAIL, actor=user["id"], actor_session=sid)
     accounts.enrollment.invitations.send(approval["id"], actor=user["id"], actor_session=sid)

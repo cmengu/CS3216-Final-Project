@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from test_accounts import ADMIN, HEADERS, MEMBER
-from test_mfa import login, verify_login
+from test_mfa import login
 
 from api import security_mail
 from api.app import create_app
@@ -131,8 +131,14 @@ def test_reset_revokes_all_sessions_preserves_workspace_and_requires_new_login(
     ).json()
     assert challenge["mfa_required"] and "session_id" not in challenge
     assert client.get("/invoices").status_code == 401
-    assert challenge["method"] == "totp"
-    assert verify_login(client, challenge).status_code == 200
+    assert (
+        client.post(
+            "/auth/mfa/verify",
+            headers=HEADERS,
+            json={"challenge_id": challenge["challenge_id"], "code": environment[0][-1][1]},
+        ).status_code
+        == 200
+    )
     assert client.get("/invoices").json()[0]["id"] == "private-reset-invoice"
 
 

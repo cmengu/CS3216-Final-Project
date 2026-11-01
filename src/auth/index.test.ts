@@ -109,10 +109,10 @@ it("explains sign-in throttling without reporting successful authentication", as
   if (!result.ok && result.error === "limited") { expect(result.message).toContain("60"); }
 });
 
-it("keeps password-verified authenticator challenges signed out and never stores them", async () => {
+it("keeps password-verified email challenges signed out and never stores them", async () => {
   const localStorage = { removeItem: vi.fn(), setItem: vi.fn() };
   vi.stubGlobal("window", { localStorage });
-  const challenge = { mfa_required: true, method: "totp", challenge_id: "private-challenge-id-longer-than-32", destination: "your authenticator app", expires_in: 300, resend_after: 0 };
+  const challenge = { mfa_required: true, challenge_id: "private-challenge-id-longer-than-32", destination: "m***@example.com", expires_in: 300, resend_after: 60 };
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(challenge)));
   const result = await signIn("approved-member", "a-real-test-password");
   expect(result).toEqual({ ok: false, error: "two_factor", challenge });
@@ -120,7 +120,7 @@ it("keeps password-verified authenticator challenges signed out and never stores
   expect(localStorage.setItem).not.toHaveBeenCalled();
 });
 
-it("activates frontend auth state only after a completed authenticator response", async () => {
+it("activates frontend auth state only after a verified email-code response", async () => {
   vi.stubGlobal("window", {});
   const verified = { user: { email: "approved-member", role: "member" as const } };
   const fetchMock = vi.fn().mockResolvedValue(Response.json(verified));
@@ -132,7 +132,6 @@ it("activates frontend auth state only after a completed authenticator response"
   expect(url).toContain("/auth/mfa/verify");
   expect(init.credentials).toBe("include");
   expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
-  if (!("user" in result)) throw new Error("Expected a completed authenticator step");
   completeSignIn(result.user);
   expect(currentUser()).toEqual(verified.user);
 });
@@ -169,14 +168,14 @@ it("email proof for setup does not sign the user in before password creation", a
 
 it("creates the administrator only using a verified setup grant", async () => {
   vi.stubGlobal("window", {});
-  const challenge = { mfa_required: true, method: "totp_setup", challenge_id: "private-admin-authenticator-challenge", destination: "your authenticator app", expires_in: 300, resend_after: 0, secret: "SYNTHETIC-SETUP-KEY" };
-  const fetchMock = vi.fn().mockResolvedValue(Response.json(challenge));
+  const user = { email: "chosen-admin", role: "admin" as const };
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ user }));
   vi.stubGlobal("fetch", fetchMock);
-  expect(await setupAdministrator("verified-private-setup-grant", "chosen-admin", "a-real-test-password")).toEqual(challenge);
+  expect(await setupAdministrator("verified-private-setup-grant", "chosen-admin", "a-real-test-password")).toEqual(user);
   const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
   expect(url).toContain("/auth/setup/complete");
   expect(JSON.parse(String(init.body))).toEqual({ setup_grant: "verified-private-setup-grant", username: "chosen-admin", password: "a-real-test-password" });
-  expect(currentUser()).toBeNull();
+  expect(currentUser()).toEqual(user);
 });
 
 
@@ -201,18 +200,18 @@ it("approved-member email proof does not sign in or persist setup credentials", 
 
 it("enrollment resends with its challenge and creates credentials only with verified proof", async () => {
   vi.stubGlobal("window", {});
-  const challenge = { mfa_required: true, method: "totp_setup", challenge_id: "private-member-authenticator-challenge", destination: "your authenticator app", expires_in: 300, resend_after: 0, secret: "SYNTHETIC-SETUP-KEY" };
-  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ challenge_id: "replacement-proof" })).mockResolvedValueOnce(Response.json(challenge));
+  const user = { email: "chosen-member", role: "member" as const };
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ challenge_id: "replacement-proof" })).mockResolvedValueOnce(Response.json({ user }));
   vi.stubGlobal("fetch", fetchMock);
   await resendEnrollmentEmail("private-enrollment-challenge");
   const [resendUrl, resendInit] = fetchMock.mock.calls[0] as [string, RequestInit];
   expect(resendUrl).toContain("/auth/enroll/resend");
   expect(JSON.parse(String(resendInit.body))).toEqual({ challenge_id: "private-enrollment-challenge" });
-  expect(await completeAccountEnrollment("private-enrollment-proof", "chosen-member", "a-real-test-password")).toEqual(challenge);
+  expect(await completeAccountEnrollment("private-enrollment-proof", "chosen-member", "a-real-test-password")).toEqual(user);
   const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
   expect(url).toContain("/auth/enroll/complete");
   expect(JSON.parse(String(init.body))).toEqual({ setup_grant: "private-enrollment-proof", username: "chosen-member", password: "a-real-test-password" });
-  expect(currentUser()).toBeNull();
+  expect(currentUser()).toEqual(user);
 });
 
 

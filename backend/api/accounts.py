@@ -80,7 +80,7 @@ class Accounts(AccessStore):
             query += f" AND EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id=? AND s.user_id=a.id AND s.version=a.version AND s.expires_at>?) AND NOT EXISTS (SELECT 1 FROM {self.table('revoked_sessions')} r WHERE r.session_id=? AND r.expires_at>?)"
             params += [session_id, int(time.time()), session_id, int(time.time())]
             if self.mfa.required(None):
-                query += f" AND EXISTS (SELECT 1 FROM {self.table('authenticator_sessions')} m WHERE m.id=?) AND EXISTS (SELECT 1 FROM {self.table('authenticator_factors')} f WHERE f.user_id=a.id)"
+                query += f" AND EXISTS (SELECT 1 FROM {self.table('email_login_sessions')} m WHERE m.id=?) AND EXISTS (SELECT 1 FROM {self.table('account_email')} f WHERE f.user_id=a.id AND f.verified=1)"
                 params.append(session_id)
         if self.execute(db, query, tuple(params)).fetchone() is None:
             raise HTTPException(403, "Administrator access changed. Sign in again.")
@@ -202,9 +202,6 @@ class Accounts(AccessStore):
             raise HTTPException(401, "Complete two-factor verification before signing in.")
         sid, expires = str(uuid4()), int(time.time()) + ttl
         with self.connect() as db:
-            self._lock(db)
-            if self.mfa.required(user) and not self.mfa.authenticator.factor(db, user["id"]):
-                raise HTTPException(401, "Set up your authenticator before signing in.")
             self.execute(
                 db,
                 f"DELETE FROM {self.table('account_sessions')} WHERE expires_at<=?",
@@ -212,7 +209,7 @@ class Accounts(AccessStore):
             )
             self.execute(
                 db,
-                f"DELETE FROM {self.table('authenticator_sessions')} WHERE NOT EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id={self.table('authenticator_sessions')}.id)",
+                f"DELETE FROM {self.table('email_login_sessions')} WHERE NOT EXISTS (SELECT 1 FROM {self.table('account_sessions')} s WHERE s.id={self.table('email_login_sessions')}.id)",
             )
             # The account may have been disabled/reset while its password was being verified.
             fresh = self.execute(
@@ -230,7 +227,7 @@ class Accounts(AccessStore):
             if mfa_verified:
                 self.execute(
                     db,
-                    f"INSERT INTO {self.table('authenticator_sessions')} (id) VALUES (?)",
+                    f"INSERT INTO {self.table('email_login_sessions')} (id) VALUES (?)",
                     (sid,),
                 )
         return sid, expires
@@ -248,10 +245,10 @@ class Accounts(AccessStore):
         if row and self.mfa.required(row):
             with self.connect() as db:
                 proof = self.execute(
-                    db, f"SELECT 1 FROM {self.table('authenticator_sessions')} WHERE id=?", (sid,)
+                    db, f"SELECT 1 FROM {self.table('email_login_sessions')} WHERE id=?", (sid,)
                 ).fetchone()
-                factor = self.mfa.authenticator.factor(db, row["id"])
-                if not proof or not factor:
+                contact = self.mfa.factor(db, row["id"])
+                if not proof or not contact or not contact["verified"]:
                     return None
         return (
             {"user_id": row["id"], "workspace_id": row["workspace_id"], "role": row["role"]}

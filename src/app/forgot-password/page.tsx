@@ -21,7 +21,7 @@ export default function ForgotPassword() {
     <h1>{done ? "Password reset" : "Reset your password"}</h1>
     {done ? <>
       <p role="status">Your password has been changed and all existing sessions have been signed out.</p>
-      <p className="ic-hint">Sign in with your username or registered email and new password, then use your authenticator app or a saved recovery code. Password resets keep your authenticator enabled.</p>
+      <p className="ic-hint">Sign in with your username or registered email and new password. We’ll send a fresh email security code.</p>
       <Link className="ic-btn ic-btn--primary ic-btn--block" href="/sign-in">Continue to sign in</Link>
     </> : grant ? <>
       <p className="ic-hint">Email verified. Choose a new password for your account.</p>

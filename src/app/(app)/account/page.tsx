@@ -32,10 +32,10 @@ export default function AccountSettings() {
       <label className="ic-field">Confirm new password<input className="ic-input" type="password" required minLength={15} maxLength={128} autoComplete="new-password" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
       {error ? <p role="alert">{error}</p> : null}<button className="ic-btn ic-btn--primary" disabled={busy}>{busy ? "Saving…" : "Change password and sign out"}</button>
     </form>
-    <section className="ic-card" style={{ display: "grid", gap: 16, marginTop: 24 }}><h2>Authenticator protection</h2>
-      <p>Every sign-in requires your password and an authenticator code or one of your saved recovery codes. Email is used for invitations and password resets.</p>
+    <section className="ic-card" style={{ display: "grid", gap: 16, marginTop: 24 }}><h2>Email security codes</h2>
+      <p>Every sign-in requires your password and a code sent to your registered email.</p>
       {securityEmail ? <p>Registered email: <strong style={{ overflowWrap: "anywhere" }}>{securityEmail}</strong></p> : null}
-      <p>Contact the operator if your email address needs to change. The operator must verify your identity before changing it. Password resets keep your authenticator enabled. If you lose your phone and all recovery codes, contact the operator.</p>
+      <p>Contact the operator if your email address needs to change. The operator must verify your identity before changing it.</p>
     </section>
   </div>;
 }

@@ -20,13 +20,9 @@ export interface TwoFactorChallenge {
   destination: string;
   expires_in: number;
   resend_after: number;
-  method?: "email_enrollment" | "totp_setup" | "totp";
-  secret?: string;
-  qr_code?: string;
 }
 
-export interface TwoFactorResult { user: User; recovery_codes?: string[] }
-export type AuthenticationStep = TwoFactorResult | TwoFactorChallenge;
+export interface TwoFactorResult { user: User }
 
 export type SignInResult = { ok: true; user: User } | { ok: false; error: "two_factor"; challenge: TwoFactorChallenge } | { ok: false; error: "invalid" | "unreachable" | "limited"; message?: string };
 
@@ -204,11 +200,11 @@ export async function resendAdministratorEmail(challengeId: string): Promise<Two
   return accountRequest("/auth/setup/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
 }
 
-export async function setupAdministrator(grant: string, username: string, password: string): Promise<AuthenticationStep> {
+export async function setupAdministrator(grant: string, username: string, password: string): Promise<User> {
   const { accountRequest } = await import("./accounts");
-  const result = await accountRequest<AuthenticationStep>("/auth/setup/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
-  setSessionState(null);
-  return result;
+  const result = await accountRequest<{ user: User }>("/auth/setup/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
+  setSessionState(result.user);
+  return result.user;
 }
 
 export async function claimAccountInvitation(token: string): Promise<{ setup_grant: string; email: string }> {
@@ -233,16 +229,16 @@ export async function resendEnrollmentEmail(challengeId: string): Promise<TwoFac
   return accountRequest("/auth/enroll/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
 }
 
-export async function completeAccountEnrollment(grant: string, username: string, password: string): Promise<AuthenticationStep> {
+export async function completeAccountEnrollment(grant: string, username: string, password: string): Promise<User> {
   const { accountRequest } = await import("./accounts");
-  const result = await accountRequest<AuthenticationStep>("/auth/enroll/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
-  setSessionState(null);
-  return result;
+  const result = await accountRequest<{ user: User }>("/auth/enroll/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
+  setSessionState(result.user);
+  return result.user;
 }
 
-export async function verifySecondFactor(challengeId: string, code: string): Promise<AuthenticationStep> {
+export async function verifySecondFactor(challengeId: string, code: string): Promise<TwoFactorResult> {
   const { accountRequest } = await import("./accounts");
-  return accountRequest<AuthenticationStep>("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+  return accountRequest<TwoFactorResult>("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
 }
 
 export async function resendSecondFactor(challengeId: string): Promise<TwoFactorChallenge> {

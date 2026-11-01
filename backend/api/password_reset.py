@@ -193,17 +193,11 @@ class PasswordReset:
             )
             self.execute(
                 db,
-                f"DELETE FROM {self.table('email_verified_sessions')} WHERE id IN (SELECT id FROM {self.table('account_sessions')} WHERE user_id=?)",
-                (user["id"],),
-            )
-            self.execute(
-                db,
-                f"DELETE FROM {self.table('authenticator_sessions')} WHERE id IN (SELECT id FROM {self.table('account_sessions')} WHERE user_id=?)",
+                f"DELETE FROM {self.table('email_login_sessions')} WHERE id IN (SELECT id FROM {self.table('account_sessions')} WHERE user_id=?)",
                 (user["id"],),
             )
             for name in (
                 "account_sessions",
-                "authenticator_challenges",
                 "email_challenges",
                 "password_reset_codes",
                 "password_reset_grants",

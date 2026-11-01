@@ -7,7 +7,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from test_accounts import ADMIN, HEADERS
-from test_mfa import finish_setup
 
 from api import security_mail
 from api.app import create_app
@@ -56,11 +55,8 @@ def prove(client, environment):
 
 
 def complete(client, grant, **values):
-    return finish_setup(
-        client,
-        client.post(
-            "/auth/setup/complete", headers=HEADERS, json={**ADMIN, "setup_grant": grant, **values}
-        ),
+    return client.post(
+        "/auth/setup/complete", headers=HEADERS, json={**ADMIN, "setup_grant": grant, **values}
     )
 
 
@@ -78,11 +74,7 @@ def test_setup_works_with_email_only_and_no_configured_password_or_setup_token(c
     response = complete(client, grant)
     assert response.status_code == 200, response.text
     assert client.get("/admin/accounts").status_code == 200
-    assert client.get("/auth/mfa/status").json() == {
-        "enabled": True,
-        "email": OWNER,
-        "method": "totp",
-    }
+    assert client.get("/auth/mfa/status").json() == {"enabled": True, "email": OWNER}
     assert len(environment[0]) == 1
     assert client.get("/auth/setup-status").json()["setup_required"] is False
 
@@ -265,10 +257,6 @@ def test_setup_code_and_grant_storage_is_private_and_portable(session_store, env
     user = accounts.administrator_setup.complete(
         result["setup_grant"], "email-owner", "isolated-owner-password-2026"
     )
-    import pyotp
-
-    setup = accounts.mfa.enroll(user)
-    user, _ = accounts.mfa.verify(setup["challenge_id"], pyotp.TOTP(setup["secret"]).now())
     sid, expiry = accounts.create_session(user, 3600, mfa_verified=True)
     assert (
         accounts.session_claims(sid, user["username"], expiry)["workspace_id"]

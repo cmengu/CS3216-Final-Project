@@ -1,4 +1,4 @@
-"""Mandatory authenticator policy and one-time registered-email ownership proof."""
+"""Password-bound, one-use email codes sent only to an approved address."""
 
 import hashlib
 import hmac
@@ -38,7 +38,7 @@ def masked_email(email):
     return local[0] + "***@" + domain
 
 
-class EmailVerification:
+class TwoFactor:
     def __init__(self, accounts):
         self.accounts = accounts
         self.table = accounts.table
@@ -52,7 +52,7 @@ class EmailVerification:
                     account_version BIGINT NOT NULL, email_version BIGINT NOT NULL,
                     code_hash TEXT NOT NULL, expires_at BIGINT NOT NULL,
                     attempts INTEGER NOT NULL DEFAULT 0""",
-                "email_verified_sessions": "id TEXT PRIMARY KEY",
+                "email_login_sessions": "id TEXT PRIMARY KEY",
             }.items():
                 self.execute(db, f"CREATE TABLE IF NOT EXISTS {self.table(name)} ({columns})")
             self.execute(
@@ -266,37 +266,3 @@ class EmailVerification:
 
     def reset_by_operator(self, user_id):
         self.set_by_operator(user_id)
-
-
-class TwoFactor(EmailVerification):
-    """Email proves identity once; subsequent sign-ins require TOTP or recovery proof."""
-
-    def __init__(self, accounts):
-        super().__init__(accounts)
-        from .authenticator import Authenticator
-
-        self.authenticator = Authenticator(self)
-
-    def begin(self, user):
-        with self.accounts.connect() as db:
-            contact = self.factor(db, user["id"])
-        if contact and contact["verified"] and self.authenticator.enrolled(user["id"]):
-            return self.authenticator.begin(user)
-        return {**super().begin(user), "method": "email_enrollment"}
-
-    def enroll(self, user):
-        return self.authenticator.begin(user, enroll=True)
-
-    def challenge_user(self, token):
-        return self.authenticator.challenge_user(token) or super().challenge_user(token)
-
-    def verify(self, token, code):
-        if self.authenticator.challenge_user(token):
-            return self.authenticator.verify(token, code)
-        user, _ = super().verify(token, code)
-        if self.authenticator.enrolled(user["id"]):
-            return self.authenticator.begin(user)
-        return self.enroll(user)
-
-    def reset_by_operator(self, user_id):
-        self.authenticator.reset_by_operator(user_id)

@@ -169,7 +169,7 @@ their registered email, verify a six-digit code and choose a new password. Unkno
 or disabled addresses receive the same start response without sending a code or creating an
 account. Recovery never changes the registered inbox, role, approval or workspace.
 Successful reset invalidates all existing sessions and pending login/reset challenges. The
-user then signs in normally with the new password and an authenticator or recovery code; reset does not
+user then signs in normally with the new password and a fresh email code; reset does not
 automatically sign in. Accounts without a registered inbox need operator assistance.
 
 Reset codes and verified reset grants expire after five minutes and are single-use. Account,
@@ -179,51 +179,21 @@ five attempts with an additional per-account limit. Recovery grants are stored o
 and code HMACs use a purpose separate from sign-in and initial account setup. All reset
 mutations require the browser protection header, including before sign-in.
 
-Every approved account signs in with its username or registered email, password, and a
-six-digit authenticator-app code. Microsoft Authenticator, Google Authenticator and other
-standard TOTP apps work. Codes change every 30 seconds; the server accepts a one-step clock
-window and rejects an already used time step across all challenges. Keep the server clock
-synchronized and use HTTPS in production. TOTP improves separation from email but is still
-susceptible to phishing; passkeys remain a stronger future option.
+Every approved account can sign in with its username or registered email, plus its password
+and a six-digit code sent to its registered
+email address. The first administrator's destination is configured by the operator using
+`AUTH_ADMIN_EMAIL`; the setup form cannot choose a different destination. Administrators
+approve an email before each new account can be created. Email ownership is verified before
+the username/password form appears. The public endpoint cannot choose a role or workspace. Password resets preserve the registered email. Existing password-only or
+old authenticator sessions no longer authenticate; existing data and accepted jobs are retained.
 
-Account setup verifies the approved inbox before choosing credentials, then requires scanning
-a locally generated QR code (or entering its setup key) and confirming an authenticator code.
-No workspace access or login session is granted until that confirmation. Ten single-use
-recovery codes are shown once; save them in a password manager. After losing the phone, sign
-in with the password and one unused recovery code. No QR service or mail vendor sees TOTP
-setup secrets or subsequent login codes. Password resets preserve the authenticator and
-recovery codes; control of email alone cannot remove an enrolled factor.
-
-Existing email-only sessions stop authenticating after upgrading. On their next sign-in,
-existing accounts prove their password and registered inbox once before enrolling an
-authenticator. The first administrator's inbox remains operator-controlled through
-`AUTH_ADMIN_EMAIL`; the setup page cannot choose another address. Closing a setup screen
-before confirmation leaves no active factor: sign in again to restart enrollment. Private
-workspace ownership, invoices and accepted background jobs remain unchanged.
-
-Authenticator setup/login challenges expire after five minutes, allow five failed attempts,
-and have persistent per-account/IP rate limits. Challenge tokens are hashed; TOTP secrets
-are encrypted and bound to their account. Recovery codes are stored only as keyed hashes and
-consumed atomically. Keep `AUTH_MFA_KEY` (a private random secret of at least 32 characters)
-persistent and backed up separately from the database. If omitted, encryption derives from
-`AUTH_SECRET`, which must then remain stable. Do not change the encryption secret without a
-planned migration: losing it makes existing authenticators unreadable.
-
-Email is still used for invitations, initial ownership proof and password-reset verification.
-Email codes/grants expire after five minutes, with five attempts, send cooldowns and limits.
-Delivery failure leaves the user signed out; there is no logged-code or alternate-recipient
-fallback. Existing authenticator logins work independently of mail delivery.
-
-If both the authenticator and all recovery codes are lost, an operator must independently
-verify the owner before running:
-
-```sh
-.venv/bin/python -m api.manage_accounts reset-2fa --username APPROVED_USERNAME
-```
-
-This audited, server-only recovery invalidates sessions, pending challenges and old recovery
-codes. Next sign-in requires the password, registered-inbox proof and a new authenticator.
-There is no public or administrator-browser endpoint that removes another user's factor.
+Codes expire after five minutes and are single-use, with five failed attempts per challenge,
+a 60-second send cooldown, a ten-email hourly account cap and per-account/IP verification
+limits. Resending invalidates the earlier challenge. Only hashes of challenge tokens and
+server-keyed HMACs of codes are stored. Codes are never returned by the API or written to logs.
+Email delivery failures leave the user signed out; no code logging or alternate-recipient
+fallback is available. This is email two-step verification, not phishing-resistant MFA; inbox
+compromise can defeat it. The authenticator/QR/recovery-code flow is no longer used.
 
 ### Sending service and recipient email addresses
 
@@ -337,15 +307,16 @@ owner. Users cannot choose or replace a security email through sign-in or an acc
 .venv/bin/python -m api.manage_accounts set-email --username APPROVED_USERNAME --email owner@example.com
 ```
 
-This audited action invalidates sessions and pending codes, then requires proof of the new
-approved inbox followed by the existing authenticator. Private invoices and projects retain their owner. A new Supabase database
-initializes email/contact tables plus `authenticator_factors`, `authenticator_challenges`,
-`authenticator_recovery` and `authenticator_sessions` automatically in the private schema.
-Older accounts without a registered email need this explicit operator step. Old email-session
-proof and older MFA tables grant no login access.
+This audited action invalidates sessions and pending codes, then requires a code sent to the
+new approved address. Private invoices and projects retain their owner. A new Supabase database
+initializes `account_email`, `email_challenges`, and `email_login_sessions` automatically in
+the private schema. Older accounts without a registered email need this explicit operator step.
+Old authenticator tables may remain as inactive legacy data; they grant no login access.
+This version uses a new email-session proof table, so previous email-only and authenticator
+sessions must sign in again; historical proof cannot bypass the current email-code check.
 
 Configure `AUTH_SECRET` as an independent random secret of at least 32 characters and configure
-`AUTH_ADMIN_EMAIL` plus the selected email delivery provider. Administrator setup is email-first: the configured inbox
+`AUTH_ADMIN_EMAIL` plus the selected delivery provider. Administrator setup is email-first: the configured inbox
 receives a five-minute code; verifying it grants five minutes to choose credentials. The grant
 is single-use, bound to the configured email and stored only as a hash. Account creation and
 proof consumption happen atomically, so concurrent requests cannot create two initial admins.

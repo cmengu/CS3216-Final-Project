@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from test_accounts import ADMIN, HEADERS, MEMBER
-from test_mfa import finish_setup, login, verify_login
+from test_mfa import login
 
 from api import security_mail
 from api.app import create_app
@@ -66,13 +66,8 @@ def prove(client, environment, email=EMAIL):
 
 
 def complete(client, grant, **values):
-    return finish_setup(
-        client,
-        client.post(
-            "/auth/enroll/complete",
-            headers=HEADERS,
-            json={**MEMBER, "setup_grant": grant, **values},
-        ),
+    return client.post(
+        "/auth/enroll/complete", headers=HEADERS, json={**MEMBER, "setup_grant": grant, **values}
     )
 
 
@@ -108,8 +103,14 @@ def test_email_only_approval_then_private_member_chooses_credentials(client, env
     pending = client.post("/auth/sign-in", headers=HEADERS, json=MEMBER).json()
     assert pending["mfa_required"] and client.get("/auth/me").status_code == 401
     assert environment[0][-1][0] == EMAIL
-    assert pending["method"] == "totp"
-    assert verify_login(client, pending).status_code == 200
+    assert (
+        client.post(
+            "/auth/mfa/verify",
+            headers=HEADERS,
+            json={"challenge_id": pending["challenge_id"], "code": environment[0][-1][1]},
+        ).status_code
+        == 200
+    )
 
 
 def test_unknown_or_existing_email_cannot_register_or_reveal_approval(client, environment):
@@ -365,14 +366,7 @@ def test_enrollment_storage_is_hashed_restart_safe_and_portable(session_store, e
         ADMIN["username"], ADMIN["password"], "admin", email="owner@example.com"
     )
     challenge = accounts.mfa.begin(owner)
-    import pyotp
-
-    from api.authenticator import now_seconds
-
-    setup = accounts.mfa.verify(challenge["challenge_id"], environment[0][-1][1])
-    user, _ = accounts.mfa.verify(
-        setup["challenge_id"], pyotp.TOTP(setup["secret"]).at(now_seconds())
-    )
+    user, _ = accounts.mfa.verify(challenge["challenge_id"], environment[0][-1][1])
     sid, _ = accounts.create_session(user, 3600, mfa_verified=True)
     accounts.enrollment.approve(EMAIL, actor=user["id"], actor_session=sid)
     challenge = accounts.enrollment.start(EMAIL)
@@ -390,9 +384,5 @@ def test_enrollment_storage_is_hashed_restart_safe_and_portable(session_store, e
     member = restarted.enrollment.complete(
         proof["setup_grant"], MEMBER["username"], MEMBER["password"]
     )
-    import pyotp
-
-    setup = restarted.mfa.enroll(member)
-    member, _ = restarted.mfa.verify(setup["challenge_id"], pyotp.TOTP(setup["secret"]).now())
     sid, expiry = restarted.create_session(member, 3600, mfa_verified=True)
     assert restarted.session_claims(sid, member["username"], expiry)["workspace_id"] == member["id"]
