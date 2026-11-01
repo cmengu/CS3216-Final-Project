@@ -169,7 +169,7 @@ their registered email, verify a six-digit code and choose a new password. Unkno
 or disabled addresses receive the same start response without sending a code or creating an
 account. Recovery never changes the registered inbox, role, approval or workspace.
 Successful reset invalidates all existing sessions and pending login/reset challenges. The
-user then signs in normally with the new password and a fresh email code; reset does not
+user then signs in normally with the new password and an authenticator or recovery code; reset does not
 automatically sign in. Accounts without a registered inbox need operator assistance.
 
 Reset codes and verified reset grants expire after five minutes and are single-use. Account,
@@ -179,25 +179,55 @@ five attempts with an additional per-account limit. Recovery grants are stored o
 and code HMACs use a purpose separate from sign-in and initial account setup. All reset
 mutations require the browser protection header, including before sign-in.
 
-Every approved account can sign in with its username or registered email, plus its password
-and a six-digit code sent to its registered
-email address. The first administrator's destination is configured by the operator using
-`AUTH_ADMIN_EMAIL`; the setup form cannot choose a different destination. Administrators
-approve an email before each new account can be created. Email ownership is verified before
-the username/password form appears. The public endpoint cannot choose a role or workspace. Password resets preserve the registered email. Existing password-only or
-old authenticator sessions no longer authenticate; existing data and accepted jobs are retained.
+Every approved account signs in with its username or registered email, password, and a
+six-digit authenticator-app code. Microsoft Authenticator, Google Authenticator and other
+standard TOTP apps work. Codes change every 30 seconds; the server accepts a one-step clock
+window and rejects an already used time step across all challenges. Keep the server clock
+synchronized and use HTTPS in production. TOTP improves separation from email but is still
+susceptible to phishing; passkeys remain a stronger future option.
 
-Codes expire after five minutes and are single-use, with five failed attempts per challenge,
-a 60-second send cooldown, a ten-email hourly account cap and per-account/IP verification
-limits. Resending invalidates the earlier challenge. Only hashes of challenge tokens and
-server-keyed HMACs of codes are stored. Codes are never returned by the API or written to logs.
-Email delivery failures leave the user signed out; no code logging or alternate-recipient
-fallback is available. This is email two-step verification, not phishing-resistant MFA; inbox
-compromise can defeat it. The authenticator/QR/recovery-code flow is no longer used.
+Account setup verifies the approved inbox before choosing credentials, then requires scanning
+a locally generated QR code (or entering its setup key) and confirming an authenticator code.
+No workspace access or login session is granted until that confirmation. Ten single-use
+recovery codes are shown once; save them in a password manager. After losing the phone, sign
+in with the password and one unused recovery code. No QR service or mail vendor sees TOTP
+setup secrets or subsequent login codes. Password resets preserve the authenticator and
+recovery codes; control of email alone cannot remove an enrolled factor.
+
+Existing email-only sessions stop authenticating after upgrading. On their next sign-in,
+existing accounts prove their password and registered inbox once before enrolling an
+authenticator. The first administrator's inbox remains operator-controlled through
+`AUTH_ADMIN_EMAIL`; the setup page cannot choose another address. Closing a setup screen
+before confirmation leaves no active factor: sign in again to restart enrollment. Private
+workspace ownership, invoices and accepted background jobs remain unchanged.
+
+Authenticator setup/login challenges expire after five minutes, allow five failed attempts,
+and have persistent per-account/IP rate limits. Challenge tokens are hashed; TOTP secrets
+are encrypted and bound to their account. Recovery codes are stored only as keyed hashes and
+consumed atomically. Keep `AUTH_MFA_KEY` (a private random secret of at least 32 characters)
+persistent and backed up separately from the database. If omitted, encryption derives from
+`AUTH_SECRET`, which must then remain stable. Do not change the encryption secret without a
+planned migration: losing it makes existing authenticators unreadable.
+
+Email is still used for invitations, initial ownership proof and password-reset verification.
+Email codes/grants expire after five minutes, with five attempts, send cooldowns and limits.
+Delivery failure leaves the user signed out; there is no logged-code or alternate-recipient
+fallback. Existing authenticator logins work independently of mail delivery.
+
+If both the authenticator and all recovery codes are lost, an operator must independently
+verify the owner before running:
+
+```sh
+.venv/bin/python -m api.manage_accounts reset-2fa --username APPROVED_USERNAME
+```
+
+This audited, server-only recovery invalidates sessions, pending challenges and old recovery
+codes. Next sign-in requires the password, registered-inbox proof and a new authenticator.
+There is no public or administrator-browser endpoint that removes another user's factor.
 
 ### Sending service and recipient email addresses
 
-A delivery service (Resend or Brevo) sends the invitation links and security codes. Gmail, Outlook and other addresses are
+A delivery service (AgentMail, Resend or Brevo) sends the invitation links and security codes. Gmail, Outlook and other addresses are
 recipients and need no provider-specific app registration or mailbox password. The application
 does not connect a Gmail mailbox to send email.
 
@@ -206,6 +236,36 @@ Resend account. This is a recipient-address restriction, not a restriction on Gm
 Outlook. To invite arbitrary approved addresses, verify a sender domain once in Resend and
 use an address on that domain for `AUTH_EMAIL_FROM`. The recipients do not verify domains.
 Pending invitations remain approved and can be retried after sender configuration is ready.
+
+### Configure AgentMail with a dedicated sender
+
+AgentMail provides its own `@agentmail.to` sender address, so a custom domain or connection
+to a personal Gmail/Outlook mailbox is not required. In the [AgentMail console](https://console.agentmail.to),
+create a dedicated inbox for Invoice Checker. Even a sending-only integration needs the inbox
+ID because it identifies the From address. Prefer an inbox-scoped API key whose explicit
+permissions enable only `message_send`; the app does not require inbox/message reading,
+account management, or other sender inboxes.
+
+Save these private backend variables in ignored `backend/.env.email` or the hosting service:
+
+```dotenv
+AUTH_EMAIL_PROVIDER=agentmail
+AGENTMAIL_API_KEY=your_private_send_only_key
+AGENTMAIL_INBOX_ID=your_dedicated_inbox_id
+AUTH_ADMIN_EMAIL=owner@example.com
+```
+
+Restart the backend after updating settings. Account verification, new-recipient restrictions,
+sending allowance and delivery policies still apply; API acceptance does not guarantee inbox
+placement. The app calls only the fixed HTTPS send endpoint, preserves the approved recipient,
+uses an idempotency key, disables redirects and never silently falls back to another provider.
+Do not put keys into frontend settings, chat, screenshots or Git. Shared-domain sender reputation
+and processing of message contents remain dependencies on AgentMail.
+
+Provider instructions: [quickstart](https://www.agentmail.to/docs/quickstart),
+[send API](https://docs.agentmail.to/api-reference/inboxes/messages/send),
+[key permissions](https://docs.agentmail.to/permissions), and
+[new-account limits](https://www.agentmail.to/docs/knowledge-base/agent-sign-up-limits).
 
 ### Try Brevo with an email-verified sender
 
@@ -277,14 +337,15 @@ owner. Users cannot choose or replace a security email through sign-in or an acc
 .venv/bin/python -m api.manage_accounts set-email --username APPROVED_USERNAME --email owner@example.com
 ```
 
-This audited action invalidates sessions and pending codes, then requires a code sent to the
-new approved address. Private invoices and projects retain their owner. A new Supabase database
-initializes `account_email`, `email_challenges`, and `email_verified_sessions` automatically in
-the private schema. Older accounts without a registered email need this explicit operator step.
-Old authenticator tables may remain as inactive legacy data; they grant no login access.
+This audited action invalidates sessions and pending codes, then requires proof of the new
+approved inbox followed by the existing authenticator. Private invoices and projects retain their owner. A new Supabase database
+initializes email/contact tables plus `authenticator_factors`, `authenticator_challenges`,
+`authenticator_recovery` and `authenticator_sessions` automatically in the private schema.
+Older accounts without a registered email need this explicit operator step. Old email-session
+proof and older MFA tables grant no login access.
 
 Configure `AUTH_SECRET` as an independent random secret of at least 32 characters and configure
-`AUTH_ADMIN_EMAIL` plus Resend delivery. Administrator setup is email-first: the configured inbox
+`AUTH_ADMIN_EMAIL` plus the selected email delivery provider. Administrator setup is email-first: the configured inbox
 receives a five-minute code; verifying it grants five minutes to choose credentials. The grant
 is single-use, bound to the configured email and stored only as a hash. Account creation and
 proof consumption happen atomically, so concurrent requests cannot create two initial admins.

@@ -112,11 +112,12 @@ def main():
                 ).fetchone()
             if row is None:
                 raise ValueError("The approved account does not exist.")
-            accounts.mfa.set_by_operator(
-                row["id"], args.email if args.command == "set-email" else None
-            )
+            if args.command == "set-email":
+                accounts.mfa.set_by_operator(row["id"], args.email)
+            else:
+                accounts.mfa.reset_by_operator(row["id"])
             print(
-                "Security email verification reset. Existing sessions were invalidated; the next sign-in requires a code sent to the registered address."
+                "Existing sessions were invalidated. Next sign-in verifies the registered email and requires authenticator verification or enrollment. Never reset a factor without independently verifying the account owner."
             )
         else:
             with accounts.connect() as db:

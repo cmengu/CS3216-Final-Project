@@ -16,18 +16,27 @@ def mail(monkeypatch):
     monkeypatch.setenv("AUTH_EMAIL_FROM", "security@example.com")
     monkeypatch.setenv("BREVO_EMAIL_FROM", "verified-sender@gmail.com")
     monkeypatch.setenv("BREVO_API_KEY", "xkeysib-fake-private-api-key")
+    monkeypatch.setenv("AGENTMAIL_API_KEY", "am_fake_private_api_key_never_sent")
+    monkeypatch.setenv("AGENTMAIL_INBOX_ID", "invoices@agentmail.to")
     monkeypatch.delenv("AUTH_EMAIL_TEST_RECIPIENT", raising=False)
     requests = []
 
     def post(url, **kwargs):
         requests.append((url, kwargs))
-        return httpx.Response(201, json={"id": "resend-fixture", "messageId": "brevo-fixture"})
+        return httpx.Response(
+            201,
+            json={
+                "id": "resend-fixture",
+                "messageId": "brevo-fixture",
+                "message_id": "agentmail-fixture",
+            },
+        )
 
     monkeypatch.setattr(httpx, "post", post)
     return requests
 
 
-@pytest.mark.parametrize("provider", ["resend", "brevo"])
+@pytest.mark.parametrize("provider", ["resend", "brevo", "agentmail"])
 @pytest.mark.parametrize("recipient", ["recipient@gmail.com", "recipient@outlook.com"])
 def test_both_vendors_send_the_personal_invitation_to_the_exact_recipient(
     mail, monkeypatch, provider, recipient
@@ -37,10 +46,13 @@ def test_both_vendors_send_the_personal_invitation_to_the_exact_recipient(
     link = "https://app.example.com/join#invite=private-recipient-link"
     _REAL_INVITATION(recipient, link, "opaque-delivery-id")
     url, kwargs = mail[0]
-    assert url == (
-        "https://api.resend.com/emails"
-        if provider == "resend"
-        else "https://api.brevo.com/v3/smtp/email"
+    assert (
+        url
+        == {
+            "resend": "https://api.resend.com/emails",
+            "brevo": "https://api.brevo.com/v3/smtp/email",
+            "agentmail": "https://api.agentmail.to/v0/inboxes/invoices%40agentmail.to/messages/send",
+        }[provider]
     )
     assert kwargs["timeout"] == 10 and kwargs["follow_redirects"] is False
     body = kwargs["json"]
@@ -48,12 +60,17 @@ def test_both_vendors_send_the_personal_invitation_to_the_exact_recipient(
         assert body["to"] == [recipient] and body["from"] == "security@example.com"
         assert kwargs["headers"]["Authorization"] == "Bearer re_fake_provider_key_never_sent"
         assert link in body["text"]
-    else:
+    elif provider == "brevo":
         assert body["to"] == [{"email": recipient}]
         assert body["sender"] == {"email": "verified-sender@gmail.com", "name": "Invoice Checker"}
         assert kwargs["headers"]["api-key"] == "xkeysib-fake-private-api-key"
         assert "Authorization" not in kwargs["headers"]
         assert link in body["textContent"]
+    else:
+        assert body["to"] == [recipient] and link in body["text"]
+        assert kwargs["headers"]["Authorization"] == "Bearer am_fake_private_api_key_never_sent"
+        assert kwargs["headers"]["Idempotency-Key"] == "ic-opaque-delivery-id"
+        assert "from" not in body and "am_fake_private_api_key_never_sent" not in str(body)
     assert "xkeysib-fake-private-api-key" not in str(body)
 
 
@@ -124,3 +141,60 @@ def test_removed_google_provider_cannot_connect_a_mailbox(mail, monkeypatch):
     with pytest.raises(HTTPException) as result:
         security_mail.send_code("recipient@gmail.com", "123456", "delivery")
     assert result.value.status_code == 503 and not mail
+
+
+@pytest.mark.parametrize(
+    "inbox",
+    [
+        "",
+        "..",
+        "../other",
+        "sender@agentmail.to?x=y",
+        "https://other.example",
+        "sender\r\nInjected",
+    ],
+)
+def test_agentmail_rejects_missing_or_unsafe_inbox_ids(mail, monkeypatch, inbox):
+    monkeypatch.setenv("AUTH_EMAIL_PROVIDER", "agentmail")
+    monkeypatch.setenv("AGENTMAIL_INBOX_ID", inbox)
+    assert not security_mail.configured()
+    with pytest.raises(HTTPException):
+        security_mail.send_code("recipient@gmail.com", "123456", "delivery")
+    assert not mail
+
+
+@pytest.mark.parametrize("status", [302, 400, 401, 403, 429, 500])
+def test_agentmail_failures_are_sanitized_and_never_fall_back(mail, monkeypatch, status):
+    monkeypatch.setenv("AUTH_EMAIL_PROVIDER", "agentmail")
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append(url)
+        return httpx.Response(status, json={"private": "sensitive-vendor-response"})
+
+    monkeypatch.setattr(httpx, "post", post)
+    with pytest.raises(HTTPException) as result:
+        _REAL_INVITATION(
+            "recipient@gmail.com", "https://example.com/join#invite=private-link", "delivery"
+        )
+    assert result.value.status_code == 503 and len(calls) == 1
+    assert all(
+        value not in result.value.detail
+        for value in (
+            "private-link",
+            "am_fake_private_api_key_never_sent",
+            "sensitive-vendor-response",
+        )
+    )
+
+
+def test_agentmail_network_failure_and_missing_message_id_fail_closed(mail, monkeypatch):
+    monkeypatch.setenv("AUTH_EMAIL_PROVIDER", "agentmail")
+    for post in (
+        lambda *_a, **_k: httpx.Response(200, json={"id": "wrong-contract"}),
+        lambda *_a, **_k: (_ for _ in ()).throw(httpx.ConnectError("private-error")),
+    ):
+        monkeypatch.setattr(httpx, "post", post)
+        with pytest.raises(HTTPException) as failure:
+            security_mail.send_code("recipient@outlook.com", "123456", "delivery")
+        assert failure.value.status_code == 503 and "private-error" not in failure.value.detail

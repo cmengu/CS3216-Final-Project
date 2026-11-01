@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { beginAdministratorSetup, resendAdministratorEmail, setupAdministrator, verifyAdministratorEmail, type TwoFactorChallenge } from "@/auth";
+import { beginAdministratorSetup, resendAdministratorEmail, setupAdministrator, verifyAdministratorEmail, completeSignIn, type AuthenticationStep, type TwoFactorChallenge } from "@/auth";
 import { accountRequest } from "@/auth/accounts";
 import { TwoFactor } from "@/components/TwoFactor";
+import { AuthenticatorFlow } from "@/components/AuthenticatorFlow";
 
 interface SetupStatus { setup_required: boolean; setup_destination: string | null; email_delivery_configured: boolean }
 
@@ -13,6 +14,7 @@ export default function AdministratorSetup() {
   const router = useRouter();
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
+  const [authenticator, setAuthenticator] = useState<AuthenticationStep | null>(null);
   const [grant, setGrant] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,20 +30,20 @@ export default function AdministratorSetup() {
   }, []);
   const restart = () => { setChallenge(null); setGrant(null); setPassword(""); setConfirmation(""); setError(""); };
   return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card"><h1>Set up your administrator</h1>
-    {status?.setup_required === false ? <p>Administrator setup is already complete. <Link className="ic-link" href="/sign-in">Sign in</Link>.</p> : grant ? <>
+    {authenticator ? <AuthenticatorFlow initial={authenticator} onComplete={user => { completeSignIn(user); router.replace("/admin/accounts"); }} onCancel={() => router.replace("/sign-in")} /> : status?.setup_required === false ? <p>Administrator setup is already complete. <Link className="ic-link" href="/sign-in">Sign in</Link>.</p> : grant ? <>
       <p className="ic-hint">Email verified. Now choose your administrator username and password.</p>
       <form style={{ display: "grid", gap: 16, marginTop: 20 }} onSubmit={async event => {
         event.preventDefault(); setError("");
         if (password !== confirmation) { setError("The passwords do not match."); return; }
         setBusy(true);
-        try { await setupAdministrator(grant, username, password); setPassword(""); setConfirmation(""); router.replace("/admin/accounts"); }
+        try { const next = await setupAdministrator(grant, username, password); setPassword(""); setConfirmation(""); setGrant(null); setAuthenticator(next); }
         catch (reason) { setError(reason instanceof Error ? reason.message : "Could not create the administrator."); }
         finally { setBusy(false); }
       }}>
         <label className="ic-field">Administrator username<input className="ic-input" required minLength={2} maxLength={80} autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} /></label>
         <label className="ic-field">Password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} /></label>
         <label className="ic-field">Confirm password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
-        <p className="ic-hint">Finish within five minutes of verifying your email. Future sign-ins require your password and a fresh email code.</p>
+        <p className="ic-hint">Finish within five minutes of verifying your email. Next, set up your authenticator app. Future sign-ins require your password and an authenticator code.</p>
         <button className="ic-btn ic-btn--primary" disabled={busy}>{busy ? "Creating…" : "Create administrator"}</button>
         <button className="ic-link" type="button" disabled={busy} onClick={restart}>Start setup again</button>
       </form>

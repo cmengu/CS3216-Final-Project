@@ -1,4 +1,4 @@
-"""Password-bound, one-use email codes sent only to an approved address."""
+"""Mandatory authenticator policy and one-time registered-email ownership proof."""
 
 import hashlib
 import hmac
@@ -38,7 +38,7 @@ def masked_email(email):
     return local[0] + "***@" + domain
 
 
-class TwoFactor:
+class EmailVerification:
     def __init__(self, accounts):
         self.accounts = accounts
         self.table = accounts.table
@@ -266,3 +266,37 @@ class TwoFactor:
 
     def reset_by_operator(self, user_id):
         self.set_by_operator(user_id)
+
+
+class TwoFactor(EmailVerification):
+    """Email proves identity once; subsequent sign-ins require TOTP or recovery proof."""
+
+    def __init__(self, accounts):
+        super().__init__(accounts)
+        from .authenticator import Authenticator
+
+        self.authenticator = Authenticator(self)
+
+    def begin(self, user):
+        with self.accounts.connect() as db:
+            contact = self.factor(db, user["id"])
+        if contact and contact["verified"] and self.authenticator.enrolled(user["id"]):
+            return self.authenticator.begin(user)
+        return {**super().begin(user), "method": "email_enrollment"}
+
+    def enroll(self, user):
+        return self.authenticator.begin(user, enroll=True)
+
+    def challenge_user(self, token):
+        return self.authenticator.challenge_user(token) or super().challenge_user(token)
+
+    def verify(self, token, code):
+        if self.authenticator.challenge_user(token):
+            return self.authenticator.verify(token, code)
+        user, _ = super().verify(token, code)
+        if self.authenticator.enrolled(user["id"]):
+            return self.authenticator.begin(user)
+        return self.enroll(user)
+
+    def reset_by_operator(self, user_id):
+        self.authenticator.reset_by_operator(user_id)

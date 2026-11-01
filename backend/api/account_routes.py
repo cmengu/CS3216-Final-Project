@@ -170,6 +170,8 @@ def complete_administrator_setup(body: CompleteSetup, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    if request.app.state.accounts.mfa.required(user):
+        return clear_cookie(request, JSONResponse(request.app.state.accounts.mfa.enroll(user)))
     return login_response(request, user, mfa_verified=True)
 
 
@@ -189,7 +191,10 @@ def verify_second_factor(body: VerifyFactor, request: Request):
     user_id = request.app.state.accounts.mfa.challenge_user(body.challenge_id)
     if user_id:
         request.app.state.limits.take("mfa-account", user_id, maximum=15, seconds=600)
-    user, codes = request.app.state.accounts.mfa.verify(body.challenge_id, body.code.strip())
+    result = request.app.state.accounts.mfa.verify(body.challenge_id, body.code.strip())
+    if isinstance(result, dict):
+        return clear_cookie(request, JSONResponse(result))
+    user, codes = result
     return login_response(request, user, mfa_verified=True, recovery_codes=codes)
 
 
@@ -200,7 +205,8 @@ def factor_status(request: Request):
     with accounts.connect() as db:
         factor = accounts.mfa.factor(db, claims["user_id"])
         return {
-            "enabled": factor is not None and bool(factor["verified"]),
+            "enabled": accounts.mfa.authenticator.factor(db, claims["user_id"]) is not None,
+            "method": "totp",
             "email": factor["email"] if factor else None,
         }
 
@@ -320,6 +326,8 @@ def complete_enrollment(body: EnrollmentComplete, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    if request.app.state.accounts.mfa.required(user):
+        return clear_cookie(request, JSONResponse(request.app.state.accounts.mfa.enroll(user)))
     return login_response(request, user, mfa_verified=True)
 
 

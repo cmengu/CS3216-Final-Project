@@ -1,6 +1,8 @@
-"""Server-only transactional email delivery; Resend or Brevo. Never log codes or provider responses."""
+"""Server-only transactional delivery. Never log codes or provider responses."""
 
 import os
+import re
+from urllib.parse import quote
 
 import httpx
 from email_validator import EmailNotValidError, validate_email
@@ -33,8 +35,8 @@ def sender_settings():
 
 def delivery_provider():
     provider = os.environ.get("AUTH_EMAIL_PROVIDER", "resend").strip().lower()
-    if provider not in {"resend", "brevo"}:
-        raise ValueError("Choose resend or brevo for AUTH_EMAIL_PROVIDER.")
+    if provider not in {"resend", "brevo", "agentmail"}:
+        raise ValueError("Choose agentmail, resend or brevo for AUTH_EMAIL_PROVIDER.")
     return provider
 
 
@@ -46,9 +48,27 @@ def brevo_settings():
     return key, sender
 
 
+def agentmail_settings():
+    key = os.environ.get("AGENTMAIL_API_KEY", "").strip()
+    inbox = os.environ.get("AGENTMAIL_INBOX_ID", "").strip()
+    if (
+        not key.startswith("am_")
+        or len(key) < 16
+        or any(char.isspace() for char in key)
+        or not re.fullmatch(r"[a-zA-Z0-9_.@+\-]{1,254}", inbox)
+        or inbox in {".", ".."}
+    ):
+        raise ValueError(
+            "Configure a private AgentMail API key and dedicated sender inbox ID first."
+        )
+    return key, inbox
+
+
 def configured():
     try:
-        if delivery_provider() == "brevo":
+        if delivery_provider() == "agentmail":
+            agentmail_settings()
+        elif delivery_provider() == "brevo":
             brevo_settings()
         else:
             sender_settings()
@@ -59,6 +79,9 @@ def configured():
 
 def ensure_ready(recipient=None):
     try:
+        if delivery_provider() == "agentmail":
+            agentmail_settings()
+            return
         if delivery_provider() == "brevo":
             brevo_settings()
             return
@@ -98,6 +121,8 @@ def send_invitation(recipient, join_url, delivery_id):
 def _send_message(recipient, subject, body, delivery_id):
     ensure_ready(recipient)
     recipient = normalize_email(recipient)
+    if delivery_provider() == "agentmail":
+        return _agentmail_send(recipient, subject, body, delivery_id)
     if delivery_provider() == "brevo":
         return _brevo_send(recipient, subject, body)
     key, sender, _ = sender_settings()
@@ -138,4 +163,23 @@ def _brevo_send(recipient, subject, body):
         raise HTTPException(
             503,
             "The email could not be sent. Check the Brevo API key, verified sender, account status and sending allowance.",
+        ) from None
+
+
+def _agentmail_send(recipient, subject, body, delivery_id):
+    key, inbox = agentmail_settings()
+    try:
+        response = httpx.post(
+            f"https://api.agentmail.to/v0/inboxes/{quote(inbox, safe='')}/messages/send",
+            headers={"Authorization": "Bearer " + key, "Idempotency-Key": "ic-" + delivery_id},
+            json={"to": [recipient], "subject": subject, "text": body},
+            timeout=10,
+            follow_redirects=False,
+        )
+        if not response.is_success or not isinstance(response.json().get("message_id"), str):
+            raise ValueError("Delivery rejected")
+    except (httpx.HTTPError, ValueError, AttributeError):
+        raise HTTPException(
+            503,
+            "The email could not be sent. Check the AgentMail key, sender inbox, account verification and sending allowance.",
         ) from None

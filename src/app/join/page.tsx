@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { claimAccountInvitation, beginAccountEnrollment, completeAccountEnrollment, resendEnrollmentEmail, verifyEnrollmentEmail, type TwoFactorChallenge } from "@/auth";
+import { claimAccountInvitation, beginAccountEnrollment, completeAccountEnrollment, resendEnrollmentEmail, verifyEnrollmentEmail, completeSignIn, type AuthenticationStep, type TwoFactorChallenge } from "@/auth";
 import { TwoFactor } from "@/components/TwoFactor";
+import { AuthenticatorFlow } from "@/components/AuthenticatorFlow";
 
 const subscribeHydration = () => () => {};
 
@@ -21,6 +22,7 @@ function AccountEnrollment() {
     if (window.location.hash) window.history.replaceState(null, "", "/join");
   }, []);
   const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
+  const [authenticator, setAuthenticator] = useState<AuthenticationStep | null>(null);
   const [grant, setGrant] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -30,20 +32,20 @@ function AccountEnrollment() {
   const restart = () => { setInvitation(null); setChallenge(null); setGrant(null); setPassword(""); setConfirmation(""); setError(""); };
   return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card">
     <h1>Set up your approved account</h1>
-    {grant ? <>
+    {authenticator ? <AuthenticatorFlow initial={authenticator} onComplete={user => { completeSignIn(user); router.replace("/master-list"); }} onCancel={() => router.replace("/sign-in")} /> : grant ? <>
       <p className="ic-hint">Email verified{email ? `: ${email}` : ""}. Choose your username and password for your private workspace.</p>
       <form style={{ display: "grid", gap: 16, marginTop: 20 }} onSubmit={async event => {
         event.preventDefault(); setError("");
         if (password !== confirmation) { setError("The passwords do not match."); return; }
         setBusy(true);
-        try { await completeAccountEnrollment(grant, username, password); setPassword(""); setConfirmation(""); router.replace("/master-list"); }
+        try { const next = await completeAccountEnrollment(grant, username, password); setPassword(""); setConfirmation(""); setGrant(null); setAuthenticator(next); }
         catch (reason) { setError(reason instanceof Error ? reason.message : "Could not create your account."); }
         finally { setBusy(false); }
       }}>
         <label className="ic-field">Username<input className="ic-input" required minLength={2} maxLength={80} autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} /></label>
         <label className="ic-field">Password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} /></label>
         <label className="ic-field">Confirm password<input className="ic-input" type="password" autoComplete="new-password" required minLength={15} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>
-        <p className="ic-hint">Use 15 to 128 characters. Finish within five minutes of verifying your email. Future sign-ins require your password and a fresh email code.</p>
+        <p className="ic-hint">Use 15 to 128 characters. Finish within five minutes of verifying your email. Next, set up your authenticator app. Future sign-ins require your password and an authenticator code.</p>
         <button className="ic-btn ic-btn--primary" disabled={busy}>{busy ? "Creating…" : "Create my account"}</button>
         <button className="ic-link" type="button" disabled={busy} onClick={restart}>Start setup again</button>
       </form>

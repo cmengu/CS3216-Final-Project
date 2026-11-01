@@ -2,8 +2,10 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 import httpx
+import pyotp
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -12,6 +14,7 @@ from test_accounts import ADMIN, DATA, HEADERS, MEMBER, add_member
 from api import security_mail
 from api.app import create_app
 from api.auth import create_session_token
+from api.authenticator import decrypt, now_seconds
 from api.mfa import CHALLENGE_SECONDS
 from api.stages import FixtureStages
 
@@ -24,6 +27,7 @@ MEMBER_EMAIL = "member@example.com"
 @pytest.fixture(autouse=True)
 def mail(monkeypatch):
     sent = []
+    monkeypatch.setenv("AUTH_EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("AUTH_ADMIN_EMAIL", OWNER)
     monkeypatch.setenv("AUTH_EMAIL_FROM", "security@example.com")
     monkeypatch.setenv("RESEND_API_KEY", "re_isolated_fake_api_key_never_sent")
@@ -40,6 +44,7 @@ def mail(monkeypatch):
 def clock(monkeypatch):
     value = [int(time.time())]
     monkeypatch.setattr("api.mfa.now_seconds", lambda: value[0])
+    monkeypatch.setattr("api.authenticator.now_seconds", lambda: value[0])
     return value
 
 
@@ -61,7 +66,7 @@ def start(client, credentials=ADMIN):
     return body
 
 
-def verify(client, challenge, code):
+def raw_verify(client, challenge, code):
     return client.post(
         "/auth/mfa/verify",
         headers=HEADERS,
@@ -69,9 +74,38 @@ def verify(client, challenge, code):
     )
 
 
+def finish_setup(client, response):
+    if response.status_code != 200 or response.json().get("method") != "totp_setup":
+        return response
+    assert "ic_session" not in client.cookies
+    assert client.get("/invoices").status_code == 401
+    challenge = response.json()
+    return raw_verify(client, challenge, pyotp.TOTP(challenge["secret"]).at(now_seconds()))
+
+
+def verify_login(client, challenge):
+    accounts = client.app.state.accounts
+    user_id = accounts.mfa.challenge_user(challenge["challenge_id"])
+    with accounts.connect() as db:
+        factor = accounts.mfa.authenticator.factor(db, user_id)
+    when = max(now_seconds(), (factor["last_counter"] + 1) * 30)
+    with patch("api.authenticator.now_seconds", return_value=when):
+        return raw_verify(
+            client, challenge, pyotp.TOTP(decrypt(factor["secret"], user_id)).at(when)
+        )
+
+
+def verify(client, challenge, code):
+    return finish_setup(client, raw_verify(client, challenge, code))
+
+
 def login(client, mail, credentials=ADMIN):
     challenge = start(client, credentials)
-    response = verify(client, challenge, mail[-1][1])
+    response = (
+        verify_login(client, challenge)
+        if challenge.get("method") == "totp"
+        else verify(client, challenge, mail[-1][1])
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -113,15 +147,16 @@ def test_first_admin_verifies_the_owner_email_before_choosing_credentials(
             json={**ADMIN, **verified.json(), "email": "attacker@example.com"},
         )
         assert completed.status_code == 200
-        assert client.get("/admin/accounts").status_code == 200
+        assert client.get("/admin/accounts").status_code == 401
+        assert finish_setup(client, completed).status_code == 200
         assert client.get("/auth/mfa/status").json()["email"] == OWNER
         cooldown(app)
         pending = start(client)
         with app.state.store.connect() as db:
-            stored = dict(db.execute("SELECT * FROM email_challenges").fetchone())
+            stored = dict(db.execute("SELECT * FROM authenticator_challenges").fetchone())
             assert stored["id"] != pending["challenge_id"]
-            assert stored["code_hash"] != mail[-1][1]
-            assert len(stored["code_hash"]) == 64
+            assert stored["kind"] == "login" and stored["secret"] is None
+            assert len(stored["id"]) == 64
 
 
 def test_every_member_needs_a_registered_email_and_verifies_it(app, mail):
@@ -136,7 +171,11 @@ def test_every_member_needs_a_registered_email_and_verifies_it(app, mail):
         assert verify(client, challenge, mail[-1][1]).status_code == 200
         assert client.get("/admin/accounts").status_code == 403
         assert client.get("/projects").json() == []
-        assert client.get("/auth/mfa/status").json() == {"enabled": True, "email": MEMBER_EMAIL}
+        assert client.get("/auth/mfa/status").json() == {
+            "enabled": True,
+            "email": MEMBER_EMAIL,
+            "method": "totp",
+        }
         assert client.get("/auth/me").json()["user"]["id"] != admin["user"]["id"]
 
 
@@ -237,7 +276,8 @@ def test_password_reset_preserves_email_and_invalidates_pending_codes(app, mail)
         cooldown(app)
         fresh = start(client, {**ADMIN, "password": "new-private-password-2026"})
         assert mail[-1][0] == OWNER
-        assert verify(client, fresh, mail[-1][1]).status_code == 200
+        assert fresh["method"] == "totp"
+        assert verify_login(client, fresh).status_code == 200
 
 
 def test_existing_account_without_registered_email_cannot_self_claim_one(app):
@@ -342,7 +382,8 @@ def test_registered_email_ownership_and_proof_are_portable(session_store, mail):
         "email-member", "isolated-email-member-password", "member", email=MEMBER_EMAIL
     )
     challenge = accounts.mfa.begin(user)
-    verified, _ = accounts.mfa.verify(challenge["challenge_id"], mail[-1][1])
+    setup = accounts.mfa.verify(challenge["challenge_id"], mail[-1][1])
+    verified, _ = accounts.mfa.verify(setup["challenge_id"], pyotp.TOTP(setup["secret"]).now())
     sid, expires = accounts.create_session(verified, 3600, mfa_verified=True)
     assert (
         accounts.session_claims(sid, user["username"], expires)["workspace_id"]
