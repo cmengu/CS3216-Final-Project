@@ -52,6 +52,10 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 | GET | `/auth/me` | Verify the registered, unexpired, unrevoked account session |
 | POST | `/auth/sign-out` | Revoke the current login and clear its cookie |
 | PUT | `/auth/password` | Verify current password, replace it, and invalidate all sessions |
+| POST | `/auth/password-reset/start` | Email-only recovery request; send only to a registered active account's inbox; generic response for unknown/pending/disabled emails |
+| POST | `/auth/password-reset/resend` | Existing reset challenge; resend to the same inbox after cooldown |
+| POST | `/auth/password-reset/verify` | Reset challenge plus email code; return a five-minute, single-use reset grant, with no new login session |
+| POST | `/auth/password-reset/complete` | Reset grant plus new password; atomically invalidate all account sessions and pending login/reset proof; no auto-login |
 | GET | `/admin/accounts` | Administrators list registered accounts |
 | POST | `/admin/accounts` | Administrator approves `{email}` only; no credentials/account yet |
 | GET | `/admin/account-approvals` | Administrators list pending email approvals |
@@ -69,7 +73,9 @@ old authenticator sessions cannot access protected resources. Challenges expire 
 minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
 Resending uses only the challenge, never a caller-selected email address. Delivery failures do
 not authenticate. Initial admin creation requires a verified email and atomically consumes its setup grant. Later users require an administrator-approved email and choose their credentials only after inbox proof. Enrollment grants are purpose-separated from login/admin setup, and revocation invalidates all pending proof. Duplicate emails/usernames cannot create partial accounts. Changes to an existing security
-email require the audited operator CLI. Password resets preserve email verification.
+email require the audited operator CLI. Password resets preserve the registered inbox and mandatory email-code sign-in. Recovery proof is
+bound to current account/email versions and becomes invalid after password, access or email
+changes. Reset does not create accounts, re-enable disabled accounts or change workspaces.
 There is no open registration. Login, enrollment and expensive operations have persistent
 rate limits; 429 includes `Retry-After`. All browser mutations require
 `X-Requested-With: InvoiceChecker` and a trusted Origin when present. Sign-in, setup and sign-out

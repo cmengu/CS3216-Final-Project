@@ -248,3 +248,25 @@ export async function changePassword(currentPassword: string, newPassword: strin
   await accountRequest("/auth/password", { method: "PUT", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
   setSessionState(null);
 }
+
+
+export async function beginPasswordReset(email: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/password-reset/start", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+export async function verifyPasswordResetEmail(challengeId: string, code: string): Promise<{ reset_grant: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/password-reset/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendPasswordResetEmail(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/password-reset/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
+}
+
+export async function completePasswordReset(grant: string, newPassword: string): Promise<void> {
+  const { accountRequest } = await import("./accounts");
+  await accountRequest("/auth/password-reset/complete", { method: "POST", body: JSON.stringify({ reset_grant: grant, new_password: newPassword }) });
+  setSessionState(null);
+}

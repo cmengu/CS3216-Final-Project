@@ -162,6 +162,21 @@ Outlook connection. Administrative access manages credentials; it does not grant
 to another account’s invoices or batches. Any account can change its own password at `/account`.
 Passwords require 15–128 characters and use salted Argon2id (19 MiB, two passes, one lane); plaintext passwords are not stored.
 
+Users who forget a password can open `/forgot-password` from the sign-in page. They enter
+their registered email, verify a six-digit code and choose a new password. Unknown, pending
+or disabled addresses receive the same start response without sending a code or creating an
+account. Recovery never changes the registered inbox, role, approval or workspace.
+Successful reset invalidates all existing sessions and pending login/reset challenges. The
+user then signs in normally with the new password and a fresh email code; reset does not
+automatically sign in. Accounts without a registered inbox need operator assistance.
+
+Reset codes and verified reset grants expire after five minutes and are single-use. Account,
+password, access or registered-email changes invalidate outstanding reset proof. Code requests
+have a 60-second cooldown, ten sends per inbox per hour and IP limits; verification allows
+five attempts with an additional per-account limit. Recovery grants are stored only as hashes,
+and code HMACs use a purpose separate from sign-in and initial account setup. All reset
+mutations require the browser protection header, including before sign-in.
+
 Every approved account signs in with its password plus a six-digit code sent to its registered
 email address. The first administrator's destination is configured by the operator using
 `AUTH_ADMIN_EMAIL`; the setup form cannot choose a different destination. Administrators

@@ -17,7 +17,6 @@ export default function SignIn() {
   const [wrong, setWrong] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [forgot, setForgot] = useState(false);
   const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
 
   const nextRoute = ml === null ? "/master-list" : "/invoices";
@@ -77,9 +76,9 @@ export default function SignIn() {
               <label htmlFor="password" className="lbl">
                 Password
               </label>
-              <button type="button" className="ic-link" style={{ minHeight: 0, fontSize: "calc(13px * var(--text-scale))" }} onClick={() => setForgot(true)}>
+              <Link href="/forgot-password" className="ic-link" style={{ minHeight: 0, fontSize: "calc(13px * var(--text-scale))" }}>
                 Forgot password?
-              </button>
+              </Link>
             </div>
             <input
               id="password"
@@ -99,11 +98,6 @@ export default function SignIn() {
             {error ? (
               <p id="pw-error" className="ic-hint ic-hint--error" role="alert">
                 {error}
-              </p>
-            ) : null}
-            {forgot ? (
-              <p className="ic-hint" role="status">
-                Ask your administrator to reset your password.
               </p>
             ) : null}
           </div>

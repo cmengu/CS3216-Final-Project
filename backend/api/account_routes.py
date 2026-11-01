@@ -52,6 +52,12 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=15, max_length=128)
 
 
+class CompletePasswordReset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reset_grant: str = Field(min_length=32, max_length=128)
+    new_password: str = Field(min_length=15, max_length=128)
+
+
 class VerifyFactor(BaseModel):
     challenge_id: str = Field(min_length=32, max_length=128)
     code: str = Field(min_length=1, max_length=128)
@@ -308,3 +314,32 @@ def update_account(user_id: str, body: UpdateAccount, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/auth/password-reset/start")
+def start_password_reset(body: CreateAccount, request: Request):
+    try:
+        return request.app.state.accounts.password_reset.start(body.email)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/auth/password-reset/resend")
+def resend_password_reset(body: ResendFactor, request: Request):
+    return request.app.state.accounts.password_reset.resend(body.challenge_id)
+
+
+@router.post("/auth/password-reset/verify")
+def verify_password_reset(body: VerifyFactor, request: Request):
+    return request.app.state.accounts.password_reset.verify(body.challenge_id, body.code.strip())
+
+
+@router.post("/auth/password-reset/complete")
+def complete_password_reset(body: CompletePasswordReset, request: Request):
+    try:
+        result = request.app.state.accounts.password_reset.complete(
+            body.reset_grant, body.new_password
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return clear_cookie(request, JSONResponse(result))

@@ -39,6 +39,37 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Email password recovery, 2 November 2026
+
+The sign-in page now links to `/forgot-password`. Administrators and members request a code
+using their registered email, verify it, then choose a replacement password. Only active
+registered accounts receive recovery codes; unknown, pending and disabled addresses receive
+the same start response without changing an account. No account identity, recipient, role or
+workspace can be supplied to the completion endpoint. Email-only approval is not sufficient
+for recovery before the user has created an account.
+
+Codes expire in five minutes, allow five attempts and use a reset-specific HMAC purpose.
+Successful verification returns a hashed, single-use, five-minute reset grant, without signing
+in. Account/email versions bind code and grant validity; password, access and inbox changes
+invalidate outstanding proof. Completion rechecks that proof inside the account write lock,
+changes the password, increments the account version, deletes all login sessions and pending
+login/reset proof, and records an audit event. Concurrent completion can succeed once. The
+private workspace, role, approval and registered inbox remain unchanged. A new normal
+password-plus-email-code sign-in is required afterwards.
+
+Request and verification limits persist in the database; pre-parse IP limits and CSRF/origin
+checks apply to all reset endpoints before authentication. New public code requests cannot
+invalidate an already verified, unexpired grant. Delivery failures delete the pending code
+and leave passwords/sessions unchanged. All automated mail uses synthetic captured delivery;
+no real password or inbox is used by the checks.
+
+386 backend tests and 161 frontend tests passed; 17 optional Postgres/model cases were skipped.
+Production build, TypeScript and frontend/backend lint/format passed. Chrome QA passed code
+verification/resend, password confirmation, mobile layout, old-password/session invalidation,
+required email-code sign-in afterwards, and restoration of the same private project/completed
+ZIP batch. Existing administrator/member approval and sign-in flows also passed without page
+errors. No actual account password or live email configuration was changed by automated QA.
+
 ## Email-only approval and user enrollment, 1 November 2026
 
 Account approval now accepts only an email address, with no administrator-chosen username or

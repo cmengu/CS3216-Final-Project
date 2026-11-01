@@ -12,6 +12,7 @@ from .access_store import AccessStore
 from .admin_setup import AdministratorSetup
 from .enrollment import Enrollment
 from .mfa import TwoFactor
+from .password_reset import PasswordReset
 from .passwords import hash_password, verify_password
 
 _DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
@@ -62,6 +63,7 @@ class Accounts(AccessStore):
         self.mfa = TwoFactor(self)
         self.administrator_setup = AdministratorSetup(self)
         self.enrollment = Enrollment(self)
+        self.password_reset = PasswordReset(self)
 
     def _lock(self, db):
         self.execute(
