@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beginPasswordReset, completePasswordReset, resendPasswordResetEmail, verifyPasswordResetEmail, beginAccountEnrollment, completeAccountEnrollment, resendEnrollmentEmail, verifyEnrollmentEmail, beginAdministratorSetup, completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifyAdministratorEmail, verifySecondFactor } from "./index";
+import { claimAccountInvitation, beginPasswordReset, completePasswordReset, resendPasswordResetEmail, verifyPasswordResetEmail, beginAccountEnrollment, completeAccountEnrollment, resendEnrollmentEmail, verifyEnrollmentEmail, beginAdministratorSetup, completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifyAdministratorEmail, verifySecondFactor } from "./index";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -260,4 +260,20 @@ it("a rejected password reset preserves existing frontend authentication", async
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ detail: "Email verification expired" }, { status: 401 })));
   await expect(completePasswordReset("expired-reset-proof", "a-private-replacement-password")).rejects.toThrow("Email verification expired");
   expect(currentUser()).toEqual({ email: "existing-user", role: "member" });
+});
+
+
+it("an invitation returns proof bound to its email without authenticating before password creation", async () => {
+  const localStorage = { removeItem: vi.fn(), setItem: vi.fn() };
+  vi.stubGlobal("window", { localStorage });
+  const before = currentUser();
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ setup_grant: "private-invitation-grant", email: "invited@example.com" }));
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await claimAccountInvitation("private-invitation-token")).toEqual({ setup_grant: "private-invitation-grant", email: "invited@example.com" });
+  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("/auth/enroll/invitation");
+  expect(JSON.parse(String(init.body))).toEqual({ token: "private-invitation-token" });
+  expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
+  expect(currentUser()).toEqual(before);
+  expect(localStorage.setItem).not.toHaveBeenCalled();
 });

@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from . import security_mail
+from .invitations import Invitations
 from .mfa import CHALLENGE_SECONDS, MAX_ATTEMPTS, _code_hash, _digest, masked_email, now_seconds
 from .passwords import hash_password
 
@@ -28,13 +29,15 @@ class Enrollment:
             }.items():
                 self.execute(db, f"CREATE TABLE IF NOT EXISTS {self.table(name)} ({columns})")
 
+        self.invitations = Invitations(self)
+
     def list_approvals(self):
         with self.accounts.connect() as db:
             return [
                 dict(row)
                 for row in self.execute(
                     db,
-                    f"SELECT id,email,created_at FROM {self.table('account_approvals')} ORDER BY created_at,id",
+                    f"SELECT a.id,a.email,a.created_at,COALESCE(d.status,'not_sent') AS invitation_status,d.error AS invitation_error FROM {self.table('account_approvals')} a LEFT JOIN {self.table('invitation_delivery')} d ON d.approval_id=a.id ORDER BY a.created_at,a.id",
                 ).fetchall()
             ]
 
@@ -68,7 +71,12 @@ class Enrollment:
                 db, f"DELETE FROM {self.table('account_approvals')} WHERE id=?", (approval_id,)
             ).rowcount:
                 raise HTTPException(404, "Pending approval not found.")
-            for name in ("enrollment_codes", "enrollment_grants"):
+            for name in (
+                "enrollment_codes",
+                "enrollment_grants",
+                "enrollment_invitations",
+                "invitation_delivery",
+            ):
                 self.execute(
                     db, f"DELETE FROM {self.table(name)} WHERE approval_id=?", (approval_id,)
                 )
@@ -235,7 +243,12 @@ class Enrollment:
                 f"UPDATE {self.table('account_email')} SET verified=1 WHERE user_id=?",
                 (user_id,),
             )
-            for name in ("enrollment_codes", "enrollment_grants"):
+            for name in (
+                "enrollment_codes",
+                "enrollment_grants",
+                "enrollment_invitations",
+                "invitation_delivery",
+            ):
                 self.execute(
                     db, f"DELETE FROM {self.table(name)} WHERE approval_id=?", (approval["id"],)
                 )

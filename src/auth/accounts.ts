@@ -12,6 +12,8 @@ export interface ApprovedAccount {
 }
 
 export interface AccountApproval {
+  invitation_status?: "not_sent" | "sending" | "sent" | "failed";
+  invitation_error?: string | null;
   id: string;
   email: string;
   created_at: number;

@@ -58,9 +58,11 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 | POST | `/auth/password-reset/verify` | Reset challenge plus email code; return a five-minute, single-use reset grant, with no new login session |
 | POST | `/auth/password-reset/complete` | Reset grant plus new password; atomically invalidate all account sessions and pending login/reset proof; no auto-login |
 | GET | `/admin/accounts` | Administrators list registered accounts |
-| POST | `/admin/accounts` | Administrator approves `{email}` only; no credentials/account yet |
-| GET | `/admin/account-approvals` | Administrators list pending email approvals |
+| POST | `/admin/accounts` | Administrator approves `{email}` and attempts to email its personal join link; returns explicit delivery status, with no credentials/account yet |
+| GET | `/admin/account-approvals` | Administrators list pending email approvals with invitation sent/failed status and sanitized delivery errors |
+| POST | `/admin/account-approvals/{id}/send` | Send/resend a personal 24-hour invitation to that approval's email; retire older unclaimed links |
 | DELETE | `/admin/account-approvals/{id}` | Revoke a pending approval and its codes/grants |
+| POST | `/auth/enroll/invitation` | Explicitly accept an emailed single-use token; return a five-minute setup grant bound to its approved email; no account/session yet |
 | POST | `/auth/enroll/start` | Request a code for a pending approved email; unknown/existing emails receive the same response without sending |
 | POST | `/auth/enroll/resend` | Resend to the pending approval's email using only the current challenge |
 | POST | `/auth/enroll/verify` | Verify the approved inbox; return a five-minute, single-use setup grant without an account/session |
@@ -69,7 +71,7 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 
 Every account has its own private workspace; an administrator’s invoice permissions remain
 limited to that administrator’s own workspace. Account management responses never include
-passwords/hashes. Delivery supports Resend (default) or explicit `AUTH_EMAIL_PROVIDER=gmail` with a private Google app password and validated Gmail SMTP TLS. Recipients remain registered account inboxes; Gmail failures never fall back to Resend.
+passwords/hashes. Delivery supports Resend (default), Google send-only authorization (`AUTH_EMAIL_PROVIDER=gmail_oauth`), or the explicit legacy Gmail app-password SMTP option (`gmail`). Google OAuth requests/accepts only `gmail.send`, uses private refresh credentials and caches short-lived access tokens in memory. Invitation links use URL fragments to keep tokens out of access logs and require an explicit acceptance POST; GETs/email scanners do not consume them. Recipients remain registered account inboxes; Gmail failures never fall back to Resend.
 Every approved account requires an emailed security code; password-only and
 old authenticator sessions cannot access protected resources. Challenges expire after five
 minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.

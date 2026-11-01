@@ -9,6 +9,8 @@ import httpx
 from email_validator import EmailNotValidError, validate_email
 from fastapi import HTTPException
 
+from . import gmail_oauth
+
 
 def normalize_email(value):
     try:
@@ -36,8 +38,8 @@ def sender_settings():
 
 def delivery_provider():
     provider = os.environ.get("AUTH_EMAIL_PROVIDER", "resend").strip().lower()
-    if provider not in {"resend", "gmail"}:
-        raise ValueError("Choose resend or gmail for AUTH_EMAIL_PROVIDER.")
+    if provider not in {"resend", "gmail", "gmail_oauth"}:
+        raise ValueError("Choose resend, gmail or gmail_oauth for AUTH_EMAIL_PROVIDER.")
     return provider
 
 
@@ -53,7 +55,9 @@ def gmail_settings():
 
 def configured():
     try:
-        if delivery_provider() == "gmail":
+        if delivery_provider() == "gmail_oauth":
+            gmail_oauth.settings()
+        elif delivery_provider() == "gmail":
             gmail_settings()
         else:
             sender_settings()
@@ -64,6 +68,9 @@ def configured():
 
 def ensure_ready(recipient=None):
     try:
+        if delivery_provider() == "gmail_oauth":
+            gmail_oauth.settings()
+            return
         if delivery_provider() == "gmail":
             gmail_settings()
             return
@@ -78,21 +85,41 @@ def ensure_ready(recipient=None):
 
 
 def send_code(recipient, code, delivery_id):
+    _send_message(
+        recipient,
+        "Your Invoice Checker security code",
+        f"Your Invoice Checker security code is: {code}\n\n"
+        "This code expires in five minutes and can be used once.\n"
+        "If you did not request this code, ignore this email. Do not share the code.\n",
+        delivery_id,
+    )
+
+
+def send_invitation(recipient, join_url, delivery_id):
+    _send_message(
+        recipient,
+        "Your invitation to Invoice Checker",
+        f"You have been approved to join Invoice Checker with {recipient}.\n\n"
+        f"Create your username and password using your personal invitation link:\n{join_url}\n\n"
+        "This link expires after 24 hours and can be used once. Do not forward it.\n"
+        "If you were not expecting this invitation, ignore this email.\n",
+        delivery_id,
+    )
+
+
+def _send_message(recipient, subject, body, delivery_id):
     ensure_ready(recipient)
     recipient = normalize_email(recipient)
+    if delivery_provider() == "gmail_oauth":
+        return gmail_oauth.send(recipient, subject, body)
     if delivery_provider() == "gmail":
-        return _gmail_send(recipient, code)
+        return _gmail_send(recipient, subject, body)
     key, sender, _ = sender_settings()
     try:
         response = httpx.post(
             "https://api.resend.com/emails",
             headers={"Authorization": "Bearer " + key, "Idempotency-Key": "signin-" + delivery_id},
-            json={
-                "from": sender,
-                "to": [recipient],
-                "subject": "Your Invoice Checker security code",
-                "text": f"Your Invoice Checker security code is: {code}\n\nThis code expires in five minutes and can be used once.\nIf you did not request this code, ignore this email. Do not share the code.\n",
-            },
+            json={"from": sender, "to": [recipient], "subject": subject, "text": body},
             timeout=10,
             follow_redirects=False,
         )
@@ -100,22 +127,17 @@ def send_code(recipient, code, delivery_id):
             raise ValueError("Delivery rejected")
     except (httpx.HTTPError, ValueError, AttributeError):
         raise HTTPException(
-            503,
-            "The security email could not be sent. Sign in again later, or ask the operator to check email delivery.",
+            503, "The email could not be sent. Ask the operator to check email delivery."
         ) from None
 
 
-def _gmail_send(recipient, code):
+def _gmail_send(recipient, subject, body):
     sender, password = gmail_settings()
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
-    message["Subject"] = "Your Invoice Checker security code"
-    message.set_content(
-        f"Your Invoice Checker security code is: {code}\n\n"
-        "This code expires in five minutes and can be used once.\n"
-        "If you did not request this code, ignore this email. Do not share the code.\n"
-    )
+    message["Subject"] = subject
+    message.set_content(body)
     try:
         # Fixed Gmail destination, mandatory validated TLS, no debug output or fallback.
         with smtplib.SMTP_SSL(

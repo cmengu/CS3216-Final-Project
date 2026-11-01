@@ -62,3 +62,10 @@ def session_store(request, tmp_path):
         with store.connect() as db:
             db.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
         store.pool.close()
+
+
+@pytest.fixture(autouse=True)
+def no_live_invitation_delivery(monkeypatch):
+    from api import security_mail
+
+    monkeypatch.setattr(security_mail, "send_invitation", lambda *_args, **_kwargs: None)

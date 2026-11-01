@@ -151,10 +151,12 @@ and frontend offline login fallback have been removed.
 ## Approved accounts and private workspaces
 
 There is no open registration. At `/admin/accounts`, an administrator approves only an email
-address. The person opens `/join` (also linked on the sign-in page), requests a code at that
-approved address, verifies it, then chooses their own username and password. Approval creates
+address and the app emails a personal invitation link. The link opens `/join`, verifies the
+approved inbox, then lets the person choose their own username and password. The link expires
+in 24 hours and can be used once. Approval creates
 no account or workspace until that final step. New accounts are Members; an administrator can
-change their access afterwards. Pending approvals are listed separately and can be revoked,
+change their access afterwards. Delivery success/failure is shown with pending approvals; failed or expired invitations can be resent.
+Pending approvals are listed separately and can be revoked,
 which invalidates pending codes and verified setup grants, even if the email is approved again.
 Administrators can still enable/disable accounts, change roles and reset existing passwords.
 Each account owns a separate, stable private workspace for invoices, master versions and its
@@ -192,6 +194,58 @@ server-keyed HMACs of codes are stored. Codes are never returned by the API or w
 Email delivery failures leave the user signed out; no code logging or alternate-recipient
 fallback is available. This is email two-step verification, not phishing-resistant MFA; inbox
 compromise can defeat it. The authenticator/QR/recovery-code flow is no longer used.
+
+### Connect Google with send-only permission (recommended without a domain)
+
+This uses the Gmail API with exactly `https://www.googleapis.com/auth/gmail.send`. It can
+send invitation links and security codes without reading mail or using a Gmail app password.
+Only the operator connects the sender; approved users do not connect their Google accounts.
+The recipient may use Gmail, Outlook or another provider.
+
+One-time setup in Google:
+
+1. Sign into [Google Cloud Console](https://console.cloud.google.com/) with the sender account.
+   Select or create a project for Invoice Checker.
+2. Enable the [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com).
+3. In **Google Auth platform**, configure the app branding/audience. For a local test, use an
+   External audience and add the sender email as a test user. Add only the Gmail send scope
+   under Data Access. This is separate from account sign-in for the invoice application.
+4. Under **Clients**, create an OAuth client with application type **Desktop app**, download
+   its JSON and save it as `backend/.env.gmail-oauth.json`. Keep this file out of chat/Git.
+5. From the backend folder, run:
+
+```sh
+.venv/bin/python -m api.connect_gmail --sender your_sender@gmail.com
+```
+
+On Windows, use `.venv/Scripts/python.exe` instead. The helper opens Google's consent page.
+Confirm the sender account and grant **Send email on your behalf**. It uses PKCE and a random
+state with a temporary callback listening only on `127.0.0.1`; the callback does not log URLs.
+It rejects missing/broader grants, then saves the refresh token and client settings in ignored
+`backend/.env` and selects `AUTH_EMAIL_PROVIDER=gmail_oauth`. It does not send a test email.
+The app retains a send-capable credential, so this still requires server secret protection.
+The credential cannot read messages using the requested scope. Revoke access in Google to
+invalidate it. An old Gmail app password is not needed and can be revoked separately.
+
+6. Restart the backend. Pending approvals have a **Send invitation** action for retrying an
+   earlier failed delivery. The invite goes only to the approval's email; resending replaces
+   the earlier unclaimed link. Revoking approval invalidates invitations and claimed grants.
+7. Set `FRONTEND_URL` to the actual public HTTPS app origin for hosted invitations. The default
+   `http://localhost:3000` works only when the link is opened on the machine running the app.
+
+Google's External **Testing** mode gives these refresh tokens a seven-day lifetime. Use the
+appropriate production publishing/verification process before relying on unattended delivery;
+Google can require sensitive-scope verification. A revoked/expired connection produces a
+visible delivery error and requires reconnecting. On a hosted backend, configure these private
+values in the host's secret settings: `AUTH_EMAIL_PROVIDER=gmail_oauth`, `GMAIL_OAUTH_FROM`,
+`GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, and `GMAIL_OAUTH_REFRESH_TOKEN`.
+The app caches short-lived access tokens only in memory, validates the granted scope on
+refresh, and calls only Google's fixed HTTPS token and messages/send endpoints. It never
+silently falls back to SMTP, Resend or a different recipient.
+
+Provider guidance: [desktop consent](https://developers.google.com/identity/protocols/oauth2/native-app),
+[Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes),
+and [refresh-token expiry](https://developers.google.com/identity/protocols/oauth2#expiration).
 
 ### Configure Gmail sending without a custom domain
 

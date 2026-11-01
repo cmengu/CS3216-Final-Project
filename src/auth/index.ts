@@ -207,6 +207,11 @@ export async function setupAdministrator(grant: string, username: string, passwo
   return result.user;
 }
 
+export async function claimAccountInvitation(token: string): Promise<{ setup_grant: string; email: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/enroll/invitation", { method: "POST", body: JSON.stringify({ token }) });
+}
+
 export async function beginAccountEnrollment(email: string): Promise<TwoFactorChallenge> {
   const { accountRequest } = await import("./accounts");
   const result = await accountRequest<TwoFactorChallenge>("/auth/enroll/start", { method: "POST", body: JSON.stringify({ email }) });

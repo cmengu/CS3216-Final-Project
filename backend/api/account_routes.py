@@ -37,6 +37,11 @@ class CreateAccount(BaseModel):
     email: str = Field(min_length=3, max_length=254)
 
 
+class ClaimInvitation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=32, max_length=128)
+
+
 class EnrollmentComplete(CompleteSetup):
     model_config = ConfigDict(extra="forbid")
 
@@ -247,9 +252,14 @@ def create_account(body: CreateAccount, request: Request):
     claims = require_user(request, admin=True)
     request.app.state.limits.take("manage-accounts", claims["user_id"], maximum=30, seconds=3600)
     try:
-        return request.app.state.accounts.enrollment.approve(
+        enrollment = request.app.state.accounts.enrollment
+        approval = enrollment.approve(
             body.email, actor=claims["user_id"], actor_session=claims["session_id"]
         )
+        delivery = enrollment.invitations.send(
+            approval["id"], actor=claims["user_id"], actor_session=claims["session_id"]
+        )
+        return {**approval, **delivery}
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -266,6 +276,20 @@ def revoke_approval(approval_id: str, request: Request):
     return request.app.state.accounts.enrollment.revoke(
         approval_id, actor=claims["user_id"], actor_session=claims["session_id"]
     )
+
+
+@router.post("/admin/account-approvals/{approval_id}/send")
+def send_invitation(approval_id: str, request: Request):
+    claims = require_user(request, admin=True)
+    request.app.state.limits.take("manage-accounts", claims["user_id"], maximum=30, seconds=3600)
+    return request.app.state.accounts.enrollment.invitations.send(
+        approval_id, actor=claims["user_id"], actor_session=claims["session_id"]
+    )
+
+
+@router.post("/auth/enroll/invitation")
+def claim_invitation(body: ClaimInvitation, request: Request):
+    return request.app.state.accounts.enrollment.invitations.claim(body.token)
 
 
 @router.post("/auth/enroll/start")

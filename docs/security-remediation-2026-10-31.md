@@ -39,6 +39,34 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Automatic personal invitations and Google send-only consent, 2 November 2026
+
+Approval now emails a personal 24-hour join link, bound to that immutable approval/email.
+Only a token hash is stored; the raw token is sent in a URL fragment and removed from the
+browser address bar. An explicit acceptance POST consumes it and grants five minutes for
+choosing credentials. GET requests do not consume invitations. Completion remains atomic,
+Member-only and private. Expiry, resend/revocation and reapproval identity prevent stale reuse.
+Resending cannot invalidate an already claimed grant, while revocation invalidates both.
+Admins see persisted sent/failed status and sanitized errors, and can retry sending. A mail
+failure preserves approval but deletes the failed invitation; it never claims success or
+creates a login/account. Existing code-based enrollment remains available.
+
+The selected alternative to mailbox app passwords is `gmail_oauth`: Google consent requests
+exactly `gmail.send` with PKCE/state and a loopback-only callback. Broad or missing scopes
+are rejected during code exchange and token refresh. The helper preserves unrelated private
+settings, writes credentials atomically with restrictive file permissions and never prints
+codes/tokens or sends test mail. Runtime delivery uses only fixed HTTPS Google token/send
+endpoints, with validated TLS, no redirects, scoped access-token caching and no inbox reads.
+A send-capable refresh token is still a server secret, and External Testing tokens expire in
+seven days. Google app registration and the owner's consent remain required before activation.
+
+435 backend tests and 162 frontend tests passed; 18 optional Postgres/model cases were skipped.
+Production build, TypeScript and frontend/backend lint/format passed. Chrome QA covered automatic
+invitation creation, explicit delivery errors, acceptance before credentials, email binding,
+mobile layout, private Member creation, resend and revocation. Provider delivery and Google
+consent were mocked with synthetic data; no live email, Google token or mailbox app password
+was used. Actual Google sender activation remains dependent on the owner's one-time setup.
+
 ## Gmail delivery option, 2 November 2026
 
 Added `AUTH_EMAIL_PROVIDER=gmail` so an existing Gmail mailbox can send security codes without

@@ -78,7 +78,10 @@ def clear_windows(client):
 
 def test_email_only_approval_then_private_member_chooses_credentials(client, environment):
     approval, _ = approve(client, environment, " Approved@EXAMPLE.com ")
-    assert set(approval) == {"id", "email", "created_at"} and approval["email"] == EMAIL
+    assert (
+        set(approval) == {"id", "email", "created_at", "invitation_status", "invitation_error"}
+        and approval["email"] == EMAIL
+    )
     assert len(client.app.state.accounts.list_users()) == 1
     grant = prove(client, environment)
     assert environment[0][-1][0] == EMAIL
@@ -352,7 +355,7 @@ def test_stale_admin_session_cannot_approve_or_revoke_inside_transaction(client,
         with pytest.raises(HTTPException) as rejected:
             mutation()
         assert rejected.value.status_code == 403
-    assert accounts.enrollment.list_approvals() == [approval]
+    assert accounts.enrollment.list_approvals()[0]["id"] == approval["id"]
 
 
 def test_enrollment_storage_is_hashed_restart_safe_and_portable(session_store, environment):

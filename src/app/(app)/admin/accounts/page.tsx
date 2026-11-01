@@ -52,26 +52,36 @@ export default function ApprovedAccounts() {
         try {
           const created = await accountRequest<AccountApproval>("/admin/accounts", { method: "POST", body: JSON.stringify({ email }) });
           setApprovals(rows => [...rows, created]);
-          setEmail(""); setNotice("Email approved. They can now open Set up your approved account on the sign-in page, verify their email, and choose their own username and password.");
+          setEmail(""); setNotice(created.invitation_status === "sent"
+            ? "Invitation emailed. The recipient can open their personal join link and choose a username and password."
+            : `Email approved, but the invitation was not sent. ${created.invitation_error ?? "Check email delivery and try Send invitation below."}`);
         } catch (error) { setError(error instanceof Error ? error.message : "Could not add this account."); }
         finally { setBusy(false); }
       }}>
         <div className="ic-field"><label htmlFor="new-email">Email address</label><input id="new-email" className="ic-input" type="email" required maxLength={254} autoComplete="off" value={email} onChange={event => setEmail(event.target.value)} /></div>
-        <button className="ic-btn ic-btn--primary" disabled={busy}>Approve email</button>
+        <button className="ic-btn ic-btn--primary" disabled={busy}>Approve &amp; send invitation</button>
       </form>
     </section>
     <section className="ic-card" aria-labelledby="pending-approvals-title" style={{ margin: "24px 0", overflowX: "auto" }}>
       <h2 id="pending-approvals-title" style={{ marginTop: 0 }}>Waiting for account setup</h2>
-      <p className="ic-hint">Share the <Link className="ic-link" href="/join">account setup page</Link>. New users choose their credentials after verifying their approved email. They start as members.</p>
+      <p className="ic-hint">Recipients receive a personal join link, valid for 24 hours. It creates an account only for the approved email. New users start as members. The <Link className="ic-link" href="/join">account setup page</Link> also supports email codes.</p>
       {approvals.length ? <table className="ic-grid" aria-label="Pending email approvals"><thead><tr><th>Email address</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-        {approvals.map(approval => <tr key={approval.id}><td>{approval.email}</td><td>Waiting for setup</td><td><button className="ic-btn ic-btn--secondary ic-btn--sm" disabled={busy} onClick={async () => {
+        {approvals.map(approval => <tr key={approval.id}><td>{approval.email}</td><td>{approval.invitation_status === "sent" ? "Invitation sent" : approval.invitation_status === "failed" ? "Email not sent" : "Waiting for setup"}{approval.invitation_error ? <p className="ic-hint ic-hint--error">{approval.invitation_error}</p> : null}</td><td><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button className="ic-btn ic-btn--secondary ic-btn--sm" disabled={busy} onClick={async () => {
+          setBusy(true); setError(""); setNotice("");
+          try {
+            const delivery = await accountRequest<Pick<AccountApproval, "invitation_status" | "invitation_error">>(`/admin/account-approvals/${approval.id}/send`, { method: "POST" });
+            setApprovals(rows => rows.map(row => row.id === approval.id ? { ...row, ...delivery } : row));
+            setNotice(delivery.invitation_status === "sent" ? "Invitation emailed. Only the newest link will work." : `The invitation was not sent. ${delivery.invitation_error ?? "Check email delivery."}`);
+          } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not send the invitation."); }
+          finally { setBusy(false); }
+        }}>{approval.invitation_status === "sent" ? "Resend invitation" : "Send invitation"}</button><button className="ic-btn ic-btn--secondary ic-btn--sm" disabled={busy} onClick={async () => {
           setBusy(true); setError(""); setNotice("");
           try {
             await accountRequest(`/admin/account-approvals/${approval.id}`, { method: "DELETE" });
             setApprovals(rows => rows.filter(row => row.id !== approval.id)); setNotice("Email approval revoked. Pending codes and account setup are cancelled.");
           } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not revoke this approval."); }
           finally { setBusy(false); }
-        }}>Revoke approval</button></td></tr>)}
+        }}>Revoke approval</button></div></td></tr>)}
       </tbody></table> : <p className="muted">No emails waiting for setup.</p>}
     </section>
     <div className="ic-card" style={{ overflowX: "auto", padding: 0 }}>
