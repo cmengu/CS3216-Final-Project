@@ -1,17 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useUser } from "@/auth";
 import styles from "./Accounts.module.css";
-import { accountRequest, type ApprovedAccount } from "@/auth/accounts";
+import { accountRequest, type AccountApproval, type ApprovedAccount } from "@/auth/accounts";
 
 export default function ApprovedAccounts() {
   const user = useUser();
   const [accounts, setAccounts] = useState<ApprovedAccount[]>([]);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [approvals, setApprovals] = useState<AccountApproval[]>([]);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "member">("member");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -21,7 +20,10 @@ export default function ApprovedAccounts() {
   useEffect(() => {
     if (user?.role !== "admin") return;
     let current = true;
-    accountRequest<ApprovedAccount[]>("/admin/accounts").then(rows => { if (current) setAccounts(rows); }).catch(error => { if (current) setError(error.message); });
+    Promise.all([
+      accountRequest<ApprovedAccount[]>("/admin/accounts"),
+      accountRequest<AccountApproval[]>("/admin/account-approvals"),
+    ]).then(([rows, pending]) => { if (current) { setAccounts(rows); setApprovals(pending); } }).catch(error => { if (current) setError(error.message); });
     return () => { current = false; };
   }, [user?.role]);
 
@@ -48,18 +50,29 @@ export default function ApprovedAccounts() {
       <form className={styles.form} onSubmit={async event => {
         event.preventDefault(); setBusy(true); setError(""); setNotice("");
         try {
-          const created = await accountRequest<ApprovedAccount>("/admin/accounts", { method: "POST", body: JSON.stringify({ username, password, role, email }) });
-          setAccounts(rows => [...rows, created]); setUsername(""); setPassword(""); setRole("member");
-          setEmail(""); setNotice("Account approved. Share the credentials through your usual private channel. Security codes will go only to this person's registered email.");
+          const created = await accountRequest<AccountApproval>("/admin/accounts", { method: "POST", body: JSON.stringify({ email }) });
+          setApprovals(rows => [...rows, created]);
+          setEmail(""); setNotice("Email approved. They can now open Set up your approved account on the sign-in page, verify their email, and choose their own username and password.");
         } catch (error) { setError(error instanceof Error ? error.message : "Could not add this account."); }
         finally { setBusy(false); }
       }}>
-        <div className="ic-field"><label htmlFor="new-username">Username</label><input id="new-username" className="ic-input" required minLength={2} maxLength={80} autoComplete="off" value={username} onChange={event => setUsername(event.target.value)} /></div>
-        <div className="ic-field"><label htmlFor="new-password">Initial password</label><input id="new-password" className="ic-input" type="password" required minLength={15} maxLength={128} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /><span className="ic-hint">15 to 128 characters.</span></div>
-        <div className="ic-field"><label htmlFor="new-email">Security email</label><input id="new-email" className="ic-input" type="email" required maxLength={254} autoComplete="off" value={email} onChange={event => setEmail(event.target.value)} /></div>
-        <div className="ic-field"><label htmlFor="new-role">Access</label><select id="new-role" className="ic-select" value={role} onChange={event => setRole(event.target.value as "admin" | "member")}><option value="member">Member</option><option value="admin">Administrator</option></select></div>
-        <button className="ic-btn ic-btn--primary" disabled={busy}>Approve account</button>
+        <div className="ic-field"><label htmlFor="new-email">Email address</label><input id="new-email" className="ic-input" type="email" required maxLength={254} autoComplete="off" value={email} onChange={event => setEmail(event.target.value)} /></div>
+        <button className="ic-btn ic-btn--primary" disabled={busy}>Approve email</button>
       </form>
+    </section>
+    <section className="ic-card" aria-labelledby="pending-approvals-title" style={{ margin: "24px 0", overflowX: "auto" }}>
+      <h2 id="pending-approvals-title" style={{ marginTop: 0 }}>Waiting for account setup</h2>
+      <p className="ic-hint">Share the <Link className="ic-link" href="/join">account setup page</Link>. New users choose their credentials after verifying their approved email. They start as members.</p>
+      {approvals.length ? <table className="ic-grid" aria-label="Pending email approvals"><thead><tr><th>Email address</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        {approvals.map(approval => <tr key={approval.id}><td>{approval.email}</td><td>Waiting for setup</td><td><button className="ic-btn ic-btn--secondary ic-btn--sm" disabled={busy} onClick={async () => {
+          setBusy(true); setError(""); setNotice("");
+          try {
+            await accountRequest(`/admin/account-approvals/${approval.id}`, { method: "DELETE" });
+            setApprovals(rows => rows.filter(row => row.id !== approval.id)); setNotice("Email approval revoked. Pending codes and account setup are cancelled.");
+          } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not revoke this approval."); }
+          finally { setBusy(false); }
+        }}>Revoke approval</button></td></tr>)}
+      </tbody></table> : <p className="muted">No emails waiting for setup.</p>}
     </section>
     <div className="ic-card" style={{ overflowX: "auto", padding: 0 }}>
       <table className="ic-grid" aria-label="Approved accounts"><thead><tr><th>Username</th><th>Security email</th><th>Access</th><th>Status</th><th>Actions</th></tr></thead><tbody>

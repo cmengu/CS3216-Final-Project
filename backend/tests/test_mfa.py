@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from test_accounts import ADMIN, DATA, HEADERS, MEMBER
+from test_accounts import ADMIN, DATA, HEADERS, MEMBER, add_member
 
 from api import security_mail
 from api.app import create_app
@@ -128,10 +128,8 @@ def test_every_member_needs_a_registered_email_and_verifies_it(app, mail):
     with TestClient(app) as client:
         admin = login(client, mail)
         assert client.post("/admin/accounts", headers=HEADERS, json=MEMBER).status_code == 422
-        member = client.post(
-            "/admin/accounts", headers=HEADERS, json={**MEMBER, "email": MEMBER_EMAIL}
-        )
-        assert member.status_code == 201 and member.json()["email"] == MEMBER_EMAIL
+        member = add_member(client, {**MEMBER, "email": MEMBER_EMAIL})
+        assert member["email"] == MEMBER_EMAIL
         challenge = start(client, {**MEMBER, "email": "attacker@example.com"})
         assert mail[-1][0] == MEMBER_EMAIL
         assert client.get("/projects").status_code == 401
@@ -328,7 +326,7 @@ def test_unverified_resend_sender_is_restricted_to_owner_without_recipient_rewri
 ):
     with TestClient(app) as client:
         login(client, mail)
-        client.post("/admin/accounts", headers=HEADERS, json={**MEMBER, "email": MEMBER_EMAIL})
+        add_member(client, {**MEMBER, "email": MEMBER_EMAIL})
         monkeypatch.setenv("AUTH_EMAIL_FROM", "onboarding@resend.dev")
         monkeypatch.setenv("AUTH_EMAIL_TEST_RECIPIENT", OWNER)
         previous = len(mail)
@@ -399,8 +397,6 @@ def test_duplicate_or_invalid_email_is_rejected_atomically(app, mail):
     with TestClient(app) as client:
         login(client, mail)
         for email in (OWNER, "bad\r\nBcc: attacker@example.com", "not-an-email"):
-            response = client.post(
-                "/admin/accounts", headers=HEADERS, json={**MEMBER, "email": email}
-            )
+            response = client.post("/admin/accounts", headers=HEADERS, json={"email": email})
             assert response.status_code in {409, 422}
         assert len(client.get("/admin/accounts").json()) == 1

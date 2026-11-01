@@ -198,7 +198,7 @@ def create_app(
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             browser_mutation = (
                 bool(request.cookies.get(COOKIE_NAME))
-                or path.startswith("/auth/setup/")
+                or path.startswith(("/auth/setup/", "/auth/enroll/"))
                 or path
                 in {
                     "/auth/sign-in",
@@ -229,19 +229,21 @@ def create_app(
                     )
         if (
             path in {"/auth/sign-in", "/auth/mfa/verify", "/auth/mfa/resend"}
-            or path.startswith("/auth/setup/")
+            or path.startswith(("/auth/setup/", "/auth/enroll/"))
         ) and request.method == "POST":
             ip = request.client.host if request.client else "unknown"
             try:
                 request.app.state.limits.take(
-                    "admin-setup-ip"
+                    "enrollment-ip"
+                    if path.startswith("/auth/enroll/")
+                    else "admin-setup-ip"
                     if path.startswith("/auth/setup/")
                     else "mfa-ip"
                     if path.startswith("/auth/mfa/")
                     else "login-ip",
                     ip,
                     maximum=20
-                    if path.startswith("/auth/setup/")
+                    if path.startswith(("/auth/setup/", "/auth/enroll/"))
                     else 30
                     if path.startswith("/auth/mfa/")
                     else 20,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beginAdministratorSetup, completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifyAdministratorEmail, verifySecondFactor } from "./index";
+import { beginAccountEnrollment, completeAccountEnrollment, resendEnrollmentEmail, verifyEnrollmentEmail, beginAdministratorSetup, completeSignIn, currentUser, refreshAuthSession, resendSecondFactor, setupAdministrator, signIn, signOut, verifyAdministratorEmail, verifySecondFactor } from "./index";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -175,5 +175,41 @@ it("creates the administrator only using a verified setup grant", async () => {
   const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
   expect(url).toContain("/auth/setup/complete");
   expect(JSON.parse(String(init.body))).toEqual({ setup_grant: "verified-private-setup-grant", username: "chosen-admin", password: "a-real-test-password" });
+  expect(currentUser()).toEqual(user);
+});
+
+
+it("approved-member email proof does not sign in or persist setup credentials", async () => {
+  const localStorage = { removeItem: vi.fn(), setItem: vi.fn() };
+  vi.stubGlobal("window", { localStorage });
+  const challenge = { mfa_required: true, challenge_id: "private-enrollment-challenge", destination: "m***@example.com", expires_in: 300, resend_after: 60 };
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    expect(init?.credentials).toBe("include");
+    return Response.json(url.endsWith("/auth/enroll/verify") ? { setup_grant: "private-enrollment-proof" } : url.endsWith("/auth/enroll/start") ? challenge : []);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await beginAccountEnrollment("member@example.com")).toEqual(challenge);
+  expect(currentUser()).toBeNull();
+  expect(await verifyEnrollmentEmail(challenge.challenge_id, "123456")).toEqual({ setup_grant: "private-enrollment-proof" });
+  expect(currentUser()).toBeNull();
+  expect(localStorage.setItem).not.toHaveBeenCalled();
+  const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(JSON.parse(String(init.body))).toEqual({ email: "member@example.com" });
+  expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
+});
+
+it("enrollment resends with its challenge and creates credentials only with verified proof", async () => {
+  vi.stubGlobal("window", {});
+  const user = { email: "chosen-member", role: "member" as const };
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ challenge_id: "replacement-proof" })).mockResolvedValueOnce(Response.json({ user }));
+  vi.stubGlobal("fetch", fetchMock);
+  await resendEnrollmentEmail("private-enrollment-challenge");
+  const [resendUrl, resendInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(resendUrl).toContain("/auth/enroll/resend");
+  expect(JSON.parse(String(resendInit.body))).toEqual({ challenge_id: "private-enrollment-challenge" });
+  expect(await completeAccountEnrollment("private-enrollment-proof", "chosen-member", "a-real-test-password")).toEqual(user);
+  const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+  expect(url).toContain("/auth/enroll/complete");
+  expect(JSON.parse(String(init.body))).toEqual({ setup_grant: "private-enrollment-proof", username: "chosen-member", password: "a-real-test-password" });
   expect(currentUser()).toEqual(user);
 });

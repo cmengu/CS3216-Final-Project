@@ -2,7 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from test_accounts import ADMIN, HEADERS, login
+from test_accounts import ADMIN, HEADERS, add_member, login
 from test_api import DATA, lightweight_reader
 from test_background_batches import wait_completed
 from test_extract import FakeClient, completed
@@ -110,7 +110,7 @@ def test_approved_accounts_cannot_upload_into_another_accounts_project(tmp_path)
         login(client)
         pid = project(client, "Private expenses")
         member = {"username": "other-member", "password": "other-member-password-2026"}
-        assert client.post("/admin/accounts", headers=HEADERS, json=member).status_code == 201
+        add_member(client, member)
         client.cookies.clear()
         login(client, member)
         assert client.get("/projects").json() == []

@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from .access_store import AccessStore
 from .admin_setup import AdministratorSetup
+from .enrollment import Enrollment
 from .mfa import TwoFactor
 from .passwords import hash_password, verify_password
 
@@ -60,6 +61,7 @@ class Accounts(AccessStore):
         self.dummy_password = _DUMMY_PASSWORD_HASH
         self.mfa = TwoFactor(self)
         self.administrator_setup = AdministratorSetup(self)
+        self.enrollment = Enrollment(self)
 
     def _lock(self, db):
         self.execute(

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from test_accounts import ADMIN, HEADERS, login
+from test_accounts import ADMIN, HEADERS, add_member, login
 from test_api import lightweight_reader
 from test_xml_invoice import XML
 
@@ -175,7 +175,7 @@ def test_batch_status_is_private_and_exact_duplicates_are_skipped(configuration,
         duplicate = submit(client, ("invoice-01.pdf",))
         assert duplicate["invoices"] == [] and len(duplicate["duplicates"]) == 1
         other = {"username": "second-member", "password": "second-member-password-2026"}
-        assert client.post("/admin/accounts", headers=HEADERS, json=other).status_code == 201
+        add_member(client, other)
         client.cookies.clear()
         login(client, other)
         assert client.get("/invoice-batches/" + receipt["id"]).status_code == 404

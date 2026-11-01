@@ -150,8 +150,13 @@ and frontend offline login fallback have been removed.
 
 ## Approved accounts and private workspaces
 
-There is no public registration. An administrator creates usernames/passwords, assigns Member
-or Administrator access, enables/disables accounts and resets passwords at `/admin/accounts`.
+There is no open registration. At `/admin/accounts`, an administrator approves only an email
+address. The person opens `/join` (also linked on the sign-in page), requests a code at that
+approved address, verifies it, then chooses their own username and password. Approval creates
+no account or workspace until that final step. New accounts are Members; an administrator can
+change their access afterwards. Pending approvals are listed separately and can be revoked,
+which invalidates pending codes and verified setup grants, even if the email is approved again.
+Administrators can still enable/disable accounts, change roles and reset existing passwords.
 Each account owns a separate, stable private workspace for invoices, master versions and its
 Outlook connection. Administrative access manages credentials; it does not grant read access
 to another account’s invoices or batches. Any account can change its own password at `/account`.
@@ -160,8 +165,8 @@ Passwords require 15–128 characters and use salted Argon2id (19 MiB, two passe
 Every approved account signs in with its password plus a six-digit code sent to its registered
 email address. The first administrator's destination is configured by the operator using
 `AUTH_ADMIN_EMAIL`; the setup form cannot choose a different destination. Administrators
-register an email when creating each approved account. Email ownership is verified by entering
-a delivered code. Password resets preserve the registered email. Existing password-only or
+approve an email before each new account can be created. Email ownership is verified before
+the username/password form appears. The public endpoint cannot choose a role or workspace. Password resets preserve the registered email. Existing password-only or
 old authenticator sessions no longer authenticate; existing data and accepted jobs are retained.
 
 Codes expire after five minutes and are single-use, with five failed attempts per challenge,

@@ -6,8 +6,8 @@ Previously one configured login minted a new data-owner ID each time, the browse
 
 ## Approved accounts
 
-- A one-time operator-prepared setup code creates the first administrator. There is no public registration and no default credential fallback.
-- Administrators create accounts, set initial credentials, assign Member/Administrator access, disable/enable access and reset another account’s password at `/admin/accounts`.
+- First-admin setup verifies the operator-configured email before accepting credentials. No environment password or setup token is required.
+- Administrators approve email addresses at `/admin/accounts`. Users verify the approved inbox at `/join`, then choose their own credentials and receive a private Member workspace. Administrators can subsequently change access, disable/enable accounts and reset existing passwords.
 - Passwords require 15–128 characters and use salted Argon2id. Validation errors omit submitted input, including passwords/setup codes. The UI never retains passwords in browser storage or returns hashes in account lists.
 - Every login has a registered server session. Disabling an account, changing its role, or resetting/changing its password invalidates all existing sessions; re-enabling access does not reactivate old tokens.
 - Password changes verify the current password and sign out all sessions. An administrator cannot disable/demote their own account through account-management actions, and at least one active administrator is retained.
@@ -38,6 +38,31 @@ The landing page now names PDF, Vietnamese HDon XML, ZIP and RAR support and exp
 Merged main at `8fa909d`, including project folders, per-project masters and typography/audit updates. Background uploads now retain their selected project, comparison mode and original master version through restart. Duplicate detection is scoped to each project. Totals-only PDF/XML jobs skip price checks. Legacy recovery transfers complete project ownership without bypassing database ownership constraints. Project totals refresh when queued invoices finish.
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
+
+## Email-only approval and user enrollment, 1 November 2026
+
+Account approval now accepts only an email address, with no administrator-chosen username or
+initial password. Pending approvals are separate from registered accounts and create no login
+or workspace. The user opens `/join`, requests a code at the approved inbox, verifies it, then
+chooses credentials. Completion atomically consumes the approval and creates a Member with
+its own stable workspace. Public requests cannot choose a role, recipient replacement or
+workspace. Existing accounts and invoice data are preserved.
+
+Pending approval management requires a live administrator session, rechecked inside the write
+transaction. Revocation deletes pending code challenges and verified grants; approving that email
+again creates a new approval identity. Five-minute codes/grants, five code attempts, purpose-separated
+HMACs, hashed bearer tokens, persistent inbox/IP limits and CSRF checks protect enrollment.
+New code requests cannot invalidate an already verified grant. Unknown/existing emails receive
+the same start response with no email or account creation. Duplicate usernames/emails and
+concurrent completions cannot create partial or duplicate accounts.
+
+363 backend tests and 158 frontend tests passed; 16 optional Postgres/model cases were skipped.
+Production build, TypeScript and frontend/backend lint/format passed. Automated mail delivery
+uses isolated synthetic fixtures; no real security emails are sent by the checks. Chrome QA
+passed email-only approval, verification before credential entry, revocation after inbox proof,
+fresh proof after reapproval, and transition from a pending email to an active private Member.
+It also covered later email-code sign-in, desktop/mobile code screens and background ZIP
+completion after closing the browser, without page errors.
 
 ## Email-first administrator creation, 1 November 2026
 

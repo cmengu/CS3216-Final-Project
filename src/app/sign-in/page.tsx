@@ -111,6 +111,7 @@ export default function SignIn() {
             Sign in
           </button>
         </form>}
+        <p className="ic-hint" style={{ marginTop: 20 }}>Newly approved? <Link className="ic-link" href="/join">Set up your approved account</Link>.</p>
       </main>
     </div>
   );

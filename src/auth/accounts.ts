@@ -11,6 +11,12 @@ export interface ApprovedAccount {
   email?: string;
 }
 
+export interface AccountApproval {
+  id: string;
+  email: string;
+  created_at: number;
+}
+
 export async function accountRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${SERVICE_URL}${path}`, {
     ...options, credentials: "include", cache: "no-store",

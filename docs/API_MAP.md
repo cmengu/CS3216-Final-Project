@@ -52,7 +52,14 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 | GET | `/auth/me` | Verify the registered, unexpired, unrevoked account session |
 | POST | `/auth/sign-out` | Revoke the current login and clear its cookie |
 | PUT | `/auth/password` | Verify current password, replace it, and invalidate all sessions |
-| GET/POST | `/admin/accounts` | Administrators list/create approved accounts |
+| GET | `/admin/accounts` | Administrators list registered accounts |
+| POST | `/admin/accounts` | Administrator approves `{email}` only; no credentials/account yet |
+| GET | `/admin/account-approvals` | Administrators list pending email approvals |
+| DELETE | `/admin/account-approvals/{id}` | Revoke a pending approval and its codes/grants |
+| POST | `/auth/enroll/start` | Request a code for a pending approved email; unknown/existing emails receive the same response without sending |
+| POST | `/auth/enroll/resend` | Resend to the pending approval's email using only the current challenge |
+| POST | `/auth/enroll/verify` | Verify the approved inbox; return a five-minute, single-use setup grant without an account/session |
+| POST | `/auth/enroll/complete` | Grant plus self-chosen username/password; atomically consume approval, create a Member/private workspace and verified session |
 | PATCH | `/admin/accounts/{id}` | Administrators enable/disable, change role or reset another account |
 
 Every account has its own private workspace; an administrator’s invoice permissions remain
@@ -61,9 +68,9 @@ passwords/hashes. Every approved account requires an emailed security code; pass
 old authenticator sessions cannot access protected resources. Challenges expire after five
 minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
 Resending uses only the challenge, never a caller-selected email address. Delivery failures do
-not authenticate. Initial admin creation requires a verified email and atomically consumes its setup grant. Later admin account creation requires a registered email; changes to an existing security
+not authenticate. Initial admin creation requires a verified email and atomically consumes its setup grant. Later users require an administrator-approved email and choose their credentials only after inbox proof. Enrollment grants are purpose-separated from login/admin setup, and revocation invalidates all pending proof. Duplicate emails/usernames cannot create partial accounts. Changes to an existing security
 email require the audited operator CLI. Password resets preserve email verification.
-There is no public registration. Login and expensive operations have persistent
+There is no open registration. Login, enrollment and expensive operations have persistent
 rate limits; 429 includes `Retry-After`. All browser mutations require
 `X-Requested-With: InvoiceChecker` and a trusted Origin when present. Sign-in, setup and sign-out
 require the header even before a session cookie exists. Unsafe requests with a cookie and an

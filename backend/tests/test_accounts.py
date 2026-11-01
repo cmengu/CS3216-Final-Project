@@ -1,6 +1,7 @@
 """Approved-account access, private durable ownership, and credential invalidation."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -32,9 +33,39 @@ def login(client, credentials=ADMIN):
 
 
 def add_member(client, credentials=MEMBER):
-    response = client.post("/admin/accounts", headers=HEADERS, json=credentials)
+    email = credentials.get("email", credentials["username"] + "@example.com")
+    response = client.post("/admin/accounts", headers=HEADERS, json={"email": email})
     assert response.status_code == 201, response.text
-    return response.json()
+    cookies = list(client.cookies.jar)
+    messages = []
+    with (
+        patch("api.security_mail.ensure_ready"),
+        patch(
+            "api.security_mail.send_code",
+            side_effect=lambda address, code, delivery: messages.append(code),
+        ),
+    ):
+        challenge = client.post("/auth/enroll/start", headers=HEADERS, json={"email": email}).json()
+        proof = client.post(
+            "/auth/enroll/verify",
+            headers=HEADERS,
+            json={"challenge_id": challenge["challenge_id"], "code": messages[-1]},
+        )
+        assert proof.status_code == 200, proof.text
+        completed = client.post(
+            "/auth/enroll/complete",
+            headers=HEADERS,
+            json={
+                "setup_grant": proof.json()["setup_grant"],
+                "username": credentials["username"],
+                "password": credentials["password"],
+            },
+        )
+        assert completed.status_code == 200, completed.text
+    client.cookies.clear()
+    for cookie in cookies:
+        client.cookies.jar.set_cookie(cookie)
+    return next(row for row in client.get("/admin/accounts").json() if row.get("email") == email)
 
 
 def test_only_approved_credentials_can_sign_in(approved_app):
@@ -46,7 +77,7 @@ def test_only_approved_credentials_can_sign_in(approved_app):
             assert admin.post("/auth/sign-in", json=credentials, headers=HEADERS).status_code == 401
         login(admin)
         account = add_member(admin)
-        assert set(account) == {"id", "username", "role", "active", "created_at"}
+        assert set(account) == {"id", "username", "role", "active", "created_at", "email"}
         assert account["role"] == "member" and account["active"] is True
         admin.cookies.clear()
         assert login(admin, MEMBER)["user"]["role"] == "member"
@@ -72,7 +103,7 @@ def test_member_cannot_manage_accounts_or_access_another_workspace(approved_app)
         assert client.get("/admin/accounts").status_code == 403
         assert (
             client.post(
-                "/admin/accounts", json={**MEMBER, "username": "unapproved"}, headers=HEADERS
+                "/admin/accounts", json={"email": "unapproved@example.com"}, headers=HEADERS
             ).status_code
             == 403
         )

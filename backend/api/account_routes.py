@@ -5,10 +5,9 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import security_mail
-from .accounts import public_user
 from .auth import (
     COOKIE_NAME,
     TOKEN_TTL_SECONDS,
@@ -34,10 +33,12 @@ class CompleteSetup(BaseModel):
 
 
 class CreateAccount(BaseModel):
-    username: str = Field(min_length=2, max_length=80)
-    password: str = Field(min_length=15, max_length=128)
-    role: Literal["admin", "member"] = "member"
-    email: str | None = Field(default=None, max_length=254)
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=254)
+
+
+class EnrollmentComplete(CompleteSetup):
+    model_config = ConfigDict(extra="forbid")
 
 
 class UpdateAccount(BaseModel):
@@ -239,23 +240,57 @@ def list_accounts(request: Request):
 def create_account(body: CreateAccount, request: Request):
     claims = require_user(request, admin=True)
     request.app.state.limits.take("manage-accounts", claims["user_id"], maximum=30, seconds=3600)
-    if request.app.state.accounts.mfa.required(None) and not body.email:
-        raise HTTPException(
-            422, "Register this person's email address before approving the account."
-        )
     try:
-        return public_user(
-            request.app.state.accounts.create_user(
-                body.username,
-                body.password,
-                body.role,
-                actor=claims["user_id"],
-                actor_session=claims["session_id"],
-                email=body.email,
-            )
+        return request.app.state.accounts.enrollment.approve(
+            body.email, actor=claims["user_id"], actor_session=claims["session_id"]
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/admin/account-approvals")
+def list_approvals(request: Request):
+    require_user(request, admin=True)
+    return request.app.state.accounts.enrollment.list_approvals()
+
+
+@router.delete("/admin/account-approvals/{approval_id}")
+def revoke_approval(approval_id: str, request: Request):
+    claims = require_user(request, admin=True)
+    return request.app.state.accounts.enrollment.revoke(
+        approval_id, actor=claims["user_id"], actor_session=claims["session_id"]
+    )
+
+
+@router.post("/auth/enroll/start")
+def start_enrollment(body: CreateAccount, request: Request):
+    try:
+        return clear_cookie(
+            request, JSONResponse(request.app.state.accounts.enrollment.start(body.email))
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/auth/enroll/resend")
+def resend_enrollment(body: ResendFactor, request: Request):
+    return request.app.state.accounts.enrollment.resend(body.challenge_id)
+
+
+@router.post("/auth/enroll/verify")
+def verify_enrollment(body: VerifyFactor, request: Request):
+    return request.app.state.accounts.enrollment.verify(body.challenge_id, body.code.strip())
+
+
+@router.post("/auth/enroll/complete")
+def complete_enrollment(body: EnrollmentComplete, request: Request):
+    try:
+        user = request.app.state.accounts.enrollment.complete(
+            body.setup_grant, body.username, body.password
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return login_response(request, user, mfa_verified=True)
 
 
 @router.patch("/admin/accounts/{user_id}")
