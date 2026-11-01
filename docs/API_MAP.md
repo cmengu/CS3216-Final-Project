@@ -69,7 +69,8 @@ Passwords use salted Argon2id. Tokens are invalidated by logout and account acce
 
 Every account has its own private workspace; an administrator’s invoice permissions remain
 limited to that administrator’s own workspace. Account management responses never include
-passwords/hashes. Every approved account requires an emailed security code; password-only and
+passwords/hashes. Delivery supports Resend (default) or explicit `AUTH_EMAIL_PROVIDER=gmail` with a private Google app password and validated Gmail SMTP TLS. Recipients remain registered account inboxes; Gmail failures never fall back to Resend.
+Every approved account requires an emailed security code; password-only and
 old authenticator sessions cannot access protected resources. Challenges expire after five
 minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
 Resending uses only the challenge, never a caller-selected email address. Delivery failures do

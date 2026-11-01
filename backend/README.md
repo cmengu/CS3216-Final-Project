@@ -193,6 +193,40 @@ Email delivery failures leave the user signed out; no code logging or alternate-
 fallback is available. This is email two-step verification, not phishing-resistant MFA; inbox
 compromise can defeat it. The authenticator/QR/recovery-code flow is no longer used.
 
+### Configure Gmail sending without a custom domain
+
+Set `AUTH_EMAIL_PROVIDER=gmail` to send security codes through an existing Gmail account.
+This affects delivery for first-admin setup, sign-in, approved-user enrollment and password
+recovery. Recipients keep their own registered inboxes; they do not need Gmail accounts.
+The sender account can differ from `AUTH_ADMIN_EMAIL`.
+
+1. Sign into the Gmail account that will send codes and enable Google 2-Step Verification.
+2. Create an app password named **Invoice Checker** at <https://myaccount.google.com/apppasswords>.
+   Some organization/Advanced Protection accounts do not offer app passwords. Use Google's
+   instructions below if the option is unavailable. Do not use the ordinary Gmail password.
+3. Save the settings privately in `backend/.env.email` or backend environment variables:
+
+```dotenv
+AUTH_EMAIL_PROVIDER=gmail
+GMAIL_SMTP_USER=your_sender@gmail.com
+GMAIL_APP_PASSWORD=your_private_google_app_password
+AUTH_ADMIN_EMAIL=owner@example.com
+```
+
+4. Restart the backend after the app password is saved. Spaces between the app password's
+   groups are accepted. Keep existing Resend credentials private if retaining them as an
+   explicit alternative; Gmail delivery does not use `AUTH_EMAIL_FROM` or the Resend test recipient.
+
+Connections go only to `smtp.gmail.com:465` with certificate-validated TLS. The authenticated
+Gmail address is the sender; the approved recipient is preserved. SMTP failures produce a
+sanitized error and do not issue a login session, log codes, or silently switch providers.
+Google's sending limits still apply; this configuration is for ordinary account security codes.
+Resend remains the default when `AUTH_EMAIL_PROVIDER` is unset. Keep the current provider
+active until the Gmail app password is ready to avoid interrupting existing administrator access.
+
+Provider instructions: [Google app passwords](https://support.google.com/accounts/answer/185833)
+and [Gmail SMTP](https://developers.google.com/workspace/gmail/imap/imap-smtp).
+
 ### Configure Resend email delivery
 
 1. Create a Resend account. For testing with `onboarding@resend.dev`, use the same account email

@@ -39,6 +39,27 @@ Merged main at `8fa909d`, including project folders, per-project masters and typ
 
 After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
 
+## Gmail delivery option, 2 November 2026
+
+Added `AUTH_EMAIL_PROVIDER=gmail` so an existing Gmail mailbox can send security codes without
+requiring a custom sending domain. Resend remains the default provider, including its existing
+owner-only test-sender guard. Gmail requires a private Google app password and keeps the
+administrator/approved recipient addresses independent of the sending mailbox. The active
+provider is not switched until valid credentials are available.
+
+Gmail delivery connects only to `smtp.gmail.com:465` with validated TLS and a bounded timeout.
+The authenticated Gmail mailbox is the sender, while the existing account flow selects the
+registered recipient. Provider responses, credentials and codes are excluded from errors and
+logs. Authentication, TLS and recipient refusal errors fail delivery; there is no automatic
+provider fallback, recipient rewrite, or sign-in bypass. Existing challenge cleanup and
+account/IP limits apply to both delivery providers. Automated tests use a fake SMTP transport
+and send no real emails.
+
+90 targeted delivery, MFA, enrollment, setup and recovery tests passed; four optional database
+cases were skipped. Backend lint and formatting passed. Real Gmail delivery still requires the
+owner to save an app password locally and activate the provider; mocked tests do not prove
+actual inbox delivery.
+
 ## Email sign-in after password reset, 2 November 2026
 
 A completed email password reset previously still required the chosen username at sign-in,
