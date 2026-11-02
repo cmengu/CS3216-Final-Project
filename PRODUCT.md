@@ -26,6 +26,9 @@ The checker is conservative by design. A step that cannot do its job fails with 
 
 ## Operating Context
 
+- Only administrator-approved accounts can sign in. Each account has a private, persistent invoice/master-list workspace and its own Outlook connection. Administrators manage accounts without viewing other users’ invoices.
+- After a complete batch uploads, server-side checks continue with the uploaded master version even when the browser closes. The browser must stay open until upload finishes. Queued jobs and original files require a persistent, running backend.
+
 - Invoices are uploaded as PDFs (up to 20 MiB and 1 to 30 pages) or Vietnamese HDon XML files (up to 20 MiB). ZIP/RAR archives up to 50 MiB are unpacked locally, including folders, with limits of 100 MiB expanded and 1,000 entries. Nested/password-protected archives are unsupported.
 - For PDFs, the service reads with Docling OCR and extracts printed fields with a model. XML fields are read directly without OCR or a model. Both use the same price-sheet checks (CSV or Excel) and preserve uncertainty for review.
 - Matching uses supplier, PO, invoice date, currency, item code and unit. Charges with no code need an exact description match. Printed discounts, tax rates and printed exchange rates are applied; price differences above 0.005 are flagged, undercharges included.

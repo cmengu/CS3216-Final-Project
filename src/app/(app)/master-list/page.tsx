@@ -30,7 +30,7 @@ function MasterListView() {
   const project = requestedProject ? eligible.find((p) => p.id === requestedProject) : eligible[0];
   const { masterList, loading, error, reload } = useProjectMaster(project?.id ?? null);
   const base = `/master-list?project=${encodeURIComponent(project?.id ?? "")}`;
-  const selector = <label>Project <select className="ic-select" value={project?.id ?? ""} onChange={(e) => router.push(`/master-list?project=${encodeURIComponent(e.target.value)}`)}>
+  const selector = <label>Invoice group <select className="ic-select" value={project?.id ?? ""} onChange={(e) => router.push(`/master-list?project=${encodeURIComponent(e.target.value)}`)}>
     {eligible.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
   </select></label>;
   const [q, setQ] = useState("");
@@ -51,7 +51,7 @@ function MasterListView() {
 
   if (projectsLoading || loading) return <p className="ic-empty">Loading…</p>;
   if (projectError || error) return <div className="ic-page"><p role="alert">{projectError ?? error}</p><button onClick={reload}>Retry</button></div>;
-  if (!project) return <div className="ic-page"><h1>Project master lists</h1><p>Create a project with master-list comparison to upload a price sheet.</p><Link className="ic-link" href="/invoices">Go to projects</Link></div>;
+  if (!project) return <div className="ic-page"><h1>Group master lists</h1><p>Create an invoice group with master-list comparison to upload a price sheet.</p><Link className="ic-link" href="/invoices">Go to invoice groups</Link></div>;
   if (!masterList) return <div className="ic-page ic-page--narrow">{selector}<h1 className="ic-h1">Upload master list</h1>
     <MasterImport key={project.id} projectId={project.id} onSaved={() => { reload(); router.replace(`${base}&uploaded=1`); }} />
   </div>;

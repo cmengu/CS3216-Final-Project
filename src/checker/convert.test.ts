@@ -149,9 +149,9 @@ describe("toSupplierInvoice", () => {
     const failed = toSupplierInvoice({ ...invoice02, status: "failed", error: "reading: No readable text or tables", check: null });
     expect(failed.state).toBe("failed");
     expect(failed.error).toBe("reading: No readable text or tables");
-    const odd = toSupplierInvoice({ ...invoice02, status: "queued", check: null });
+    const odd = toSupplierInvoice({ ...invoice02, status: "future-unknown-stage", check: null });
     expect(odd.state).toBe("failed");
-    expect(odd.error).toContain("queued");
+    expect(odd.error).toContain("future-unknown-stage");
   });
 
   it("maps an in-progress status to checking and a failure to failed", () => {
@@ -170,4 +170,13 @@ describe("the clerk's outcome", () => {
     const odd = toSupplierInvoice({ ...invoice02, outcome: "paid", outcome_reason: "x", decided_at: "2026-10-15T02:00:00+00:00" });
     expect([odd.outcome, odd.outcomeReason, odd.decidedAt]).toEqual([null, null, null]);
   });
+});
+
+
+it("keeps queued server invoices in progress without allowing a payment decision", () => {
+  const queued = toSupplierInvoice({ ...invoice02, status: "queued", invoice: null, check: null });
+  expect(queued.state).toBe("checking");
+  expect(queued.queued).toBe(true);
+  expect(queued.lines).toEqual([]);
+  expect(queued.error).toBeNull();
 });

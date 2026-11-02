@@ -9,8 +9,11 @@ holds the reader, the service, the price check and the scorer, with invented inv
 (`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
 defaults to `http://127.0.0.1:8001`. The earlier PO demo remains below.
 
-**Invoice projects:** see [project workflow, database changes and Supabase migration](docs/projects-and-supabase.md). Projects can compare against their own uploaded master list or just sum extracted invoice totals.
-Upload individual PDFs/XMLs (up to 20 MiB each) or ZIP/RAR archives (up to 50 MiB). Archives are unpacked locally in the browser, including invoices inside folders, then checked one at a time. Expanded archives are limited to 100 MiB and 1,000 entries. Password-protected and nested archives are not unpacked. Other file types are skipped with a notice. XML uses structured fields directly, without OCR/model extraction; it requires live mode and a master list. The original XML remains available for line review and download.
+Upload individual PDFs/XMLs (up to 20 MiB each) or ZIP/RAR archives (up to 50 MiB). Archives are unpacked locally in the browser, including invoices inside folders, then uploaded together to the server’s durable background queue. Keep the browser open until upload completes; checking then continues without it. Expanded archives are limited to 100 MiB and 1,000 entries. Password-protected and nested archives are not unpacked. Other file types are skipped with a notice. XML uses structured fields directly, without OCR/model extraction; it requires live mode. A master list is needed only for invoice groups that compare prices. The original XML remains available for line review and download.
+
+**Accounts:** administrators approve email addresses at `/admin/accounts`; the app emails a personal, expiring join link so users can choose their own username/password at `/join`. Each account has its own persistent private workspace. Every sign-in requires a security code sent to the account’s registered email. Forgot-password recovery also verifies that inbox before accepting a new password. Prepare the first admin using the [backend setup instructions](backend/README.md#approved-accounts-and-private-workspaces). Public demo login is disabled.
+**Invoice groups:** see [group workflow, database changes and Supabase migration](docs/projects-and-supabase.md). Invoice groups can compare against their own uploaded master list or just sum extracted invoice totals.
+
 
 **Continuing the work? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md):** where it stands and what is next.
 Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).
@@ -199,21 +202,89 @@ The app is two deployments. The Vercel project is connected to this GitHub repo:
 | Screens (Next.js) | Vercel, project `invoice-checker` | https://invoice-checker-cs3216.vercel.app (also `-wheat`) |
 | Service (FastAPI) | Railway, project `invoice-checker`, service `invoice-api` | https://invoice-api-production-1f3a.up.railway.app |
 
-**Screens.** `vercel.json` pins the framework to Next.js. The one build-time setting is `NEXT_PUBLIC_INVOICE_API`, the service's URL, set on the Vercel project. To deploy a checkout without going through GitHub, from the repo root:
+**Screens (Vercel).** Add `NEXT_PUBLIC_INVOICE_API=/api` to the Vercel environment being
+deployed, then rebuild/redeploy. The existing `vercel.json` forwards `/api/*` to the Railway
+service above. Update that rewrite destination if the backend URL changes. This keeps API
+requests and login cookies on the frontend's hostname. Keep the localhost API URL in local
+`.env.local` only. Backend secrets must never have a `NEXT_PUBLIC_` prefix.
 
+**Backend (Railway).** The current image is built from the repository root with
+`RAILWAY_DOCKERFILE_PATH=backend/Dockerfile`. Add the following in the service's Variables
+settings, replacing the example frontend, inbox and private values:
+
+```dotenv
+AUTH_REQUIRED=1
+AUTH_SECRET=<persistent-random-secret-at-least-32-characters>
+AUTH_ADMIN_EMAIL=owner@example.com
+AUTH_EMAIL_PROVIDER=agentmail
+AGENTMAIL_API_KEY=<private-send-only-agentmail-key>
+AGENTMAIL_INBOX_ID=your_sender@agentmail.to
+FRONTEND_URL=https://your-frontend.vercel.app
+INVOICE_ALLOWED_ORIGINS=https://your-frontend.vercel.app
+INVOICE_MODE=live
+INVOICE_CHECKER=master_list
+INVOICE_DATA_DIR=/data
+INVOICE_OCR_TIMEOUT=180
+OPENAI_MODEL=gemma4:e4b
+OLLAMA_BASE_URL=http://your-private-ollama-host:11434
+OLLAMA_CHALLENGER_MODEL=qwen3.5:4b
+OPENAI_API_KEY=ollama
 ```
-vercel deploy --prod --yes
-```
 
-**Service.** `backend/Dockerfile` builds the image from the repo root (`RAILWAY_DOCKERFILE_PATH=backend/Dockerfile`), with CPU-only torch so the image stays small. A volume is mounted at `/data` and `INVOICE_DATA_DIR=/data` keeps the SQLite database and uploaded files across deploys. The service's variables are `INVOICE_MODE=live`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`, `INVOICE_OCR_TIMEOUT`, and `INVOICE_ALLOWED_ORIGINS`, a comma-separated list of the screens' origins for CORS (the dev server is allowed when it is unset). From the repo root, after `railway login` and `railway link`:
+Use the same private AgentMail sending key that is saved locally in `backend/.env.email`;
+Git and the Docker image deliberately exclude local environment files. Preserve an existing
+production `AUTH_SECRET`; for a new environment generate a separate random secret and keep
+it stable across redeploys. `AUTH_MFA_KEY` is optional; preserve it too if already configured.
+The administrator email controls first-account setup. With an empty cloud database, open
+`/setup`, verify the emailed code and choose credentials. Every subsequent sign-in requires
+a new email code. No environment password, Resend key or Brevo key is needed with AgentMail.
 
-```
-railway up --detach
-```
+**Keeping the existing Gemma server.** Both `gemma4:e4b` and the configured challenger must
+be available in Ollama. The app uses the native Ollama API whenever `OLLAMA_BASE_URL` is set.
+`OPENAI_API_KEY=ollama` is a compatibility placeholder for the current live-startup validation,
+not an OpenAI credential; it must not be used for a hosted OpenAI configuration. The local
+Ollama address is private: a cloud container needs an actual route to that private network,
+such as a correctly configured Tailscale connection. Setting `OLLAMA_BASE_URL` or a Tailscale
+key alone does not join a network. **The current backend Dockerfile does not install or start
+Tailscale.** Configure the cloud-side connection separately and verify the backend can reach
+Ollama before testing PDF processing. Keep Ollama private; the machine hosting Gemma must
+remain running while cloud jobs use it. XML invoices parse directly without calling Gemma,
+although live startup still validates the model settings above.
 
-Check `https://invoice-api-production-1f3a.up.railway.app/health` for `"mode": "live"` once it is up. Changing a variable in Railway rebuilds and redeploys on its own.
+**Persistent storage and background jobs.** Mount a Railway volume at `/data`; this is what
+makes `INVOICE_DATA_DIR=/data` persistent. Setting the variable without mounting storage is
+not enough. Keep the backend running (disable automatic sleeping for continuous processing)
+and retain the Docker command's single worker. Already accepted uploads continue while the
+browser is closed, provided the backend and required model server stay available.
 
-**Database.** The service keeps its data in SQLite under `INVOICE_DATA_DIR` unless `DATABASE_URL` is set, in which case it uses Postgres and creates its tables in a schema named `invoice_checker` (so it can share a Supabase project with other apps). Uploaded PDFs are stored in the database too; the local `files/` folder is only a cache. For Supabase use the pooler URI on port 6543, `postgresql://postgres.<ref>:<password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres`, copied from the project's Connect dialog (the host differs per project). Tests run against SQLite; `tests/test_postgres_store.py` runs only when `DATABASE_URL` is set.
+**Supabase/Postgres (if used).** Keep the existing backend-only `DATABASE_URL`, or add the
+Postgres connection string from Supabase's **Connect** dialog with TLS enabled
+(`sslmode=require`). This is a database connection string, not the Supabase website URL or
+an anon/service-role API key. Use a direct or session-pooler connection for the persistent
+backend, depending on network support; the app also disables prepared statements for
+transaction-pooler compatibility. The service initializes its private `invoice_checker`
+schema. Source documents and queue records are stored in Postgres; `/data` is still needed
+for durable Outlook tokens. Without `DATABASE_URL`, the database is SQLite under `/data`.
+Keep the current production database/volume to retain users and invoices. Git does not copy
+local accounts or documents to the cloud. The Invoice group wording change needs no database
+migration; existing IDs, URLs and `project_id` fields stay compatible.
+
+**Outlook import (optional).** Add `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and
+`MICROSOFT_REDIRECT_URI`. With the Vercel `/api` proxy above, register
+`https://your-frontend.vercel.app/api/auth/outlook/callback` in Microsoft and use that exact URL
+for `MICROSOFT_REDIRECT_URI`, so the browser returns to the same hostname that issued the
+login/OAuth cookies. `MICROSOFT_TENANT_ID` is optional and defaults to `common`.
+
+Redeploy the updated backend and frontend together after setting their variables. A feature
+branch push does not merge `main` or prove that the production backend was redeployed.
+Check the backend `/health`, then test administrator email verification, a personal invitation,
+one XML invoice, one PDF invoice and a batch that completes after closing the browser.
+
+Provider documentation: [Vercel environment variables](https://vercel.com/docs/environment-variables),
+[Vercel API rewrites](https://vercel.com/docs/routing/rewrites),
+[Railway volumes](https://docs.railway.com/volumes),
+[Supabase database connections](https://supabase.com/docs/guides/database/connecting-to-postgres),
+and [Tailscale container networking](https://tailscale.com/docs/concepts/userspace-networking).
 
 ## Help and maintainer
 

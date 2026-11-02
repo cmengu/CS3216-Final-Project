@@ -10,12 +10,22 @@ import { resetMasterListSession } from "@/masterList";
 
 export interface User {
   email: string;
+  id?: string;
+  role?: "admin" | "member";
 }
 
-export type SignInResult = { ok: true; user: User } | { ok: false; error: "invalid" };
+export interface TwoFactorChallenge {
+  mfa_required: true;
+  challenge_id: string;
+  destination: string;
+  expires_in: number;
+  resend_after: number;
+}
 
-const DEFAULT_USERNAME = process.env.NEXT_PUBLIC_AUTH_USERNAME ?? "demo-account";
-const DEFAULT_PASSWORD = process.env.NEXT_PUBLIC_AUTH_PASSWORD ?? "invoice-checker";
+export interface TwoFactorResult { user: User }
+
+export type SignInResult = { ok: true; user: User } | { ok: false; error: "two_factor"; challenge: TwoFactorChallenge } | { ok: false; error: "invalid" | "unreachable" | "limited"; message?: string };
+
 const listeners = new Set<() => void>();
 
 let sessionUser: User | null | undefined = undefined;
@@ -65,10 +75,10 @@ export async function refreshAuthSession(): Promise<User | null> {
         const data = (await resp.json()) as {
           ok?: boolean;
           authenticated?: boolean;
-          user?: { email?: string };
+          user?: User;
         };
         if (data.authenticated && data.user?.email) {
-          const verified: User = { email: data.user.email };
+          const verified: User = data.user;
           sessionUser = verified;
           listeners.forEach((l) => l());
           return verified;
@@ -110,25 +120,27 @@ export async function signIn(username: string, password: string): Promise<SignIn
       credentials: "include",
       headers: sessionHeaders({ "Content-Type": "application/json" }, true),
       body: JSON.stringify({ username: trimmed, password }),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(15_000),
     });
     if (resp.ok) {
-      const data = (await resp.json()) as { ok: boolean; user?: { email?: string } };
+      const data = (await resp.json()) as { ok: boolean; user?: User } & Partial<TwoFactorChallenge>;
+      if (data.mfa_required && data.challenge_id) {
+        setSessionState(null);
+        return { ok: false, error: "two_factor", challenge: data as TwoFactorChallenge };
+      }
       if (data.ok && data.user?.email) {
-        const user: User = { email: data.user.email };
+        const user: User = data.user;
         setSessionState(user);
         return { ok: true, user };
       }
     }
-    return { ok: false, error: "invalid" };
-  } catch {
-    // Fallback if backend is unreachable in an offline frontend test environment
-    if (trimmed.toLowerCase() === DEFAULT_USERNAME.toLowerCase() && password === DEFAULT_PASSWORD) {
-      const user: User = { email: DEFAULT_USERNAME };
-      setSessionState(user);
-      return { ok: true, user };
+    if (resp.status === 429) {
+      const retry = resp.headers.get("Retry-After");
+      return { ok: false, error: "limited", message: `Too many sign-in attempts. ${retry ? `Try again in ${retry} seconds.` : "Please wait and try again."}` };
     }
     return { ok: false, error: "invalid" };
+  } catch {
+    return { ok: false, error: "unreachable" };
   }
 }
 
@@ -168,4 +180,98 @@ function subscribe(l: () => void) {
 /** The signed-in person, kept current. Undefined until the browser has verified the session cookie. */
 export function useUser(): User | null | undefined {
   return useSyncExternalStore(subscribe, currentUser, () => undefined);
+}
+
+
+export async function beginAdministratorSetup(): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  const result = await accountRequest<TwoFactorChallenge>("/auth/setup/start", { method: "POST" });
+  setSessionState(null);
+  return result;
+}
+
+export async function verifyAdministratorEmail(challengeId: string, code: string): Promise<{ setup_grant: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/setup/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendAdministratorEmail(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/setup/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
+}
+
+export async function setupAdministrator(grant: string, username: string, password: string): Promise<User> {
+  const { accountRequest } = await import("./accounts");
+  const result = await accountRequest<{ user: User }>("/auth/setup/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
+  setSessionState(result.user);
+  return result.user;
+}
+
+export async function claimAccountInvitation(token: string): Promise<{ setup_grant: string; email: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/enroll/invitation", { method: "POST", body: JSON.stringify({ token }) });
+}
+
+export async function beginAccountEnrollment(email: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  const result = await accountRequest<TwoFactorChallenge>("/auth/enroll/start", { method: "POST", body: JSON.stringify({ email }) });
+  setSessionState(null);
+  return result;
+}
+
+export async function verifyEnrollmentEmail(challengeId: string, code: string): Promise<{ setup_grant: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/enroll/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendEnrollmentEmail(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/enroll/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
+}
+
+export async function completeAccountEnrollment(grant: string, username: string, password: string): Promise<User> {
+  const { accountRequest } = await import("./accounts");
+  const result = await accountRequest<{ user: User }>("/auth/enroll/complete", { method: "POST", body: JSON.stringify({ setup_grant: grant, username, password }) });
+  setSessionState(result.user);
+  return result.user;
+}
+
+export async function verifySecondFactor(challengeId: string, code: string): Promise<TwoFactorResult> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest<TwoFactorResult>("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendSecondFactor(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest<TwoFactorChallenge>("/auth/mfa/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
+}
+
+export function completeSignIn(user: User): void { setSessionState(user); }
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const { accountRequest } = await import("./accounts");
+  await accountRequest("/auth/password", { method: "PUT", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+  setSessionState(null);
+}
+
+
+export async function beginPasswordReset(email: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/password-reset/start", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+export async function verifyPasswordResetEmail(challengeId: string, code: string): Promise<{ reset_grant: string }> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/password-reset/verify", { method: "POST", body: JSON.stringify({ challenge_id: challengeId, code }) });
+}
+
+export async function resendPasswordResetEmail(challengeId: string): Promise<TwoFactorChallenge> {
+  const { accountRequest } = await import("./accounts");
+  return accountRequest("/auth/password-reset/resend", { method: "POST", body: JSON.stringify({ challenge_id: challengeId }) });
+}
+
+export async function completePasswordReset(grant: string, newPassword: string): Promise<void> {
+  const { accountRequest } = await import("./accounts");
+  await accountRequest("/auth/password-reset/complete", { method: "POST", body: JSON.stringify({ reset_grant: grant, new_password: newPassword }) });
+  setSessionState(null);
 }

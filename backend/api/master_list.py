@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
+from .limits import allowance, reserve_upload
 from .master_import import normalize, preview, read_tables
 from .projects import require_project
 from .storage import DEFAULT_SESSION_ID, MasterListExists, NoMasterList, now, request_session_id
@@ -76,8 +77,14 @@ def events(request: Request, project_id: str | None = None):
 
 
 @router.post("/preview")
-def inspect(file: UploadFile):
+def inspect(file: UploadFile, request: Request):
     try:
+        request.app.state.limits.take(
+            "master-preview",
+            request_session_id(request),
+            maximum=allowance("INVOICE_PREVIEWS_PER_HOUR", 30),
+            seconds=3600,
+        )
         _, _, tables = read_upload(file)
         return preview(tables)
     finally:
@@ -89,6 +96,8 @@ def inspect(file: UploadFile):
 def upload(
     request: Request, file: UploadFile, options: str = Form("{}"), project_id: str | None = None
 ):
+    reserved = 0
+    saved = False
     try:
         if project_id:
             project = require_project(
@@ -96,7 +105,7 @@ def upload(
             )
             if project["comparison_mode"] != "master_list":
                 raise HTTPException(
-                    409, "This project only tracks invoice totals and does not use a master list"
+                    409, "This group only tracks invoice totals and does not use a master list"
                 )
         filename, data, tables = read_upload(file)
         try:
@@ -136,6 +145,7 @@ def upload(
             "items": len(items),
             "suppliers": document["supplierCount"],
         }
+        reserved = reserve_upload(request, len(data))
         try:
             request.app.state.store.add_master_list(
                 document,
@@ -149,6 +159,9 @@ def upload(
             raise HTTPException(409, "A master list already exists. Use Replace file.") from None
         except NoMasterList:
             raise HTTPException(409, "No master list exists yet. Upload one first.") from None
+        saved = True
         return document
     finally:
+        if reserved and not saved:
+            request.app.state.limits.release_storage(request_session_id(request), reserved)
         file.file.close()

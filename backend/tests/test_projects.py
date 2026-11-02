@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from test_api import DATA, lightweight_reader
 from test_extract import FakeClient, completed
 from test_live import invoice
-from test_storage_sessions import session_store  # noqa: F401
 from test_uploaded_master import OPTIONS
 
 from api.app import create_app
@@ -179,6 +178,7 @@ def test_legacy_migration_is_idempotent_and_preserves_data(tmp_path):
 
 def test_projects_require_auth(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.setenv("AUTH_SETUP_TOKEN", "isolated-project-setup-token-longer-than-32")
     stages = UploadedMasterStages(model="test", client=FakeClient(completed(invoice())))
     with TestClient(create_app(storage_dir=tmp_path, stages=stages)) as client:
         assert client.get("/projects").status_code == 401

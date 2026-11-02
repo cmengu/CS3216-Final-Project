@@ -597,8 +597,8 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
-    monkeypatch.setenv("AUTH_USERNAME", "demo-account")
-    monkeypatch.setenv("AUTH_PASSWORD", "invoice-checker")
+    monkeypatch.setenv("AUTH_USERNAME", "approved-admin")
+    monkeypatch.setenv("AUTH_PASSWORD", "isolated-admin-password-2026")
 
     app = create_app(storage_dir=tmp_path, stages=FixtureStages(DATA), reader=lightweight_reader)
     with TestClient(app) as client:
@@ -621,18 +621,20 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
 
         # 2. Invalid credentials rejected
         bad_login = client.post(
-            "/auth/sign-in", json={"username": "demo-account", "password": "wrong"}
+            "/auth/sign-in", json={"username": "approved-admin", "password": "wrong"}
         )
         assert bad_login.status_code == 401
 
         # 3. Valid credentials set an HttpOnly signed cookie and omit provider="password"
         good_login = client.post(
-            "/auth/sign-in", json={"username": "demo-account", "password": "invoice-checker"}
+            "/auth/sign-in",
+            json={"username": "approved-admin", "password": "isolated-admin-password-2026"},
         )
         assert good_login.status_code == 200
         body = good_login.json()
         assert body["ok"] is True
-        assert body["user"] == {"email": "demo-account"}
+        assert body["user"]["email"] == "approved-admin"
+        assert body["user"]["role"] == "admin"
         assert "provider" not in body["user"]
         set_cookie = good_login.headers.get("set-cookie", "")
         assert "ic_session=ic1." in set_cookie
@@ -642,7 +644,7 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
         me_res = client.get("/auth/me")
         assert me_res.status_code == 200
         assert me_res.json()["authenticated"] is True
-        assert me_res.json()["user"] == {"email": "demo-account"}
+        assert me_res.json()["user"]["email"] == "approved-admin"
 
         upload_res = client.post(
             "/invoices",
@@ -666,7 +668,8 @@ def test_httponly_cookie_auth_sign_in_me_and_sign_out_with_strict_enforcement(
 
 def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, monkeypatch):
     monkeypatch.setenv(
-        "INVOICE_ALLOWED_ORIGIN_REGEX", r"https://invoice-checker-[a-z0-9-]+-team\.vercel\.app"
+        "INVOICE_ALLOWED_ORIGIN_REGEX",
+        r"https://isolated-admin-password-2026-[a-z0-9-]+-team\.vercel\.app",
     )
     with TestClient(create_app(storage_dir=tmp_path)) as client:
 
@@ -678,16 +681,18 @@ def test_preview_origins_are_allowed_by_pattern_and_others_are_not(tmp_path, mon
             assert response.headers.get("access-control-allow-credentials") == "true"
             return response.headers.get("access-control-allow-origin") == origin
 
-        assert allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app")
+        assert allowed("https://isolated-admin-password-2026-jv4e1u5tr-team.vercel.app")
         assert allowed("http://localhost:3000")
-        assert not allowed("https://invoice-checker-jv4e1u5tr-team.vercel.app.evil.com")
+        assert not allowed(
+            "https://isolated-admin-password-2026-jv4e1u5tr-team.vercel.app.evil.com"
+        )
         assert not allowed("https://evil.vercel.app")
 
 
 def test_session_cookie_crosses_sites_only_over_https(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUTH_USERNAME", "demo-account")
-    monkeypatch.setenv("AUTH_PASSWORD", "invoice-checker")
-    login = {"username": "demo-account", "password": "invoice-checker"}
+    monkeypatch.setenv("AUTH_USERNAME", "approved-admin")
+    monkeypatch.setenv("AUTH_PASSWORD", "isolated-admin-password-2026")
+    login = {"username": "approved-admin", "password": "isolated-admin-password-2026"}
     with TestClient(create_app(storage_dir=tmp_path)) as client:
         client.headers.update({"X-Requested-With": "InvoiceChecker"})
         # Railway's proxy ends HTTPS and forwards plain http with X-Forwarded-Proto.

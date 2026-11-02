@@ -18,7 +18,7 @@ class NewProject(BaseModel):
 def require_project(store, project_id, session_id):
     project = store.get_project(project_id, session_id=session_id)
     if project is None:
-        raise HTTPException(404, "Project not found")
+        raise HTTPException(404, "Invoice group not found")
     return project
 
 
@@ -41,7 +41,7 @@ def list_projects(request: Request):
 def create_project(payload: NewProject, request: Request):
     name = payload.name.strip()
     if not name:
-        raise HTTPException(422, "Enter a project name")
+        raise HTTPException(422, "Enter a group name")
     store, sid = request.app.state.store, request_session_id(request)
     project = store.create_project(name, payload.comparison_mode, session_id=sid)
     return describe(store, project, sid)

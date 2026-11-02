@@ -58,7 +58,7 @@ function worst(inv: SupplierInvoice): InvoiceLine["result"] | null {
 
 /** The invoice's check status, before any decision. */
 export function checkPill(inv: SupplierInvoice): Pill {
-  if (inv.state === "checking") return { text: "Checking…", tone: "neutral" };
+  if (inv.state === "checking") return { text: inv.queued ? "Queued" : "Checking…", tone: "neutral" };
   if (inv.state === "failed") return { text: "Couldn't read", tone: "warn" };
   if (inv.comparisonMode === "totals_only") return { text: "Extracted", tone: "neutral" };
   const w = worst(inv);

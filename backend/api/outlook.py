@@ -27,7 +27,16 @@ from openai import OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .auth import extract_request_claims, is_auth_required, session_cookie_options
-from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id, request_session_id
+from .limits import allowance
+from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id
+from .storage import request_session_id as request_workspace_id
+
+
+def request_session_id(request: Request, query_session_id=None):
+    # Mailboxes belong to a person; invoice ownership uses the person's private workspace.
+    claims = extract_request_claims(request, query_session_id)
+    return claims["user_id"] if claims else request_workspace_id(request, query_session_id)
+
 
 router = APIRouter(tags=["outlook"])
 _ACTIVE_OUTLOOK_SESSION: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -46,7 +55,8 @@ CREATE TABLE IF NOT EXISTS outlook_oauth_states (
     return_to TEXT NOT NULL,
     created_at REAL NOT NULL,
     session_id TEXT NOT NULL DEFAULT 'default',
-    browser_nonce_hash TEXT
+    browser_nonce_hash TEXT,
+    auth_session_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS outlook_connections (
@@ -232,6 +242,8 @@ def initialize(store: Store) -> None:
             )
         if "browser_nonce_hash" not in present:
             conn.execute("ALTER TABLE outlook_oauth_states ADD COLUMN browser_nonce_hash TEXT")
+        if "auth_session_id" not in present:
+            conn.execute("ALTER TABLE outlook_oauth_states ADD COLUMN auth_session_id TEXT")
 
 
 def _keystream(enc_key: bytes, salt: bytes, length: int) -> bytes:
@@ -559,6 +571,8 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
 
     store: Store = request.app.state.outlook_store
     sid = request_session_id(request)
+    auth_claims = extract_request_claims(request)
+    auth_sid = auth_claims["session_id"] if auth_claims else None
     state = secrets.token_urlsafe(32)
     verifier, challenge = _pkce_pair()
     browser_nonce = secrets.token_urlsafe(32)
@@ -573,10 +587,10 @@ def outlook_login(request: Request, return_to: str = "/invoices"):
         )
         conn.execute(
             """
-            INSERT INTO outlook_oauth_states (state, code_verifier, return_to, created_at, session_id, browser_nonce_hash)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO outlook_oauth_states (state, code_verifier, return_to, created_at, session_id, browser_nonce_hash, auth_session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (state, verifier, safe_return, now, sid, nonce_hash),
+            (state, verifier, safe_return, now, sid, nonce_hash, auth_sid),
         )
 
     query = urlencode(
@@ -620,7 +634,7 @@ def outlook_callback(
     if state:
         with store.connect() as conn:
             row = conn.execute(
-                "SELECT code_verifier, return_to, created_at, session_id, browser_nonce_hash "
+                "SELECT code_verifier, return_to, created_at, session_id, browser_nonce_hash, auth_session_id "
                 "FROM outlook_oauth_states WHERE state = ?",
                 (state,),
             ).fetchone()
@@ -656,8 +670,11 @@ def outlook_callback(
         not browser_nonce
         or not expected_nonce
         or not hmac.compare_digest(actual_nonce, expected_nonce)
-        or (is_auth_required() and claims is None)
-        or (claims is not None and normalize_session_id(claims["session_id"]) != sid)
+        or (is_auth_required() and (claims is None or not row["auth_session_id"]))
+        or (
+            claims is not None
+            and (claims["session_id"] != row["auth_session_id"] or claims["user_id"] != sid)
+        )
     ):
         return finish(
             {
@@ -1143,6 +1160,12 @@ def scan_outlook_messages(
     request: Request,
     body: OutlookScanRequest,
 ):
+    request.app.state.limits.take(
+        "outlook-scan",
+        request_session_id(request),
+        maximum=allowance("INVOICE_MAIL_SCANS_PER_HOUR", 12),
+        seconds=3600,
+    )
     cfg = get_outlook_config()
     store: Store = request.app.state.outlook_store
     token = _ACTIVE_OUTLOOK_SESSION.set(request_session_id(request))

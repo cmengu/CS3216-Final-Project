@@ -1,0 +1,289 @@
+# Approved accounts and background invoice batches
+
+Implemented on 31 October 2026. The new branch builds on the archive/XML import and session fixes in PR #48. Production deployment has not been verified.
+
+Previously one configured login minted a new data-owner ID each time, the browser held the remaining archive upload queue, and offline demo credentials could appear to sign in. Accounts are now explicitly approved, each person returns to a stable private workspace, and accepted batches are processed by a durable server queue.
+
+## Approved accounts
+
+- First-admin setup verifies the operator-configured email before accepting credentials. No environment password or setup token is required.
+- Administrators approve email addresses at `/admin/accounts`. Users verify the approved inbox at `/join`, then choose their own credentials and receive a private Member workspace. Administrators can subsequently change access, disable/enable accounts and reset existing passwords.
+- Passwords require 15–128 characters and use salted Argon2id. Validation errors omit submitted input, including passwords/setup codes. The UI never retains passwords in browser storage or returns hashes in account lists.
+- Every login has a registered server session. Disabling an account, changing its role, or resetting/changing its password invalidates all existing sessions; re-enabling access does not reactivate old tokens.
+- Password changes verify the current password and sign out all sessions. An administrator cannot disable/demote their own account through account-management actions, and at least one active administrator is retained.
+- Production startup requires an independent secret of at least 32 characters. Authentication cannot be disabled outside automated tests. Legacy signed sessions do not become approved sessions.
+
+The password policy and hashing settings follow [OWASP authentication guidance](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#implement-proper-password-strength-controls) and [OWASP password-storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id).
+
+## Private workspaces
+
+Every account owns a separate workspace for invoices and master-list versions, plus its own Outlook connection. Administrative account-management access does not grant cross-account invoice/batch reads. Ownership stays stable across re-login, password changes and disable/enable cycles. OAuth still checks the initiating browser nonce and the exact login session.
+
+Old session-owned files/records are preserved and are not automatically assigned to a new person. `python -m api.manage_accounts recover-workspace --source EXACT_OLD_SESSION_ID --username APPROVED_USERNAME` permits an operator to assign explicitly identified legacy data to an empty approved workspace. It refuses an already approved owner, an occupied target, or unfinished source jobs. Outlook must be reconnected separately. See the [operator setup instructions](../backend/README.md#approved-accounts-and-private-workspaces).
+
+## Background batches
+
+Archives are still unpacked in the browser. The browser submits the complete PDF/XML batch, and the server validates sources, pins the current immutable master version, and persists the original files and queue records before acknowledging HTTP 202. Keep the page open until that acknowledgement. Afterward the browser can close; results remain available after re-login.
+
+The worker runs with the API. Persisted queued jobs survive restart. Expired worker leases can be recovered, with a three-attempt ceiling; stale workers cannot overwrite results. A restart can repeat an OCR/model request, so external-provider calls are not exactly-once. The legacy immediate-upload API is retained. A stopped/autosleeping backend cannot process until it runs again, and deployment storage must persist database/source files.
+
+## Usage and landing page
+
+Persistent, atomic limits bound login attempts, invoice checks, PDF/model checks, master previews, Outlook scans and original-document storage. Responses explain allowance failures and include `Retry-After` for rate limits. Invoice-list refreshes cap concurrent detail reads and reuse unchanged records while background work progresses. Limits are request/source-file allowances, not dollar-denominated provider budgets or a complete database-size cap; configuration defaults are in the [backend documentation](../backend/README.md#background-batches-and-usage-limits).
+
+The landing page now names PDF, Vietnamese HDon XML, ZIP and RAR support and explains background processing after complete upload. The placeholder contact email/form is removed until a real address is supplied.
+
+## Main merge, 1 November 2026
+
+Merged main at `8fa909d`, including project folders, per-project masters and typography/audit updates. Background uploads now retain their selected project, comparison mode and original master version through restart. Duplicate detection is scoped to each project. Totals-only PDF/XML jobs skip price checks. Legacy recovery transfers complete project ownership without bypassing database ownership constraints. Project totals refresh when queued invoices finish.
+
+After the merge, 317 backend tests and 150 frontend tests passed; 13 backend tests require optional Postgres/models and were skipped. Production build, TypeScript, frontend lint and backend lint/format passed. Additional Chrome QA verified creating a project, ZIP upload into that project, processing after closing the entire browser, restored results/counts after fresh sign-in, and desktop/mobile administrator access. Tests used isolated synthetic data. No hosted deployment or production database was changed.
+
+## Email-vendor alternative: Brevo, 2 November 2026
+
+Added explicit Resend/Brevo provider selection after clarifying that Gmail and Outlook are
+recipient mailboxes. Brevo uses a private API key and an email-verified sender; no mailbox app
+password or Google app registration is used. A Brevo free-email sender may be rewritten by
+the vendor to its transactional domain. This is a temporary deliverability measure, not a
+production domain-authentication guarantee. Actual activation requires a verified sender,
+valid API key and an eligible Brevo account.
+
+Delivery uses the fixed HTTPS Brevo transactional endpoint, validated TLS, a bounded timeout,
+no redirects and no fallback to another provider. The app preserves the exact approved
+recipient, uses inline plain-text invitations/codes and does not sync contacts or read mail.
+Provider rejection details, keys and private join links are excluded from errors. Approval
+and invitation retry status continue to show failures honestly. Resend remains selected until
+the new vendor is ready. Unused Gmail sender code and locally saved mailbox credentials have
+been removed; prior Gmail sections below are historical and superseded.
+
+93 targeted delivery, MFA, invitation, enrollment and recovery tests passed; four optional
+database cases were skipped. All 15 delivery-contract tests also passed after tightening key
+validation. Backend lint/format passed. Tests mocked the vendor API and sent no real emails.
+Live Brevo activation still requires the owner's verified sender and private API key.
+
+## Sender clarification: Resend sends, Gmail/Outlook receive, 2 November 2026
+
+The intended mechanism is Resend delivery to any approved recipient, including Gmail and
+Outlook. The unused Gmail SMTP/Google OAuth sender implementations and local Gmail app-password
+settings have been removed. Resend credentials, administrator identity, approvals, private
+workspaces and the personal invitation flow remain. The earlier Gmail-sender sections below
+are historical and are superseded by this correction; no Gmail sender was activated.
+
+The test sender `onboarding@resend.dev` can deliver only to the Resend account owner's address.
+This restriction applies to both invitations and security codes, regardless of the recipient's
+domain. Delivery to other approved recipients requires verifying a sender domain in Resend and
+configuring `AUTH_EMAIL_FROM` on that domain. No app-side recipient rewrite or bypass is used.
+The app retains visible delivery failure status and retry support until the sender is ready.
+Locally saved Gmail app passwords were cleared; Google-side revocation is an owner action.
+
+## Automatic personal invitations and Google send-only consent, 2 November 2026
+
+Approval now emails a personal 24-hour join link, bound to that immutable approval/email.
+Only a token hash is stored; the raw token is sent in a URL fragment and removed from the
+browser address bar. An explicit acceptance POST consumes it and grants five minutes for
+choosing credentials. GET requests do not consume invitations. Completion remains atomic,
+Member-only and private. Expiry, resend/revocation and reapproval identity prevent stale reuse.
+Resending cannot invalidate an already claimed grant, while revocation invalidates both.
+Admins see persisted sent/failed status and sanitized errors, and can retry sending. A mail
+failure preserves approval but deletes the failed invitation; it never claims success or
+creates a login/account. Existing code-based enrollment remains available.
+
+The selected alternative to mailbox app passwords is `gmail_oauth`: Google consent requests
+exactly `gmail.send` with PKCE/state and a loopback-only callback. Broad or missing scopes
+are rejected during code exchange and token refresh. The helper preserves unrelated private
+settings, writes credentials atomically with restrictive file permissions and never prints
+codes/tokens or sends test mail. Runtime delivery uses only fixed HTTPS Google token/send
+endpoints, with validated TLS, no redirects, scoped access-token caching and no inbox reads.
+A send-capable refresh token is still a server secret, and External Testing tokens expire in
+seven days. Google app registration and the owner's consent remain required before activation.
+
+435 backend tests and 162 frontend tests passed; 18 optional Postgres/model cases were skipped.
+Production build, TypeScript and frontend/backend lint/format passed. Chrome QA covered automatic
+invitation creation, explicit delivery errors, acceptance before credentials, email binding,
+mobile layout, private Member creation, resend and revocation. Provider delivery and Google
+consent were mocked with synthetic data; no live email, Google token or mailbox app password
+was used. Actual Google sender activation remains dependent on the owner's one-time setup.
+
+## Gmail delivery option, 2 November 2026
+
+Added `AUTH_EMAIL_PROVIDER=gmail` so an existing Gmail mailbox can send security codes without
+requiring a custom sending domain. Resend remains the default provider, including its existing
+owner-only test-sender guard. Gmail requires a private Google app password and keeps the
+administrator/approved recipient addresses independent of the sending mailbox. The active
+provider is not switched until valid credentials are available.
+
+Gmail delivery connects only to `smtp.gmail.com:465` with validated TLS and a bounded timeout.
+The authenticated Gmail mailbox is the sender, while the existing account flow selects the
+registered recipient. Provider responses, credentials and codes are excluded from errors and
+logs. Authentication, TLS and recipient refusal errors fail delivery; there is no automatic
+provider fallback, recipient rewrite, or sign-in bypass. Existing challenge cleanup and
+account/IP limits apply to both delivery providers. Automated tests use a fake SMTP transport
+and send no real emails.
+
+90 targeted delivery, MFA, enrollment, setup and recovery tests passed; four optional database
+cases were skipped. Backend lint and formatting passed. Real Gmail delivery still requires the
+owner to save an app password locally and activate the provider; mocked tests do not prove
+actual inbox delivery.
+
+## Email sign-in after password reset, 2 November 2026
+
+A completed email password reset previously still required the chosen username at sign-in,
+which rejected users who entered their registered inbox with the new password. Sign-in now
+resolves either the chosen username or registered email to the same approved account before
+applying the failed-login allowance and checking the password. The UI labels both options.
+Registered email input supports the full email length rather than the username's 80-character
+limit. Existing email-shaped usernames keep precedence, and password verification never tries
+a second account after a mismatch. Disabled-account protection and mandatory email codes remain.
+
+66 targeted account, MFA and recovery tests passed; two optional database cases were skipped.
+Production build, TypeScript and frontend/backend lint passed. No real password was inspected
+or changed during diagnosis. Chrome QA also passed administrator email sign-in, email password
+reset, rejection of the old password, and email sign-in with the replacement password while
+preserving administrator access and mandatory security codes. Mail was captured in a synthetic
+fixture; no real email was sent.
+
+## Email password recovery, 2 November 2026
+
+The sign-in page now links to `/forgot-password`. Administrators and members request a code
+using their registered email, verify it, then choose a replacement password. Only active
+registered accounts receive recovery codes; unknown, pending and disabled addresses receive
+the same start response without changing an account. No account identity, recipient, role or
+workspace can be supplied to the completion endpoint. Email-only approval is not sufficient
+for recovery before the user has created an account.
+
+Codes expire in five minutes, allow five attempts and use a reset-specific HMAC purpose.
+Successful verification returns a hashed, single-use, five-minute reset grant, without signing
+in. Account/email versions bind code and grant validity; password, access and inbox changes
+invalidate outstanding proof. Completion rechecks that proof inside the account write lock,
+changes the password, increments the account version, deletes all login sessions and pending
+login/reset proof, and records an audit event. Concurrent completion can succeed once. The
+private workspace, role, approval and registered inbox remain unchanged. A new normal
+password-plus-email-code sign-in is required afterwards.
+
+Request and verification limits persist in the database; pre-parse IP limits and CSRF/origin
+checks apply to all reset endpoints before authentication. New public code requests cannot
+invalidate an already verified, unexpired grant. Delivery failures delete the pending code
+and leave passwords/sessions unchanged. All automated mail uses synthetic captured delivery;
+no real password or inbox is used by the checks.
+
+386 backend tests and 161 frontend tests passed; 17 optional Postgres/model cases were skipped.
+Production build, TypeScript and frontend/backend lint/format passed. Chrome QA passed code
+verification/resend, password confirmation, mobile layout, old-password/session invalidation,
+required email-code sign-in afterwards, and restoration of the same private project/completed
+ZIP batch. Existing administrator/member approval and sign-in flows also passed without page
+errors. No actual account password or live email configuration was changed by automated QA.
+
+## Email-only approval and user enrollment, 1 November 2026
+
+Account approval now accepts only an email address, with no administrator-chosen username or
+initial password. Pending approvals are separate from registered accounts and create no login
+or workspace. The user opens `/join`, requests a code at the approved inbox, verifies it, then
+chooses credentials. Completion atomically consumes the approval and creates a Member with
+its own stable workspace. Public requests cannot choose a role, recipient replacement or
+workspace. Existing accounts and invoice data are preserved.
+
+Pending approval management requires a live administrator session, rechecked inside the write
+transaction. Revocation deletes pending code challenges and verified grants; approving that email
+again creates a new approval identity. Five-minute codes/grants, five code attempts, purpose-separated
+HMACs, hashed bearer tokens, persistent inbox/IP limits and CSRF checks protect enrollment.
+New code requests cannot invalidate an already verified grant. Unknown/existing emails receive
+the same start response with no email or account creation. Duplicate usernames/emails and
+concurrent completions cannot create partial or duplicate accounts.
+
+363 backend tests and 158 frontend tests passed; 16 optional Postgres/model cases were skipped.
+Production build, TypeScript and frontend/backend lint/format passed. Automated mail delivery
+uses isolated synthetic fixtures; no real security emails are sent by the checks. Chrome QA
+passed email-only approval, verification before credential entry, revocation after inbox proof,
+fresh proof after reapproval, and transition from a pending email to an active private Member.
+It also covered later email-code sign-in, desktop/mobile code screens and background ZIP
+completion after closing the browser, without page errors.
+
+## Email-first administrator creation, 1 November 2026
+
+Normal first-admin setup now uses only the operator-configured administrator inbox, mail delivery
+and server signing secret. `AUTH_PASSWORD` and `AUTH_SETUP_TOKEN` are not required. `/setup` first
+requests an email code, then verifies it, then displays the username/password form. Email proof
+returns an expiring, single-use setup grant; neither requesting nor verifying a code creates an
+account or a login session. Only final completion hashes the chosen password and atomically
+creates the first administrator and verified email. Concurrent completions cannot create two
+initial administrators. The old token/password endpoint is retired (410), so leaked legacy setup
+codes cannot reserve the first account. Existing accounts and private data are untouched.
+
+Setup codes expire after five minutes and allow five attempts. Password-creation grants expire
+after five minutes, are bound to the configured inbox, and are stored only as hashes. Code HMACs
+use a separate setup purpose. Changing the approved inbox invalidates outstanding proof. Sending
+has global cooldown/hourly caps and IP/verification limits. Requesting another code does not
+invalidate a previously verified owner's unexpired grant; public requests cannot block that
+owner from finishing. Initial setup closes when any account exists. The legacy explicit env
+bootstrap remains an operator-only option but is not used by this flow.
+
+348 backend tests and 156 frontend tests passed; 15 optional Postgres/model cases were skipped.
+Production build, TypeScript, frontend lint and backend lint/format passed. Chrome QA verified
+that credentials remain hidden until email proof, no account/session exists before final
+completion, incorrect codes fail, and the desktop/mobile flow works. Regression QA covered
+approved-account sign-in, resend, private projects and ZIP processing after browser closure.
+Emails were captured by an isolated test service; no real email was sent by automated checks.
+
+## Email security codes, 1 November 2026
+
+At the owner's request, the active sign-in flow now uses passwords plus security codes delivered
+by Resend to registered email addresses. This supersedes the authenticator implementation below.
+The first admin destination is operator-configured; approved members receive an email address
+when an administrator creates their account. Neither sign-in nor resend accepts a new recipient.
+Existing email changes require the audited operator CLI and invalidate sessions/pending codes.
+Password resets preserve the email requirement. Old authenticator sessions, secrets and recovery
+codes do not grant access through the new email-proof check.
+
+Codes are cryptographically random, six digits, single-use and expire after five minutes.
+Only keyed HMACs are stored; challenge bearer tokens are hashed. Five-attempt limits, persistent
+per-account/IP limits, a one-minute resend cooldown and hourly send caps are enforced. Delivery
+failure deletes the pending challenge and never issues a login session. Resend invalidates the
+old challenge. The backend sends only to the approved address and generates no console/outbox
+fallback. The Resend test sender is explicitly restricted to its owner; other users need a
+verified sender domain. API keys remain in ignored backend configuration, excluded from Docker.
+No provider credentials or real recipient addresses were committed.
+
+335 backend tests and 154 frontend tests passed; 14 optional Postgres/provider cases were
+skipped. Production build, TypeScript and frontend/backend lint passed. Chrome verified administrator/member email verification, wrong-code rejection, resend countdown, old-challenge rejection, registered email display, desktop/mobile layouts, private workspaces and background batches after closing the browser, with no page errors. Delivery tests mock the
+Resend HTTP API or capture synthetic email in memory. Actual inbox delivery has not yet been
+verified; it will be exercised by the owner's administrator setup. Live Supabase remains untested.
+Email two-step verification is weaker than an independent authenticator when the inbox is
+compromised; phishing-resistant MFA is not provided. See [email setup](../backend/README.md#configure-resend-email-delivery).
+
+## Historical authenticator implementation, 1 November 2026 (superseded)
+
+Every approved account, including the first administrator, now verifies an authenticator app
+before receiving any authenticated session. Password/setup responses carry only a five-minute,
+single-use challenge. Enrollment offers a locally generated QR and manual key; a correct code
+confirms enrollment and returns ten recovery codes once. Users acknowledge saving them before
+the UI continues. Secrets are encrypted at rest; recovery codes and challenge bearer tokens are
+stored only as hashes. TOTP accepts at most one step of clock skew and rejects consumed counters.
+Failed attempts commit, with limits per challenge, account and IP. Stale or password-only sessions
+are rejected, as are challenges invalidated by account changes.
+
+Authenticator replacement requires the current password and a fresh factor/recovery code,
+then confirmation of the new authenticator. It invalidates other sessions and all old recovery
+codes. Password resets preserve MFA. There is no web disable/reset bypass; a privileged,
+audited operator CLI is the last-resort reset. Keep the MFA encryption key stable and backed up;
+the [backend instructions](../backend/README.md#approved-accounts-and-private-workspaces) explain
+the optional separate `AUTH_MFA_KEY` and implications of key rotation.
+
+Validation: 332 backend tests passed, 14 optional Postgres/provider cases skipped; 153 frontend
+tests, production build, TypeScript, frontend lint and backend lint/format passed. Dedicated MFA
+tests exercise the real mandatory policy; existing password/session regressions mock MFA only
+to keep their original assertions focused. Chrome verified administrator/member enrollment,
+QR/manual setup, denied password-only access, wrong-code rejection, recovery-code download and
+acknowledgement, recovery sign-in, authenticator replacement, revoked old sessions/codes, mobile
+layout and a private ZIP batch completing after the entire browser closed. These browser checks
+used synthetic identities and fixture invoices with no page errors. Live Supabase and a physical authenticator device
+have not been tested. TOTP can still be phished and does not prevent theft of an existing session.
+
+## Original verification, 31 October 2026
+
+- Full backend suite: **304 passed, 12 skipped**. Skips require Postgres or external models. The SQLite/Postgres account, quota and queue contract tests are parametrized; only SQLite was exercised locally.
+- Frontend suite: **143 passed**. Lint, TypeScript, backend Ruff lint/format and production build passed.
+- Isolated Chrome QA at 1440×1000 and 390×844 verified first-admin setup, account approval/reset/disable/enable, member denial of admin access, private masters/invoices/batch reads, complete ZIP upload and re-login persistence.
+- The entire browser process was closed while two fixture invoices were still being read. Both completed on the server without a browser, then appeared after a fresh browser launch/sign-in. No browser page errors occurred.
+- Model/Outlook provider behavior uses synthetic fixtures or mocks. No real mailbox, real invoice or administrator password was used in QA. The local app has a private one-time setup link ready; the owner chooses the actual administrator credentials.
+
+R01 (public demo signing/login configuration), R05 (changing owner IDs) and R28 (offline frontend login) are addressed in this implementation. R06 is improved by individual accounts and mandatory email two-step verification; independent/phishing-resistant MFA remains a limitation. R07 is mitigated by persistent quotas/rate limits; strict monetary budgets and other operational controls remain. The remaining audit findings, including dependency advisories, parser isolation, backup/retention and immutable payment audit history, are not resolved by this change.

@@ -69,6 +69,11 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
     }
   }, [doneCount, lastId, router, reloadProjects]);
 
+  // Refresh project counts and currency totals as server-owned batches finish.
+  useEffect(() => {
+    reloadProjects();
+  }, [invoices, reloadProjects]);
+
   // "Show" focus belongs to the invoice it was clicked on.
   const focus = focusState && focusState.id === selectedId ? focusState : null;
 
@@ -141,9 +146,9 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
         </section>
       ) : (
         <section className="ic-check"><div className="ic-check-body ic-project-overview">
-          <h1>{project?.name ?? (projectsLoading ? "Loading projects…" : "Projects")}</h1>
+          <h1>{project?.name ?? (projectsLoading ? "Loading invoice groups…" : "Invoice groups")}</h1>
           {project ? <>
-            <p className="muted">{project.comparison_mode === "totals_only" ? "Totals only · No master list" : "Invoices compared with this project’s master list"}</p>
+            <p className="muted">{project.comparison_mode === "totals_only" ? "Totals only · No master list" : "Invoices compared with this group’s master list"}</p>
             <section className="ic-card"><h2>Invoice totals</h2>
               {Object.entries(project.totals).map(([currency, total]) => <p key={currency} className="ic-h1">{money(Number(total), currency)}</p>)}
               {!Object.keys(project.totals).length ? <p>No completed invoice totals yet.</p> : null}
@@ -154,10 +159,10 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
               <button className="ic-btn ic-btn--primary" disabled={!canUpload} onClick={picker.open}>Upload invoices</button>
               {project.comparison_mode === "master_list" ? <Link className="ic-btn ic-btn--secondary" href={`/master-list?project=${encodeURIComponent(project.id)}`}>{project.has_master_list ? "View master list" : "Upload master list"}</Link> : null}
             </div>
-            {!canUpload ? <p>Upload a master list for this project before adding invoices.</p> : null}
+            {!canUpload ? <p>Upload a master list for this group before adding invoices.</p> : null}
           </> : <section className="ic-card" style={{ padding: 0, overflowX: "auto" }}>
-            <table className="ic-grid ic-project-table" aria-label="Projects">
-              <thead><tr><th scope="col">No.</th><th scope="col">Project name</th><th scope="col">Number of invoices</th><th scope="col">Master list</th><th scope="col">Total sum</th></tr></thead>
+            <table className="ic-grid ic-project-table" aria-label="Invoice groups">
+              <thead><tr><th scope="col">No.</th><th scope="col">Group name</th><th scope="col">Number of invoices</th><th scope="col">Master list</th><th scope="col">Total sum</th></tr></thead>
               <tbody>
                 {projects.map((p, index) => <tr key={p.id}>
                   <td className="num">{index + 1}</td>
@@ -169,7 +174,7 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
                     {p.excluded_count ? <div className="ic-hint">{p.excluded_count} invoice{p.excluded_count === 1 ? "" : "s"} excluded</div> : null}
                   </td>
                 </tr>)}
-                {!projects.length ? <tr><td colSpan={5} className="muted">{projectsLoading ? "Loading projects…" : projectError ? "Projects could not be loaded." : "No projects yet. Create one in the sidebar."}</td></tr> : null}
+                {!projects.length ? <tr><td colSpan={5} className="muted">{projectsLoading ? "Loading invoice groups…" : projectError ? "Invoice groups could not be loaded." : "No invoice groups yet. Create one in the sidebar."}</td></tr> : null}
               </tbody>
             </table>
           </section>}

@@ -20,7 +20,7 @@ LOGIN = {"username": "security-test", "password": "isolated-test-password"}
 def secure_app(tmp_path, monkeypatch):
     for key, value in {
         "AUTH_REQUIRED": "1",
-        "AUTH_SECRET": "isolated-regression-test-secret",
+        "AUTH_SECRET": "isolated-regression-test-secret-with-32-characters",
         "AUTH_USERNAME": LOGIN["username"],
         "AUTH_PASSWORD": LOGIN["password"],
         "MICROSOFT_CLIENT_ID": "test-client",
@@ -207,7 +207,8 @@ def test_oauth_rejects_other_browsers_without_consuming_valid_state(secure_app, 
         assert "outlook=connected" in callback(owner, state).headers["location"]
         assert owner.cookies.get(OAUTH_BROWSER_COOKIE) is None
         assert owner.get("/outlook/status").json()["connected"]
-        assert not other.get("/outlook/status").json()["connected"]
+        # Both logins belong to the same approved account, so its linked inbox persists.
+        assert other.get("/outlook/status").json()["connected"]
         assert "outlook_error=" in callback(owner, state).headers["location"]
         assert provider.call_count == 1
 

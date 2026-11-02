@@ -8,8 +8,8 @@ The backend endpoints behind the three core features: master list, invoice uploa
   - A running service serves it at **`GET /openapi.json`**, with Swagger UI at **`GET /docs`** (FastAPI defaults; not overridden).
   - This map comes from `create_app().openapi()` (OpenAPI 3.1.0, title "Invoice Checker", version 0.1.0) and from the handler code.
   - Each resolution rule was also exercised against the service in fixture mode on 20 Oct 2026.
-- **Base URL:** `NEXT_PUBLIC_INVOICE_API`, default `http://127.0.0.1:8000`. The frontend client is `src/checker/api.ts`.
-- **CORS:** origins `http://localhost:3000` and `http://127.0.0.1:3000`; methods `GET`, `POST`, `PUT`; request header `Content-Type` only.
+- **Base URL:** `NEXT_PUBLIC_INVOICE_API`, default `http://127.0.0.1:8001`. The frontend client is `src/checker/api.ts`.
+- **CORS:** explicit configured frontend origins (plus local development origins); credentialed requests support GET/POST/PUT/PATCH/DELETE and the browser protection header.
 - **Errors:**
   - Handler errors are `{"detail": "<one sentence>"}`.
   - FastAPI's own validation errors are `422 {"detail": [{"loc": [...], "msg": "...", "type": "..."}]}`.
@@ -19,28 +19,73 @@ The backend endpoints behind the three core features: master list, invoice uploa
 
 | Area | Endpoints | Status |
 |---|---|---|
-| Auth (email/password, OAuth) | **None** | Not built. The service says "No auth/connectors in release 1". |
+| Approved accounts | `/auth/*`, `/admin/accounts` | Administrator-managed private accounts and registered sessions. |
 | Master list upload / import / read | `GET/POST/PUT /master-list`, `POST /master-list/preview`, `GET /master-list/events`, `GET /master-list/versions/{version}` | Persisted CSV/XLSX/XLS imports; live checks use a fixed uploaded version. |
-| Invoice upload | `POST /invoices` | Built |
+| Invoice upload | `POST /invoices`, `POST /invoice-batches` | Immediate compatibility API and durable batch API. |
 | Invoice read | `GET /invoices`, `GET /invoices/{invoice_id}`, `GET /invoices/{invoice_id}/file` | Built |
-| Discrepancy check | **No separate endpoint.** Runs inside `POST /invoices`. | Built |
+| Discrepancy check | **No separate endpoint.** Runs inside immediate uploads or the durable batch worker. | Built |
 | Discrepancy resolution | `PUT /invoices/{invoice_id}/outcome` (per invoice, not per line) | Built |
 | Health | `GET /health` | Built |
 
 ---
 
-## 1. Auth
+## 1. Approved-account authentication
 
-**There are no auth endpoints.** The API accepts every request without credentials. There is no email/password, OAuth, session, token or user model on the service.
+Only approved active accounts can sign in. Authentication uses a signed HttpOnly cookie and a
+registered server-side login session, with a separate persistent account/workspace identity.
+The backend requires an independent `AUTH_SECRET`; there are no public demo credentials or
+offline browser login fallback. First-admin setup verifies the operator-configured email before accepting a password. No environment password or setup token is required.
+Username/email aliases share the same failed-login allowance. Exact existing usernames take precedence over email aliases; password verification never falls back to a second account.
+Passwords use salted Argon2id. Tokens are invalidated by logout and account access/password changes.
 
-The app's "sign-in" is a **client-side demo**, not authentication:
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/auth/setup-status` | Whether first-admin setup is pending |
+| POST | `/auth/setup/start` | Send a five-minute code only to the configured administrator email; no account is created |
+| POST | `/auth/setup/verify` | Verify that code and return a single-use, five-minute password-creation grant; no login/account yet |
+| POST | `/auth/setup/resend` | Resend to the same approved inbox after cooldown; retire the old code challenge |
+| POST | `/auth/setup/complete` | Verified setup grant plus chosen username/password; atomically create the first administrator and issue an email-verified session |
+| POST | `/auth/setup` | Retired token/password setup endpoint; returns 410 |
+| POST | `/auth/sign-in` | Approved username or registered email plus password; return an expiring MFA challenge, without a login session |
+| POST | `/auth/mfa/verify` | Challenge ID plus emailed security code; verify the approved inbox and issue the session cookie |
+| GET | `/auth/mfa/status` | Verified account's registered security email and verification state |
+| POST | `/auth/mfa/resend` | Existing unexpired challenge; send a new code to the same registered email after the cooldown |
+| GET | `/auth/me` | Verify the registered, unexpired, unrevoked account session |
+| POST | `/auth/sign-out` | Revoke the current login and clear its cookie |
+| PUT | `/auth/password` | Verify current password, replace it, and invalidate all sessions |
+| POST | `/auth/password-reset/start` | Email-only recovery request; send only to a registered active account's inbox; generic response for unknown/pending/disabled emails |
+| POST | `/auth/password-reset/resend` | Existing reset challenge; resend to the same inbox after cooldown |
+| POST | `/auth/password-reset/verify` | Reset challenge plus email code; return a five-minute, single-use reset grant, with no new login session |
+| POST | `/auth/password-reset/complete` | Reset grant plus new password; atomically invalidate all account sessions and pending login/reset proof; no auto-login |
+| GET | `/admin/accounts` | Administrators list registered accounts |
+| POST | `/admin/accounts` | Administrator approves `{email}` and attempts to email its personal join link; returns explicit delivery status, with no credentials/account yet |
+| GET | `/admin/account-approvals` | Administrators list pending email approvals with invitation sent/failed status and sanitized delivery errors |
+| POST | `/admin/account-approvals/{id}/send` | Send/resend a personal 24-hour invitation to that approval's email; retire older unclaimed links |
+| DELETE | `/admin/account-approvals/{id}` | Revoke a pending approval and its codes/grants |
+| POST | `/auth/enroll/invitation` | Explicitly accept an emailed single-use token; return a five-minute setup grant bound to its approved email; no account/session yet |
+| POST | `/auth/enroll/start` | Request a code for a pending approved email; unknown/existing emails receive the same response without sending |
+| POST | `/auth/enroll/resend` | Resend to the pending approval's email using only the current challenge |
+| POST | `/auth/enroll/verify` | Verify the approved inbox; return a five-minute, single-use setup grant without an account/session |
+| POST | `/auth/enroll/complete` | Grant plus self-chosen username/password; atomically consume approval, create a Member/private workspace and verified session |
+| PATCH | `/admin/accounts/{id}` | Administrators enable/disable, change role or reset another account |
 
-- **Where:** `/who` (`src/components/pages/WhoGate.tsx`).
-- **How it works:** the person picks one of five invented people. Owner and Finance must type a PIN, and the demo accepts any four digits (`pinOk` in `src/platform/access.ts`).
-- **What it stores:** the choice in `sessionStorage` (`pot-who`) and in the demo state in `localStorage` (`pot-demo-v3`).
-- **What it controls:** which pages show (Invoices is limited to Owner and Finance). Nothing is sent to the service.
-
-**For the redesign:** real sign-in (email/password and/or OAuth) needs new backend work. Nothing exists to wire to.
+Every account has its own private workspace; an administrator’s invoice permissions remain
+limited to that administrator’s own workspace. Account management responses never include
+passwords/hashes. The selected email delivery service is Resend (default) or Brevo (`AUTH_EMAIL_PROVIDER=brevo`); Gmail/Outlook addresses are recipients. No Gmail SMTP/app password or Google OAuth sender connection is used. Invitation links use URL fragments to keep tokens out of access logs and require an explicit acceptance POST; GETs/email scanners do not consume them. Recipients remain registered account inboxes. The Resend test sender is restricted to its account owner; a verified sender domain enables other recipients.
+Every approved account requires an emailed security code; password-only and
+old authenticator sessions cannot access protected resources. Challenges expire after five
+minutes and allow five failed attempts; persistent per-account/IP and email-send limits apply.
+Resending uses only the challenge, never a caller-selected email address. Delivery failures do
+not authenticate. Initial admin creation requires a verified email and atomically consumes its setup grant. Later users require an administrator-approved email and choose their credentials only after inbox proof. Enrollment grants are purpose-separated from login/admin setup, and revocation invalidates all pending proof. Duplicate emails/usernames cannot create partial accounts. Changes to an existing security
+email require the audited operator CLI. Password resets preserve the registered inbox and mandatory email-code sign-in. Recovery proof is
+bound to current account/email versions and becomes invalid after password, access or email
+changes. Reset does not create accounts, re-enable disabled accounts or change workspaces.
+There is no open registration. Login, enrollment and expensive operations have persistent
+rate limits; 429 includes `Retry-After`. All browser mutations require
+`X-Requested-With: InvoiceChecker` and a trusted Origin when present. Sign-in, setup and sign-out
+require the header even before a session cookie exists. Unsafe requests with a cookie and an
+untrusted/missing protection header return 403. Unauthenticated access to protected data returns 401;
+non-admin account management returns 403. CORS supports trusted origins and GET/POST/PUT/PATCH/DELETE.
 
 ---
 
@@ -89,7 +134,7 @@ Without a current master, invoice upload returns 409. Explicit legacy `standard`
 
 ### `POST /invoices`
 
-Uploads one PDF or Vietnamese HDon XML invoice, then **reads, extracts and checks it in the same request** and returns the saved result. The request can take a minute in live mode. ZIP/RAR archives are unpacked locally by the frontend and submitted as individual PDF/XML requests. XML fields are mapped directly without OCR/model calls; the same master-list checks and review safeguards apply.
+Uploads one PDF or Vietnamese HDon XML invoice, then **reads, extracts and checks it in the same request** and returns the saved result. The request can take a minute in live mode. ZIP/RAR archives are unpacked locally and submitted together through `/invoice-batches`. XML fields are mapped directly without OCR/model calls; the same master-list checks and review safeguards apply.
 
 **Request**
 
@@ -293,3 +338,20 @@ All fields are listed; `?` marks a field that may be `null`. "dec" is a decimal 
 | Check: re-run | A re-check endpoint. Re-checking means re-uploading, which creates a new invoice. |
 | Resolution per line | Line-level actions (accept a line, override a price, mark resolved). Only the whole-invoice outcome exists. |
 | Housekeeping | Deleting an invoice. |
+
+## Durable batch upload
+
+`POST /invoice-batches` accepts an optional owned `project_id` query and receives multipart `files`: 1–1,000 invoices, at most 20 MiB per file
+and 100 MiB total. It validates the complete batch, reserves storage/usage allowance, pins the
+current master version, and persists source files and jobs before returning **202**:
+`{id, invoices: SavedInvoice[], duplicates: [{filename, existing_id}], processing: "background"}`.
+New records have status `queued`, then use the existing reading/extracting/checking/completed/failed
+pipeline. Exact previously uploaded content is skipped; there is no business-number duplicate guarantee.
+Invalid files reject the batch before job creation; 413 signals a file/batch/storage limit;
+429 signals an allowance limit. The browser must stay open until upload is acknowledged.
+
+`GET /invoice-batches/{id}` returns `{id, invoice_ids, total, queued, processing, completed, failed}`
+for the owner only; another account receives 404. Results also appear in the ordinary invoice list.
+Queued jobs survive a service restart. In-progress jobs recover after an expired lease with at most
+three attempts; stale workers cannot overwrite results. Processing needs an available backend and
+persistent database/files. The legacy `POST /invoices` endpoint retains its immediate 201/422 contract.

@@ -13,8 +13,11 @@ afterEach(() => { vi.restoreAllMocks(); resetUploadsSession(); });
 
 it("queues the same PDF for different Outlook destinations and deduplicates within each project", async () => {
   resetUploadsSession();
-  const upload = vi.spyOn(api, "uploadInvoice").mockImplementation(async (_file, projectId) =>
-    toSupplierInvoice({ ...record, id: projectId!, project_id: projectId }));
+  const upload = vi.spyOn(api, "uploadInvoiceBatch").mockImplementation(async (files, projectId) => {
+    const digest = await crypto.subtle.digest("SHA-256", await files[0].arrayBuffer());
+    const hash = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
+    return { id: "batch-" + projectId, invoices: [toSupplierInvoice({ ...record, id: projectId!, project_id: projectId, document_hash: hash })], duplicates: [] };
+  });
   vi.spyOn(api, "rememberInvoice").mockImplementation(() => {});
   const file = new File(["same invoice bytes"], "invoice.pdf", { type: "application/pdf" });
   // These are the per-file assignments submitted by the Outlook destination page.

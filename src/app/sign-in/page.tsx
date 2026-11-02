@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { signIn, useUser, type SignInResult } from "@/auth";
+import { completeSignIn, resendSecondFactor, signIn, useUser, verifySecondFactor, type SignInResult, type TwoFactorChallenge } from "@/auth";
 import { Icon } from "@/components/icons";
 import { useMasterList } from "@/masterList";
+import { TwoFactor } from "@/components/TwoFactor";
 
 export default function SignIn() {
   const user = useUser();
@@ -14,18 +15,23 @@ export default function SignIn() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [wrong, setWrong] = useState(false);
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [forgot, setForgot] = useState(false);
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
 
   const nextRoute = ml === null ? "/master-list" : "/invoices";
 
   useEffect(() => {
-    if (user && ml !== undefined) router.replace(nextRoute);
-  }, [user, ml, nextRoute, router]);
+    if (user && ml !== undefined && !challenge) router.replace(nextRoute);
+  }, [user, ml, nextRoute, router, challenge]);
 
   const finish = (r: SignInResult) => {
     if (r.ok) router.replace(nextRoute);
-    else setWrong(true);
+    else if (r.error === "two_factor") { setPassword(""); setError(""); setChallenge(r.challenge); }
+    else {
+      setWrong(r.error === "invalid");
+      setError(r.message ?? (r.error === "unreachable" ? "The sign-in service could not be reached. Try again." : "Username/email or password is incorrect."));
+    }
   };
 
   return (
@@ -38,7 +44,8 @@ export default function SignIn() {
       </Link>
       <main className="ic-card">
         <h1>Sign in</h1>
-        <form
+        <p className="ic-hint">Use your username or registered email. We’ll email a security code after checking your password.</p>
+        {challenge ? <TwoFactor key={challenge.challenge_id} challenge={challenge} onVerify={async (id, code) => { const verified = await verifySecondFactor(id, code); completeSignIn(verified.user); router.replace(nextRoute); }} onResend={resendSecondFactor} onCancel={() => { setChallenge(null); setError(""); }} /> : <form
           style={{ display: "flex", flexDirection: "column", gap: 16 }}
           onSubmit={async (e) => {
             e.preventDefault();
@@ -48,18 +55,20 @@ export default function SignIn() {
           }}
         >
           <div className="ic-field">
-            <label htmlFor="username">Username</label>
+            <label htmlFor="username">Username or email</label>
             <input
               id="username"
               className={`ic-input${wrong ? " ic-input--error" : ""}`}
               type="text"
               autoComplete="username"
-              placeholder="demo-account"
+              placeholder="Your username or registered email"
+              maxLength={254}
               required
               value={username}
               onChange={(e) => {
                 setUsername(e.target.value);
                 setWrong(false);
+                setError("");
               }}
             />
           </div>
@@ -68,9 +77,9 @@ export default function SignIn() {
               <label htmlFor="password" className="lbl">
                 Password
               </label>
-              <button type="button" className="ic-link" style={{ minHeight: 0, fontSize: "calc(13px * var(--text-scale))" }} onClick={() => setForgot(true)}>
+              <Link href="/forgot-password" className="ic-link" style={{ minHeight: 0, fontSize: "calc(13px * var(--text-scale))" }}>
                 Forgot password?
-              </button>
+              </Link>
             </div>
             <input
               id="password"
@@ -84,23 +93,20 @@ export default function SignIn() {
               onChange={(e) => {
                 setPassword(e.target.value);
                 setWrong(false);
+                setError("");
               }}
             />
-            {wrong ? (
+            {error ? (
               <p id="pw-error" className="ic-hint ic-hint--error" role="alert">
-                Username or password is incorrect.
-              </p>
-            ) : null}
-            {forgot ? (
-              <p className="ic-hint" role="status">
-                Ask your administrator to reset your password.
+                {error}
               </p>
             ) : null}
           </div>
           <button className="ic-btn ic-btn--primary ic-btn--block" type="submit" disabled={busy}>
             Sign in
           </button>
-        </form>
+        </form>}
+        <p className="ic-hint" style={{ marginTop: 20 }}>Newly approved? <Link className="ic-link" href="/join">Set up your approved account</Link>.</p>
       </main>
     </div>
   );

@@ -23,7 +23,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     signal: AbortSignal.timeout(15_000),
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Could not load projects.");
+  if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Could not load invoice groups.");
   return body;
 }
 
@@ -83,7 +83,7 @@ export function useProjectEvents(projects: Project[]) {
     let active = true;
     Promise.all(projects.map((p) => request<MasterListEvent[]>(`/master-list/events?project_id=${encodeURIComponent(p.id)}`).then((history) => history.map((event) => ({ ...event, projectId: p.id })))))
       .then((lists) => { if (active) { setEvents(lists.flat()); setError(null); } },
-        () => { if (active) setError("Could not load project master-list history."); });
+        () => { if (active) setError("Could not load group master-list history."); });
     return () => { active = false; };
   }, [projects]);
   return { events, error };

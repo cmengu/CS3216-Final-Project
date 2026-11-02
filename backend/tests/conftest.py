@@ -1,4 +1,9 @@
+import os
+from uuid import uuid4
+
 import pytest
+
+from api.storage import PostgresStore, Store
 
 
 def pytest_addoption(parser):
@@ -23,3 +28,44 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(
                     pytest.mark.skip(reason="Pass --run-model to call OpenAI on data/dummy")
                 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_auth_secret(monkeypatch):
+    monkeypatch.setenv("AUTH_SECRET", "isolated-automated-test-signing-secret-2026")
+    monkeypatch.delenv("AUTH_MFA_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def password_only_regressions(request, monkeypatch):
+    # Existing suites cover password/session/workspace behavior independently of MFA.
+    # MFA tests retain the real mandatory policy and exercise the complete challenge flow.
+    if request.node.get_closest_marker("mfa") is None:
+        from api.mfa import TwoFactor
+
+        monkeypatch.setattr(TwoFactor, "required", lambda self, user: False)
+
+
+@pytest.fixture(params=["sqlite", "postgres"])
+def session_store(request, tmp_path):
+    if request.param == "sqlite":
+        yield Store(tmp_path)
+        return
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        pytest.skip("DATABASE_URL is not set")
+    schema = f"invoice_checker_test_{uuid4().hex}"
+    store = PostgresStore(url, tmp_path, schema=schema)
+    try:
+        yield store
+    finally:
+        with store.connect() as db:
+            db.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        store.pool.close()
+
+
+@pytest.fixture(autouse=True)
+def no_live_invitation_delivery(monkeypatch):
+    from api import security_mail
+
+    monkeypatch.setattr(security_mail, "send_invitation", lambda *_args, **_kwargs: None)

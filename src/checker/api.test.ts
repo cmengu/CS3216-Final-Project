@@ -9,6 +9,7 @@ import {
   setActiveSessionId,
   uploadFailure,
   uploadInvoice,
+  uploadInvoiceBatch,
   uploadProblem,
 } from "./api";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
@@ -234,6 +235,34 @@ describe("session isolation headers and URLs", () => {
     setActiveSessionId(null);
     expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file$`));
   });
+});
+
+
+it("uploads a complete batch once and treats queued receipts as unfinished invoices", async () => {
+  const files = [new File(["pdf"], "one.pdf"), new File(["xml"], "two.xml")];
+  const fetchMock = vi.fn(async () => Response.json({ id: "batch", invoices: [{ ...saved("Supplier", null), status: "queued", invoice: null, check: null }], duplicates: [] }, { status: 202 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const receipt = await uploadInvoiceBatch(files);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toMatch(/\/invoice-batches$/);
+  expect((init.body as FormData).getAll("files")).toEqual(files);
+  expect(init.credentials).toBe("include");
+  expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
+  expect(receipt.invoices[0]).toMatchObject({ state: "checking", queued: true, lines: [] });
+});
+
+it("reports batch limits without claiming that checking has started", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Daily checking allowance reached." }, { status: 429, headers: { "Retry-After": "60" } })));
+  await expect(uploadInvoiceBatch([new File(["pdf"], "one.pdf")])).rejects.toMatchObject({ status: 429, retryAfter: 60, message: "Daily checking allowance reached." });
+});
+
+it("sends complete batches to their selected project", async () => {
+  const fetchMock = vi.fn(async () => Response.json({ id: "batch", invoices: [], duplicates: [] }, { status: 202 }));
+  vi.stubGlobal("fetch", fetchMock);
+  await uploadInvoiceBatch([new File(["xml"], "one.xml")], "project a");
+  const [url] = fetchMock.mock.calls[0] as unknown as [string];
+  expect(url).toContain("/invoice-batches?project_id=project%20a");
 });
 
 it("preserves project destination on uploads and retries", async () => {
