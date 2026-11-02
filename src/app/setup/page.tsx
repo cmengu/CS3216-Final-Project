@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Brand } from "@/components/Brand";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { beginAdministratorSetup, resendAdministratorEmail, setupAdministrator, verifyAdministratorEmail, type TwoFactorChallenge } from "@/auth";
@@ -27,7 +28,7 @@ export default function AdministratorSetup() {
     return () => { active = false; };
   }, []);
   const restart = () => { setChallenge(null); setGrant(null); setPassword(""); setConfirmation(""); setError(""); };
-  return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card"><h1>Set up your administrator</h1>
+  return <div className="ic-auth"><Brand /><main className="ic-card"><h1>Set up your administrator</h1>
     {status?.setup_required === false ? <p>Administrator setup is already complete. <Link className="ic-link" href="/sign-in">Sign in</Link>.</p> : grant ? <>
       <p className="ic-hint">Email verified. Now choose your administrator username and password.</p>
       <form style={{ display: "grid", gap: 16, marginTop: 20 }} onSubmit={async event => {
