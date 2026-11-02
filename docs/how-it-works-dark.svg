@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 330" width="980" height="330" role="img" aria-labelledby="t d"><title id="t">How an invoice is checked</title><desc id="d">An invoice file is read, extracted and checked line by line against the master list, then the clerk decides. A failed step saves the invoice as failed with a reason.</desc>
+<line x1="100" y1="80" x2="860" y2="80" stroke="#E0805A" stroke-width="7" stroke-linecap="round"/>
+<circle cx="100" cy="80" r="9" fill="#E0805A"/>
+<text x="100" y="50" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#F3ECE1">Invoice file</text>
+<text x="100" y="114" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">PDF or Vietnamese</text>
+<text x="100" y="133" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">HDon XML</text>
+<circle cx="290" cy="80" r="9" fill="#E0805A"/>
+<text x="290" y="50" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#F3ECE1">Read</text>
+<text x="290" y="114" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">PDF: Docling OCR</text>
+<text x="290" y="133" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">XML: fields read</text>
+<text x="290" y="152" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">directly</text>
+<circle cx="480" cy="80" r="9" fill="#E0805A"/>
+<text x="480" y="50" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#F3ECE1">Extract</text>
+<text x="480" y="114" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">PDF: a model reads</text>
+<text x="480" y="133" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">the printed fields</text>
+<text x="480" y="152" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">XML: skipped</text>
+<circle cx="670" cy="80" r="9" fill="#E0805A"/>
+<text x="670" y="50" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#F3ECE1">Check</text>
+<text x="670" y="114" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">Every line against</text>
+<text x="670" y="133" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">the master list</text>
+<text x="670" y="152" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">version at upload</text>
+<circle cx="860" cy="80" r="9" fill="#E0805A"/>
+<text x="860" y="50" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" fill="#F3ECE1">Decide</text>
+<text x="860" y="114" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">The clerk, per invoice</text>
+<text x="860" y="142" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">Ready to pay</text>
+<text x="860" y="161" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">Raise with supplier</text>
+<text x="860" y="180" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">Pay anyway</text>
+<path d="M290 165 V250 H860" fill="none" stroke="#6E5F55" stroke-width="2" stroke-dasharray="6 6"/>
+<path d="M480 165 V250 M670 165 V250" fill="none" stroke="#6E5F55" stroke-width="2" stroke-dasharray="6 6"/>
+<text x="310" y="278" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">A step that fails saves the invoice as failed, with the step and the reason.</text>
+<text x="310" y="297" font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13.5" fill="#BFB0A4">A failed invoice can only be paid anyway, with a reason. Nothing is sent from the app.</text>
+</svg>
