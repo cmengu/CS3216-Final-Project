@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Brand } from "@/components/Brand";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { beginPasswordReset, completePasswordReset, resendPasswordResetEmail, verifyPasswordResetEmail, type TwoFactorChallenge } from "@/auth";
@@ -17,7 +18,7 @@ export default function ForgotPassword() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const restart = () => { setChallenge(null); setGrant(null); setPassword(""); setConfirmation(""); setError(""); };
-  return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card">
+  return <div className="ic-auth"><Brand /><main className="ic-card">
     <h1>{done ? "Password reset" : "Reset your password"}</h1>
     {done ? <>
       <p role="status">Your password has been changed and all existing sessions have been signed out.</p>

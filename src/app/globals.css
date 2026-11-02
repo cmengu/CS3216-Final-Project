@@ -653,3 +653,10 @@ a { color: var(--accent); }
   .lp-form-row { grid-template-columns: minmax(0, 1fr); }
   .lp-contact .ic-btn--sm, .lp-done .ic-link { min-height: 44px; }
 }
+
+/* Preserve the supplied wordmark's proportions in both navigation bars. */
+.ic-brand--logo { width: fit-content; max-width: 100%; flex-shrink: 0; }
+.ic-brand-logo { display: block; width: clamp(150px, 18vw, 220px); max-width: 100%; height: auto; }
+@media (max-width: 600px) {
+  .ic-brand-logo { width: 170px; }
+}

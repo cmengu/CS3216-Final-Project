@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Brand } from "@/components/Brand";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { claimAccountInvitation, beginAccountEnrollment, completeAccountEnrollment, resendEnrollmentEmail, verifyEnrollmentEmail, type TwoFactorChallenge } from "@/auth";
@@ -28,7 +29,7 @@ function AccountEnrollment() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const restart = () => { setInvitation(null); setChallenge(null); setGrant(null); setPassword(""); setConfirmation(""); setError(""); };
-  return <div className="ic-auth"><Link href="/" className="ic-brand">Invoice Checker</Link><main className="ic-card">
+  return <div className="ic-auth"><Brand /><main className="ic-card">
     <h1>Set up your approved account</h1>
     {grant ? <>
       <p className="ic-hint">Email verified{email ? `: ${email}` : ""}. Choose your username and password for your private workspace.</p>

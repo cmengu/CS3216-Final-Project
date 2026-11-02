@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Brand } from "@/components/Brand";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useUser } from "@/auth";
 import { Icon, type IconName } from "@/components/icons";
@@ -194,12 +195,7 @@ export default function LandingPage() {
   return (
     <div className="lp">
       <header className="lp-nav">
-        <Link className="ic-brand" href="/">
-          <span className="ic-mark" aria-hidden="true">
-            <Icon name="tick" size="ui" />
-          </span>
-          Invoice Checker
-        </Link>
+        <Brand />
         <Link className="ic-btn ic-btn--primary" href={workspaceHref}>
           {signedIn ? "Open workspace" : "Sign in"}
           <Icon name="arrowR" arrow />
@@ -274,7 +270,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="lp-footer">
-        <span>Invoice Checker</span>
+        <Brand />
         <span>All invoices, names and prices on this page are synthetic.</span>
       </footer>
     </div>
