@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { Brand } from "@/components/Brand";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { completeSignIn, resendSecondFactor, signIn, useUser, verifySecondFactor, type SignInResult, type TwoFactorChallenge } from "@/auth";
-import { Icon } from "@/components/icons";
 import { useMasterList } from "@/masterList";
 import { TwoFactor } from "@/components/TwoFactor";
 
@@ -36,12 +36,7 @@ export default function SignIn() {
 
   return (
     <div className="ic-auth">
-      <Link className="ic-brand" href="/">
-        <span className="ic-mark" aria-hidden="true">
-          <Icon name="tick" size="ui" />
-        </span>
-        Invoice Checker
-      </Link>
+      <Brand />
       <main className="ic-card">
         <h1>Sign in</h1>
         <p className="ic-hint">Use your username or registered email. We’ll email a security code after checking your password.</p>
