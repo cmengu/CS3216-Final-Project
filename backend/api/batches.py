@@ -54,7 +54,6 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
                 raise HTTPException(409, str(exc)) from exc
         version = "" if totals_only else selected.price_sheet_version
         total_bytes = 0
-        seen = set()
         for file in files:
             filename = (file.filename or "invoice.pdf").replace("\\", "/").rsplit("/", 1)[-1]
             is_xml = filename.lower().endswith(".xml")
@@ -65,7 +64,8 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
             if is_xml and selected.mode == "fixture":
                 raise HTTPException(422, "XML invoices require live mode and a master list.")
             invoice_id = str(uuid4())
-            path = store.path(invoice_id)
+            # This UUID is new: do not ask Postgres to restore a nonexistent source.
+            path = store.files / f"{invoice_id}.pdf"
             temporary.append((invoice_id, path))
             size = 0
             with path.open("xb") as target:
@@ -88,11 +88,6 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
                     document_hash, _ = validate_pdf(path)
             except ValueError as exc:
                 raise HTTPException(422, f"{filename}: {exc}") from exc
-            existing = request.app.state.jobs.existing(workspace, document_hash, project_id)
-            if existing or document_hash in seen:
-                duplicates.append({"filename": filename, "existing_id": existing})
-                continue
-            seen.add(document_hash)
             documents.append(
                 {
                     "id": invoice_id,
@@ -102,6 +97,19 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
                     "size": size,
                 }
             )
+        existing = request.app.state.jobs.existing_many(
+            workspace, (item["document_hash"] for item in documents), project_id
+        )
+        fresh = []
+        seen = set()
+        for item in documents:
+            existing_id = existing.get(item["document_hash"])
+            if existing_id or item["document_hash"] in seen:
+                duplicates.append({"filename": item["filename"], "existing_id": existing_id})
+            else:
+                seen.add(item["document_hash"])
+                fresh.append(item)
+        documents = fresh
         charge_checks(
             request,
             len(documents),
@@ -127,7 +135,7 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
             request.app.state.worker.wake.set()
         return {
             "id": batch_id,
-            "invoices": [store.get(invoice_id, session_id=workspace) for invoice_id in accepted],
+            "invoices": request.app.state.jobs.invoices(workspace, accepted),
             "duplicates": duplicates,
             "processing": "background",
         }
