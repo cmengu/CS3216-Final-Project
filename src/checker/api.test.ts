@@ -257,6 +257,30 @@ it("reports batch limits without claiming that checking has started", async () =
   await expect(uploadInvoiceBatch([new File(["pdf"], "one.pdf")])).rejects.toMatchObject({ status: 429, retryAfter: 60, message: "Daily checking allowance reached." });
 });
 
+it.each([502, 504])("explains a non-JSON proxy failure (HTTP %s) without assuming the batch was lost", async (status) => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Gateway error</html>", { status })));
+  await expect(uploadInvoiceBatch([new File(["xml"], "one.xml")])).rejects.toMatchObject({
+    status,
+    message: expect.stringContaining("the batch may already have been saved"),
+  });
+});
+
+it("explains an upload rejected by the proxy's size limit", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("Payload Too Large", { status: 413 })));
+  await expect(uploadInvoiceBatch([new File(["xml"], "one.xml")])).rejects.toMatchObject({
+    status: 413,
+    message: expect.stringContaining("Split the archive into smaller batches"),
+  });
+});
+
+it("includes the HTTP status when a batch failure has no service explanation", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("Internal Server Error", { status: 500 })));
+  await expect(uploadInvoiceBatch([new File(["xml"], "one.xml")])).rejects.toMatchObject({
+    status: 500,
+    message: expect.stringContaining("HTTP 500"),
+  });
+});
+
 it("sends complete batches to their selected project", async () => {
   const fetchMock = vi.fn(async () => Response.json({ id: "batch", invoices: [], duplicates: [] }, { status: 202 }));
   vi.stubGlobal("fetch", fetchMock);

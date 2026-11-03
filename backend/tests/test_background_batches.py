@@ -2,6 +2,7 @@
 
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,72 @@ def test_complete_upload_is_persisted_without_running_reader(configuration, tmp_
         assert client.get("/invoice-batches/" + receipt["id"]).json()["queued"] == 2
         for row in receipt["invoices"]:
             assert client.get(row["file_url"]).content == (DATA / row["filename"]).read_bytes()
+
+
+def test_large_batch_uses_bounded_invoice_reads(configuration, tmp_path, monkeypatch):
+    app = app_for(tmp_path)
+    with TestClient(app) as client:
+        login(client)
+        queries = []
+        connect = app.state.store.connect
+
+        @contextmanager
+        def traced_connect():
+            with connect() as db:
+                db.set_trace_callback(queries.append)
+                yield db
+
+        monkeypatch.setattr(app.state.store, "connect", traced_connect)
+        source = (DATA / "invoice-01.pdf").read_bytes()
+        response = client.post(
+            "/invoice-batches",
+            headers=HEADERS,
+            files=[
+                (
+                    "files",
+                    (f"invoice-{i}.pdf", source + f"\n% copy {i}\n".encode(), "application/pdf"),
+                )
+                for i in range(174)
+            ],
+        )
+        assert response.status_code == 202, response.text
+        receipt = response.json()
+        assert [row["filename"] for row in receipt["invoices"]] == [
+            f"invoice-{i}.pdf" for i in range(174)
+        ]
+        reads = [
+            query for query in queries if query.startswith("SELECT") and "FROM invoices" in query
+        ]
+        # Two duplicate lookups, one first-use storage count, and one receipt lookup.
+        assert len(reads) <= 4, reads
+        assert client.get("/invoice-batches/" + receipt["id"]).json()["queued"] == 174
+
+
+def test_bulk_job_failure_rolls_back_invoices_and_releases_sources(configuration, tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        login(client)
+        with app.state.store.connect() as db:
+            db.execute(
+                "CREATE TRIGGER reject_jobs BEFORE INSERT ON invoice_jobs "
+                "BEGIN SELECT RAISE(ABORT, 'Simulated job storage failure'); END"
+            )
+        response = client.post(
+            "/invoice-batches",
+            headers=HEADERS,
+            files=[
+                (
+                    "files",
+                    ("invoice.pdf", (DATA / "invoice-01.pdf").read_bytes(), "application/pdf"),
+                )
+            ],
+        )
+        assert response.status_code == 500
+        assert client.get("/invoices").json() == []
+        assert list(app.state.store.files.iterdir()) == []
+        with app.state.store.connect() as db:
+            assert db.execute("SELECT COUNT(*) FROM invoice_batches").fetchone()[0] == 0
+            assert db.execute("SELECT SUM(reserved) FROM storage_limits").fetchone()[0] == 0
 
 
 def test_queued_batches_resume_after_service_restart(configuration, tmp_path):
@@ -172,8 +239,11 @@ def test_batch_status_is_private_and_exact_duplicates_are_skipped(configuration,
     with TestClient(app) as client:
         login(client)
         receipt = submit(client, ("invoice-01.pdf",))
-        duplicate = submit(client, ("invoice-01.pdf",))
-        assert duplicate["invoices"] == [] and len(duplicate["duplicates"]) == 1
+        duplicate = submit(client, ("invoice-01.pdf", "invoice-01.pdf"))
+        assert duplicate["invoices"] == [] and len(duplicate["duplicates"]) == 2
+        assert all(
+            row["existing_id"] == receipt["invoices"][0]["id"] for row in duplicate["duplicates"]
+        )
         other = {"username": "second-member", "password": "second-member-password-2026"}
         add_member(client, other)
         client.cookies.clear()
