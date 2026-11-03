@@ -89,7 +89,20 @@ describe("listInvoices", () => {
       return new Response(JSON.stringify(url.endsWith("offset=0") ? page : [{ id }]), { status: 200 });
     }));
     expect(await listInvoices()).toHaveLength(101);
-    expect(asked).toEqual(["limit=100&offset=0", "limit=100&offset=100"]);
+    expect(asked).toEqual(["include_details=true&limit=100&offset=0", "include_details=true&limit=100&offset=100"]);
+  });
+
+  it("loads 173 detailed invoices in two requests without fetching each invoice again", async () => {
+    const records = Array.from({ length: 173 }, (_, index) => ({ ...saved("Supplier", "0.00"), id: String(index) }));
+    const fetchMock = vi.fn(async (url: string) => {
+      const offset = Number(new URL(url, "http://localhost").searchParams.get("offset"));
+      return Response.json(records.slice(offset, offset + 100));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const invoices = await listInvoices();
+    expect(invoices).toHaveLength(173);
+    expect(invoices.every((invoice) => invoice.supplier === "Supplier")).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
