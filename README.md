@@ -1,133 +1,70 @@
-# PO Tracker
+<div align="center">
 
-An order-tracking app for a small food supplier that shows each staff role only what that role may see.
+# Invoice Checker
 
-The team's current product is the **Invoice Checker**: it reads a supplier's PDF or Vietnamese HDon XML invoice, fills
-the agreed fields, and checks each line against a price sheet. The [backend](backend/README.md)
-holds the reader, the service, the price check and the scorer, with invented invoices in
-`data/dummy/`. It runs on replayed answers (`INVOICE_MODE=fixture`) or on the real steps
-(`INVOICE_MODE=live`). The Invoices screens read from it at `NEXT_PUBLIC_INVOICE_API`, which
-defaults to `http://127.0.0.1:8001`. The earlier PO demo remains below.
+Checks each line of a supplier invoice against the prices agreed in a master list, and leaves the pay decision to the accounts clerk.
 
-Upload individual PDFs/XMLs (up to 20 MiB each) or ZIP/RAR archives (up to 50 MiB). Archives are unpacked locally in the browser, including invoices inside folders, then uploaded together to the server’s durable background queue. Keep the browser open until upload completes; checking then continues without it. Expanded archives are limited to 100 MiB and 1,000 entries. Password-protected and nested archives are not unpacked. Other file types are skipped with a notice. XML uses structured fields directly, without OCR/model extraction; it requires live mode. A master list is needed only for invoice groups that compare prices. The original XML remains available for line review and download.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.svg">
+  <img alt="A line runs from the invoice file through Read, Extract and Check to the clerk's decision. A failed step saves the invoice as failed with a reason." src="docs/how-it-works-light.svg" width="960">
+</picture>
 
-**Accounts:** administrators approve email addresses at `/admin/accounts`; the app emails a personal, expiring join link so users can choose their own username/password at `/join`. Each account has its own persistent private workspace. Every sign-in requires a security code sent to the account’s registered email. Forgot-password recovery also verifies that inbox before accepting a new password. Prepare the first admin using the [backend setup instructions](backend/README.md#approved-accounts-and-private-workspaces). Public demo login is disabled.
-**Invoice groups:** see [group workflow, database changes and Supabase migration](docs/projects-and-supabase.md). Invoice groups can compare against their own uploaded master list or just sum extracted invoice totals.
+<sub>The path of one invoice, drawn from <code>backend/api/processing.py</code>. It is a diagram, not a screenshot.</sub>
 
+</div>
 
-**Continuing the work? Start with [`docs/HANDOFF.md`](docs/HANDOFF.md):** where it stands and what is next.
-Notes from code reviews, for people and AI assistants, are in [`docs/review/`](docs/review/).
-Read the newest file before changing `backend/` or `src/checker/`.
+## Why
 
+An accounts clerk compares every invoice line with the agreed price sheet by hand, and invoices arrive as scans in many layouts. The checker reads the invoice and flags each line that differs from the master list. When it is unsure, it says so with a reason and reports no overcharge total, so "All match" means the invoice can be paid. The clerk then marks it Ready to pay, Raise with supplier, or Pay anyway.
 
-**Live demo: https://po-tracker-blue.vercel.app**
-No account and no password. Pick a person on the first screen. If it asks for a PIN, type any four digits (for example `1234`).
+## What it does
 
-Built for the CS3216 (NUS) final project. The demo company is Edible Garden City (EGC), a farm that sells herbs and edible flowers. Everything you see is invented sample data.
+- Reads a PDF (up to 20 MiB, 1 to 30 pages) with Docling OCR, then a model fills the printed fields. Vietnamese HDon XML is read directly, with no OCR or model.
+- Uploads one file at a time or in batches. ZIP and RAR archives (up to 50 MiB) are unpacked in the browser, with limits of 100 MiB expanded and 1,000 entries. Nested and password-protected archives are not unpacked.
+- Checks each line against the uploaded master list (CSV, XLSX or XLS). Matching uses supplier, PO, invoice date, currency, item code and unit. A line with no code needs an exact description match. Price differences above 0.005 are flagged, undercharges included.
+- Offers Ready to pay only when the check completed and every line matches. Ready-to-pay invoices export as CSV. An overcharge gives a dispute note to copy. Nothing is sent from the app.
+- Keeps a private workspace per approved account. Administrators approve email addresses at `/admin/accounts`, users join from an emailed link at `/join`, and every sign-in needs an emailed security code. There is no public demo login. See the [backend setup](backend/README.md#approved-accounts-and-private-workspaces).
+- Groups invoices into Invoice groups, each comparing against its own master list or just summing invoice totals. See [groups and the Supabase migration](docs/projects-and-supabase.md).
 
-**Anyone can run this repo.** It has no private dependencies: `npm install`, then `npm run dev`.
+Keep the browser open until an upload finishes. Checking then continues on the server. Queued jobs need a running backend with persistent storage.
 
-**What changed on 10 October 2026.** The Add orders page, which read purchase order PDFs, was removed together with the private package it needed. The team's next product is an invoice checker, and it does not read purchase orders. The live demo is an older build and still shows Add orders until it is redeployed.
+## Modes
 
-## Contents
+- `INVOICE_MODE=live` runs the real reader and model.
+- `INVOICE_MODE=fixture` replays known answers for the exact dummy PDFs in `data/dummy/` and refuses other files. It is not a live check and must not be used to measure accuracy. The screens label it.
 
-- [Try the live demo](#try-the-live-demo)
-- [What this is](#what-this-is)
-- [Facts at a glance](#facts-at-a-glance)
-- [Run it on your machine](#run-it-on-your-machine)
-- [Checks](#checks)
-- [Where things are](#where-things-are)
-- [Rules that must not be broken](#rules-that-must-not-be-broken)
-- [Working on this with an AI assistant](#working-on-this-with-an-ai-assistant)
-- [Words used in this repo](#words-used-in-this-repo)
-- [Deploy](#deploy)
-- [Help and maintainer](#help-and-maintainer)
+## Evidence
 
-## Try the live demo
-
-Open https://po-tracker-blue.vercel.app. It opens on "Who's working?". Pick one of five people:
-
-| Pick | Role | PIN asked? | What this person can do |
-| --- | --- | --- | --- |
-| **Eunice** | Sales coordinator | No | Sees prices. Confirms orders. Marks orders delivered. **Start here.** |
-| **May** | Owner | Yes, any four digits | Everything Eunice can, plus Invoices, People, Settings and the full History. |
-| **Farah** | Finance admin | Yes, any four digits | Sees prices. Opens Invoices and marks orders invoiced. Cannot confirm orders. |
-| **Mei** | Packing lead | No | Sees every order with no prices at all. Marks orders delivered. |
-| **Dennis** | Account manager | No | Sees only his two customers (Harbour Hotel, Marina Grand), with no prices. |
-
-A PIN that is not exactly four digits is refused and the box clears.
-
-A five-minute walk, as Eunice:
-
-1. Home shows today's deliveries and anything that needs a check.
-2. Click **Orders**, then open `HH-2231`. The page shows the order's lines, the file it came from and its timeline.
-3. Click **Suggest reply** to draft the acknowledgement to the customer. Add a **Comment**. Click **Mark delivered**.
-4. Switch person (profile menu, bottom left) to **Mei** and open the same order: the prices are gone. Switch to **Dennis**: he sees only his two customers.
-5. Switch to **Farah** (PIN `1234`), open **Invoices**, and mark the delivered order invoiced.
-6. Switch to **May** (PIN `1234`) for **People** and **Settings**.
-7. **Reset demo data** in the profile menu puts everything back.
-
-Press `⌘K` anywhere for search, and `⌘I` for the assistant column.
-
-The demo keeps its data in your own browser. Nothing you do is sent to a server or seen by anyone else.
-
-## What this is
-
-**The problem.** A supplier's orders, delivery states and invoices live in spreadsheets and chat threads. Sales, packing and finance each need a different slice, and prices should not reach everyone.
-
-**What the app does.**
-
-- Keeps every order in one list with its state (Draft, Confirmed, Needs check, Blocked or Delivered) and marks the ones already invoiced.
-- Shows each order's lines, source file, timeline and comments on one page.
-- Shows each role only what it may see. Packing never sees a price. An account manager sees only their own customers.
-- Lists delivered orders for finance to invoice.
-
-**What it is not, yet.** The PO frontend does not connect to a server or database and has no real login. The five people and the PIN are a demo of the role rules, not security. The separate invoice service uses FastAPI and SQLite; see [its setup guide](backend/README.md).
-
-**The design it follows.** The approved design is the Version 16 prototype (`egc-platform-prd/prototype.html`), which is kept outside this repo. Where this app and the prototype differ, the prototype wins. Ask the maintainer for the file.
-
-## Facts at a glance
-
-- **Stack:** Next.js 16.3.8 (App Router), React 19.2.8, TypeScript 5. Tests: Vitest 5. Browser walks: `playwright-core` driving your installed Google Chrome.
-- **PO frontend runs where:** in the browser only, with no API calls. The independent invoice backend runs locally on port 8001.
-- **Data:** invented sample data in `src/sample/`, copied into one `localStorage` key on first load (`KEY` in `src/state/demo-store.ts`).
-- **Roles:** five, defined in `src/sample/people.ts`. Every permission is one function in `src/platform/access.ts`.
-- **Deploy:** Vercel. See [Deploy](#deploy).
-- **Node:** 20.9 or newer.
+All invoices, names and prices in the repo are invented. `data/mock_invoice_dataset/` holds 14 synthetic scanned invoices in seven layouts, a master price sheet and an answer key. A benchmark on 26 October 2026 ran those 14 PDFs (58 lines) through two model setups. Both finished all invoices and caught all seven intentional price errors. Line classifications were 57 of 58 correct for OpenAI and 58 of 58 for Ollama gemma4:e4b with qwen3.5:4b corrections. These are small, previously tuned synthetic samples and not a general accuracy estimate. Details: [benchmark](docs/review/2026-10-26-model-benchmark.md).
 
 ## Run it on your machine
 
-For the PO frontend, you need Node 20.9 or newer. The [invoice backend](backend/README.md) has separate Python dependencies and startup instructions.
+You need Node 20.9 or newer, and Python with [uv](https://docs.astral.sh/uv/) for the backend.
 
 ```
 npm install
-npm run dev
+npm run dev          # http://localhost:3000, reads the service at NEXT_PUBLIC_INVOICE_API
 ```
 
-Then open http://localhost:3000 and follow [Try the live demo](#try-the-live-demo).
+The service defaults to `http://127.0.0.1:8001`. Set up `backend/.env` and prepare the first administrator as described in [backend/README.md](backend/README.md), then, from `backend/`:
+
+```
+uv sync --locked --extra dev --extra docling --extra dummy
+.venv/bin/python -m uvicorn api.app:app --env-file .env --host 127.0.0.1 --port 8001 --workers 1
+```
+
+Check `http://127.0.0.1:8001/health` for the mode before uploading.
 
 ## Checks
 
-Run all four before you open a pull request:
-
 ```
-npm test             # Vitest: role rules for all five people, order actions, the assistant and search
+npm test             # Vitest
 npm run lint
 npm run typecheck
 npm run build
 ```
 
-Browser walks, against a running app (`npm run build && npm start`), with Google Chrome installed:
-
-```
-APP=http://localhost:3000 OUT=/tmp/e2e npm run e2e          # the whole demo, start to finish; fails on any console error
-APP=http://localhost:3000 npm run e2e:roles                  # every page and export as each of the five people
-PROTO=/path/to/prototype.html APP=http://localhost:3000 OUT=/tmp/shots npm run shots   # every screen beside the prototype, both themes, with a pixel diff
-```
-
-`npm run lint` also scans `.vercel/output/` if you have built for Vercel on this machine, and reports errors in that generated code. Those are not source errors.
-
-For the invoice backend, after installing its dependencies, run from `backend/`:
+From `backend/`:
 
 ```
 .venv/bin/pytest -q --run-docling
@@ -135,63 +72,20 @@ For the invoice backend, after installing its dependencies, run from `backend/`:
 .venv/bin/ruff format --check api read dummy schema.py invoice_processing tests
 ```
 
-The Docling tests run actual digital/scanned PDF conversion and may download model weights on the first run. They do not call a paid AI API.
+The Docling tests convert real PDFs and may download model weights on the first run. They do not call a paid AI API.
 
 ## Where things are
 
 | Path | What is in it |
 | --- | --- |
-| `src/app/` | The pages. `/who` is the person picker. Inside the `(shell)` group: `/home`, `/orders`, `/orders/[id]`, `/customers`, `/customers/[id]`, `/invoices`, `/people`, `/history`, `/settings/[pane]`. `/` goes to `/home`. |
-| `src/app/globals.css` | The design system, ported from the prototype's CSS. |
-| `src/components/pages/` | One view per page, with its pure logic beside it (`logic.ts`, `figures.ts`). |
-| `src/components/shell/` | The frame around every page: side rail, profile menu, header, keyboard bar, `⌘K` palette, `⌘I` assistant column, and `Guard.tsx`. |
-| `src/platform/access.ts` | The role rules: `canPrice`, `canEdit`, `canDeliver`, `canInvoice`, `isOwner`, `visibleOrders`, `lines`, `pinOk`, `navAllowed`. |
-| `src/platform/assistant/` | The `⌘K` search and the `⌘I` assistant. |
-| `src/sample/` | The invented products, customers, people, orders and events. |
-| `src/state/` | The demo store (`demo-store.ts`), the picked person (`session.ts`), the theme, and one actions file per feature. |
-| `scripts/` | The two browser walks and the screenshot comparison. |
-| `backend/` | Duc's invoice API, PDF reader, SQLite persistence, dummy generator, proposed team contracts and tests. |
-| `data/dummy/` | Invented semiconductor invoices, scanned copies, Excel price sheet and known fixture results. |
+| `src/app/` | The pages: `invoices`, `master-list`, `audit`, `account`, `admin`, `sign-in`, `join`, `setup`, `forgot-password`. |
+| `src/checker/` | The API client, upload and archive handling, and the one module for labels and money formatting (`present.ts`). |
+| `src/masterList/` | Master list import in the browser. |
+| `backend/` | FastAPI service: `read/` (OCR and XML), `extract/` (model), `check/` (price check), `api/` (routes, accounts, queue), SQLite or Postgres storage. |
+| `data/dummy/`, `data/mock_invoice_dataset/` | Invented invoices, price sheets and answer keys. |
+| `docs/` | [API map](docs/API_MAP.md), [touchpoints](docs/TOUCHPOINTS.md), [handoff](docs/HANDOFF.md), code review notes in `docs/review/`, and the approved screens in `docs/design/`. |
 
-How a role is applied: `src/components/shell/Guard.tsx` asks `navAllowed()` for every page. A page a role may not open draws Home instead. Price fields are removed by `lines()`, not hidden by the page.
-
-## Rules that must not be broken
-
-1. **Never commit a real client document, even a redacted one.** Real purchase orders and invoices carry a company's prices and buying habits, and git history is permanent. `*.pdf` and `*.xlsx` are git-ignored except under `fixtures/` and `data/dummy/`, which may hold invented documents only. `data/private/` and the backend's runtime/artifact directories remain ignored.
-2. **Never commit real names, codes or prices.** This repo is public. Any file named `*.private.*` is git-ignored, so real data kept on your machine under such a name cannot be committed by accident. Never paste real data into a tracked file, a test, a commit message or an issue.
-3. **Everything in `src/sample/` is invented.** Names, places, contacts and prices there are made up. Keep it that way.
-4. **Every role check goes through `src/platform/access.ts`.** Do not write `role === "owner"` in a page. One file is what lets a server take the checks over later without a hunt through the pages.
-5. **The prototype wins.** Do not restyle a screen or reword its text to taste. Change `globals.css` values only when the prototype's value changed.
-
-## Working on this with an AI assistant
-
-Point the assistant at this file first. The facts below are the ones it cannot work out from the code.
-
-- **This Next.js is newer than most training data.** APIs and file conventions may differ from what the assistant expects. The matching docs are in `node_modules/next/dist/docs/`; have it read the relevant guide before it writes code. `next dev` writes an `AGENTS.md` at the repo root that says the same.
-- **The two apps are separate.** PO frontend state lives in `src/state/demo-store.ts`. The invoice API and database live in `backend/api/`; start with [backend/README.md](backend/README.md). Its extraction/checking adapters are fixture-backed until the team supplies real implementations.
-- **The five rules above apply to an assistant too**, rule 2 above all: it must not read `*.private.*` files into a commit, a test or a chat that leaves the machine.
-
-Where to look, by question:
-
-| Question | Start in |
-| --- | --- |
-| Who can see or do what? | `src/platform/access.ts`, then `src/platform/roles.test.ts` |
-| What does an order hold, and what states can it be in? | `src/sample/types.ts`, `src/state/actions/orders.ts` |
-| Where does the sample data come from? | `src/sample/index.ts` |
-| What does a page look like and why? | `src/components/pages/`, `src/app/globals.css` |
-| What must stay true end to end? | `scripts/e2e.mjs`, `scripts/e2e-roles.mjs` |
-
-To confirm a change: `npm test && npm run typecheck && npm run build`, then the browser walks in [Checks](#checks).
-
-## Words used in this repo
-
-- **PO** — purchase order. The document a buyer sends to say what it wants delivered and when.
-- **SKU** — the farm's own code for one product, for example `EGC-PTND` (pea tendrils 35g).
-- **Alias** — a buyer's wording for a product ("Edible flower mix (tray)") tied to a SKU. A person approves an alias once; after that the wording matches by itself.
-- **Outlet** — the kitchen or department inside a buyer that the goods go to.
-- **Draft order** — an order that a person has not yet confirmed.
-- **Rail** — the menu down the left side.
-- **EGC** — Edible Garden City, the demo company.
+Rules for people and AI assistants are in [CLAUDE.md](CLAUDE.md). This Next.js version differs from older ones; read the guide in `node_modules/next/dist/docs/` before changing code. Never commit a real client document, name, code or price, even redacted. `*.pdf` and `*.xlsx` are git-ignored except under `fixtures/`, `data/dummy/` and `data/mock_invoice_dataset/`.
 
 ## Deploy
 
@@ -290,4 +184,5 @@ and [Tailscale container networking](https://tailscale.com/docs/concepts/userspa
 
 - Questions and bugs: open an issue on this repo.
 - Maintainer: Chen Meng ([@cmengu](https://github.com/cmengu)).
+- Built for the CS3216 (NUS) final project.
 - Licence: none chosen yet.
