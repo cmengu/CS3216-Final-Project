@@ -86,9 +86,12 @@ async function read(path: string): Promise<Response> {
 }
 
 export async function listInvoices(): Promise<SupplierInvoice[]> {
+  // Batch the initial load; subsequent polls keep using small summaries and
+  // fetch details only for invoices whose server revision changed.
+  const includeDetails = cache === null;
   const summaries: (Partial<ServiceInvoice> & { id: string })[] = [];
   for (let offset = 0; ; offset += PAGE) {
-    const response = await read(`/invoices?limit=${PAGE}&offset=${offset}`);
+    const response = await read(`/invoices?include_details=${includeDetails}&limit=${PAGE}&offset=${offset}`);
     if (!response.ok) throw new Error(broken);
     const rows = await response.json() as (Partial<ServiceInvoice> & { id: string })[];
     summaries.push(...rows);
@@ -102,6 +105,7 @@ export async function listInvoices(): Promise<SupplierInvoice[]> {
       const summary = summaries[index];
       const previous = cache?.find(invoice => invoice.id === summary.id);
       if (previous && summary.updated_at && previous.serverUpdatedAt === summary.updated_at) found[index] = previous;
+      else if (Object.hasOwn(summary, "invoice") && Object.hasOwn(summary, "check")) found[index] = toSupplierInvoice(summary as ServiceInvoice);
       else if (summary.status && ["queued", "reading", "extracting", "checking"].includes(summary.status)) found[index] = toSupplierInvoice({ ...summary, invoice: null, check: null, document: null } as ServiceInvoice);
       else found[index] = await getInvoice(summary.id);
     }

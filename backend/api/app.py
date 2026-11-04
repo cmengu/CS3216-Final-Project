@@ -18,6 +18,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from read.bounded import read_pdf_bounded
 from read.reader import MAX_BYTES, validate_pdf
@@ -85,6 +86,14 @@ def _slot_wait_seconds() -> float:
     if "pytest" in sys.modules:
         return 0.0
     return 45.0
+
+
+def _protected_auth_error(request):
+    if has_invalid_auth_token(request):
+        return "Invalid or expired session"
+    if is_auth_required() and extract_request_claims(request) is None:
+        return "Authentication required"
+    return None
 
 
 def create_app(
@@ -233,7 +242,8 @@ def create_app(
         ) and request.method == "POST":
             ip = request.client.host if request.client else "unknown"
             try:
-                request.app.state.limits.take(
+                await run_in_threadpool(
+                    request.app.state.limits.take,
                     "password-reset-ip"
                     if path.startswith("/auth/password-reset/")
                     else "enrollment-ip"
@@ -269,15 +279,12 @@ def create_app(
             )
         )
         if protected and request.method != "OPTIONS":
-            if has_invalid_auth_token(request):
+            # Session/rate-limit checks use synchronous database connections. Keep
+            # those waits off the event loop so one slow request cannot stall sign-in.
+            auth_error = await run_in_threadpool(_protected_auth_error, request)
+            if auth_error:
                 return JSONResponse(
-                    {"detail": "Invalid or expired session"},
-                    status_code=401,
-                    headers={"Cache-Control": "no-store"},
-                )
-            if is_auth_required() and extract_request_claims(request) is None:
-                return JSONResponse(
-                    {"detail": "Authentication required"},
+                    {"detail": auth_error},
                     status_code=401,
                     headers={"Cache-Control": "no-store"},
                 )
@@ -431,17 +438,21 @@ def create_app(
                     app.state.limits.release_storage(session_id, reserved)
             app.state.slot.release()
 
-    @app.get("/invoices", response_model=list[InvoiceSummary])
+    @app.get("/invoices", response_model=list[SavedInvoice | InvoiceSummary])
     def invoices(
         request: Request,
         limit: int = Query(50, ge=1, le=100),
         offset: int = Query(0, ge=0),
         project_id: str | None = None,
+        include_details: bool = False,
     ):
         session_id = _request_session_id(request)
         if project_id:
             require_project(app.state.store, project_id, session_id)
-        return app.state.store.list(limit, offset, session_id=session_id, project_id=project_id)
+        rows = app.state.store.list(limit, offset, session_id=session_id, project_id=project_id)
+        if include_details:
+            return app.state.jobs.invoices(session_id, [row.id for row in rows])
+        return rows
 
     @app.get("/invoices/{invoice_id}", response_model=SavedInvoice)
     def invoice(invoice_id: UUID, request: Request, session_id: str | None = None):

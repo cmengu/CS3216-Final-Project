@@ -240,6 +240,10 @@ def test_batch_status_is_private_and_exact_duplicates_are_skipped(configuration,
         login(client)
         receipt = submit(client, ("invoice-01.pdf",))
         duplicate = submit(client, ("invoice-01.pdf", "invoice-01.pdf"))
+        details = client.get("/invoices?include_details=true&limit=1&offset=0").json()
+        assert len(details) == 1 and details[0]["id"] == receipt["invoices"][0]["id"]
+        assert {"document", "invoice", "check", "file_url"} <= details[0].keys()
+        assert client.get("/invoices?include_details=true&limit=1&offset=1").json() == []
         assert duplicate["invoices"] == [] and len(duplicate["duplicates"]) == 2
         assert all(
             row["existing_id"] == receipt["invoices"][0]["id"] for row in duplicate["duplicates"]
@@ -250,6 +254,7 @@ def test_batch_status_is_private_and_exact_duplicates_are_skipped(configuration,
         login(client, other)
         assert client.get("/invoice-batches/" + receipt["id"]).status_code == 404
         assert client.get("/invoices").json() == []
+        assert client.get("/invoices?include_details=true").json() == []
 
 
 def test_storage_and_processing_allowances_apply_before_enqueuing(
