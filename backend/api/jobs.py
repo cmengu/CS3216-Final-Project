@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from .access_store import AccessStore
 from .processing import LostLease, process_stored_invoice
-from .storage import now
+from .storage import _saved, now
 from .uploaded_master import UploadedMasterStages
 
 log = logging.getLogger(__name__)
@@ -17,15 +17,47 @@ MAX_ATTEMPTS = 3
 
 
 class InvoiceJobs(AccessStore):
-    def existing(self, workspace, document_hash, project_id=None):
+    def _existing_many(self, db, workspace, hashes, project_id):
+        """Use bounded queries rather than a database round trip for every file."""
+        hashes = list(dict.fromkeys(hashes))
+        found = {}
+        for offset in range(0, len(hashes), 500):
+            chunk = hashes[offset : offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self.execute(
+                db,
+                f"SELECT id,document_hash FROM {self.table('invoices')} "
+                f"WHERE session_id=? AND project_id=? AND status!='failed' "
+                f"AND document_hash IN ({placeholders}) ORDER BY created_at DESC,id DESC",
+                (workspace, project_id, *chunk),
+            ).fetchall()
+            for row in rows:
+                found.setdefault(row["document_hash"], row["id"])
+        return found
+
+    def existing_many(self, workspace, hashes, project_id=None):
         project_id = project_id or self.store.ensure_legacy_project(workspace)
         with self.connect() as db:
-            row = self.execute(
-                db,
-                f"SELECT id FROM {self.table('invoices')} WHERE session_id=? AND document_hash=? AND project_id=? AND status!='failed' ORDER BY created_at DESC LIMIT 1",
-                (workspace, document_hash, project_id),
-            ).fetchone()
-        return row["id"] if row else None
+            return self._existing_many(db, workspace, hashes, project_id)
+
+    def existing(self, workspace, document_hash, project_id=None):
+        return self.existing_many(workspace, [document_hash], project_id).get(document_hash)
+
+    def invoices(self, workspace, invoice_ids):
+        """Load a receipt in selection order without one SELECT per invoice."""
+        found = {}
+        with self.connect() as db:
+            for offset in range(0, len(invoice_ids), 500):
+                chunk = invoice_ids[offset : offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = self.execute(
+                    db,
+                    f"SELECT * FROM {self.table('invoices')} "
+                    f"WHERE session_id=? AND id IN ({placeholders})",
+                    (workspace, *chunk),
+                ).fetchall()
+                found.update((row["id"], _saved(row, row["id"])) for row in rows)
+        return [found[invoice_id] for invoice_id in invoice_ids]
 
     def enqueue(
         self,
@@ -51,19 +83,17 @@ class InvoiceJobs(AccessStore):
                 f"INSERT INTO {self.table('invoice_batches')} (id,workspace_id,created_at) VALUES (?,?,?)",
                 (batch_id, workspace, now()),
             )
+            existing = self._existing_many(
+                db, workspace, (item["document_hash"] for item in documents), project_id
+            )
+            invoice_rows, source_rows, job_rows = [], [], []
             for item in documents:
-                duplicate = self.execute(
-                    db,
-                    f"SELECT id FROM {self.table('invoices')} WHERE session_id=? AND document_hash=? AND project_id=? AND status!='failed' ORDER BY created_at DESC LIMIT 1",
-                    (workspace, item["document_hash"], project_id),
-                ).fetchone()
+                duplicate = existing.get(item["document_hash"])
                 if duplicate:
-                    duplicates.append({**item, "existing_id": duplicate["id"]})
+                    duplicates.append({**item, "existing_id": duplicate})
                     continue
                 at = now()
-                self.execute(
-                    db,
-                    f"INSERT INTO {self.table('invoices')} (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode) VALUES (?,?,?,'queued',?,?,?,?,?,?,?)",
+                invoice_rows.append(
                     (
                         item["id"],
                         item["filename"],
@@ -78,17 +108,36 @@ class InvoiceJobs(AccessStore):
                     ),
                 )
                 if self.schema:
-                    self.execute(
-                        db,
-                        f"INSERT INTO {self.table('invoice_files')} (id,content) VALUES (?,?)",
+                    source_rows.append(
                         (item["id"], self.store.path(item["id"]).read_bytes()),
                     )
-                self.execute(
-                    db,
-                    f"INSERT INTO {self.table('invoice_jobs')} (invoice_id,batch_id,workspace_id,status,master_version,created_at) VALUES (?,?,?,'queued',?,?)",
+                job_rows.append(
                     (item["id"], batch_id, workspace, master_version, at),
                 )
                 accepted.append(item["id"])
+                existing[item["document_hash"]] = item["id"]
+            # Psycopg executemany pipelines the writes to Postgres; all three groups
+            # remain in the same transaction, so sources and jobs commit together.
+            for query, rows in (
+                (
+                    f"INSERT INTO {self.table('invoices')} (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode) VALUES (?,?,?,'queued',?,?,?,?,?,?,?)",
+                    invoice_rows,
+                ),
+                (
+                    f"INSERT INTO {self.table('invoice_files')} (id,content) VALUES (?,?)",
+                    source_rows,
+                ),
+                (
+                    f"INSERT INTO {self.table('invoice_jobs')} (invoice_id,batch_id,workspace_id,status,master_version,created_at) VALUES (?,?,?,'queued',?,?)",
+                    job_rows,
+                ),
+            ):
+                if rows:
+                    cursor = db.cursor()
+                    try:
+                        cursor.executemany(query.replace("?", "%s") if self.schema else query, rows)
+                    finally:
+                        cursor.close()
         return batch_id, accepted, duplicates
 
     def batch(self, batch_id, workspace):

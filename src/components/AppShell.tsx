@@ -5,6 +5,7 @@
  * setup stepper, the account menu) over one page. Sends anyone signed out to /sign-in.
  */
 import Link from "next/link";
+import { Brand } from "@/components/Brand";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { signOut, useUser, type User } from "@/auth";
@@ -175,12 +176,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <Ctx.Provider value={{ user, invoices, invoiceError: error, phase, projects: projectState.projects, projectError: projectState.error, projectsLoading: projectState.loading, reloadProjects: projectState.reload }}>
       <div className="ic-app">
         <header className="ic-top">
-          <Link className="ic-brand" href="/">
-            <span className="ic-mark" aria-hidden="true">
-              <Icon name="tick" size="ui" />
-            </span>
-            Invoice Checker
-          </Link>
+          <Brand />
           <Switcher toDecide={toDecide} />
           <Account user={user} />
         </header>
