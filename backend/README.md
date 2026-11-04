@@ -71,6 +71,8 @@ is private to the Tailscale network; Railway needs a connection to that network 
 Otherwise, the configured backup handles the model requests after the primary fails.
 On Vercel set `NEXT_PUBLIC_INVOICE_API=/api`; the existing rewrite forwards API calls to
 Railway. The model URLs, credentials and timeout variables belong to the Railway backend.
+Ollama extraction does not require an OpenAI API key, even though the model setting is
+named `OPENAI_MODEL` for compatibility with the existing extraction configuration.
 
 Before sending invoice text to Cloud Run, the transport sends an empty model-load request.
 It allows up to 600 seconds for startup, including transient service errors and a model

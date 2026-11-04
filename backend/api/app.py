@@ -539,9 +539,12 @@ def _stages_from_environment() -> Stages | None:
     if mode == "live":
         checker = os.environ.get("INVOICE_CHECKER", "master_list")
         if checker in {"master_list", "csv_context"}:
-            if not os.environ.get("OPENAI_API_KEY", "").strip():
+            from extract.local_pipeline import is_local_model
+
+            model = os.environ.get("OPENAI_MODEL", "")
+            if not is_local_model(model) and not os.environ.get("OPENAI_API_KEY", "").strip():
                 raise ValueError("Set OPENAI_API_KEY in the backend environment for live mode")
-            return UploadedMasterStages(model=os.environ.get("OPENAI_MODEL", ""))
+            return UploadedMasterStages(model=model)
         if checker != "standard":
             raise ValueError("INVOICE_CHECKER must be master_list, csv_context or standard")
         sheet = os.environ.get("INVOICE_PRICE_SHEET")
