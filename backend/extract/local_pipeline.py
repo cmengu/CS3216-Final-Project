@@ -20,6 +20,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from extract.context import CheckingInvoice, CheckingLine
+from extract.ollama_transport import request_ollama
 from read.models import ParsedDocument
 from schema import DecimalText, InvoiceLine, InvoiceRecord
 
@@ -239,6 +240,7 @@ def _call_ollama_structured(
     schema_type: type[BaseModel],
     tracker: UsageAccumulator,
     temperature: float = 0.0,
+    deadline: float | None = None,
 ) -> BaseModel:
     payload = {
         "model": model,
@@ -257,10 +259,9 @@ def _call_ollama_structured(
         },
     }
     try:
-        with httpx.Client(timeout=120.0) as http:
-            resp = http.post(f"{base_url}/api/chat", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        data = request_ollama(base_url, payload, client_factory=httpx.Client, deadline=deadline)
+    except ValueError:
+        raise
     except Exception as exc:
         raise ValueError(
             f"Local LLM request failed ({type(exc).__name__}); no invoice was accepted"
@@ -296,6 +297,7 @@ def _call_ollama_structured(
                     schema_type=schema_type,
                     tracker=tracker,
                     temperature=0.1,
+                    deadline=deadline,
                 )
             raise ValueError(
                 "The model's output failed schema validation; no invoice was accepted"

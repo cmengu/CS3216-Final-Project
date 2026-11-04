@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 from typing import Literal
 
 from openai import OpenAI, OpenAIError
@@ -242,6 +243,7 @@ def _suggest_layouts_local(sheets: list[dict], primary_model: str) -> Layouts:
     challenger_model = get_challenger_model(primary_model)
     tracker = UsageAccumulator(model=primary_model)
     local_payload = _build_local_payload(sheets)
+    deadline = time.monotonic() + 45
 
     primary_result: Layouts | None = None
     critiques: list[str] = []
@@ -253,6 +255,7 @@ def _suggest_layouts_local(sheets: list[dict], primary_model: str) -> Layouts:
             user_prompt=local_payload,
             schema_type=Layouts,
             tracker=tracker,
+            deadline=deadline,
         )
         assert isinstance(raw, Layouts)
         candidate = _validate_layouts(_normalize_local_layouts(raw, sheets), sheets)
@@ -277,6 +280,7 @@ def _suggest_layouts_local(sheets: list[dict], primary_model: str) -> Layouts:
             user_prompt=critique_prompt,
             schema_type=Layouts,
             tracker=tracker,
+            deadline=deadline,
         )
         assert isinstance(raw_challenger, Layouts)
         challenger_candidate = _validate_layouts(

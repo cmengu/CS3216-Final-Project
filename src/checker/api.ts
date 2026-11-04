@@ -368,7 +368,12 @@ export async function uploadInvoiceBatch(files: File[], projectId?: string): Pro
   } catch { throw new UploadError("The batch could not be uploaded. Keep this page open and try again.", null); }
   const result = await response.json().catch(() => null);
   if (!response.ok || !result || !Array.isArray(result.invoices)) {
-    const detail = typeof result?.detail === "string" ? result.detail : "The batch could not be accepted. Try again.";
+    const fallback = [502, 504].includes(response.status)
+      ? "The upload connection timed out or the checking service is unavailable. Refresh the invoice list before retrying; the batch may already have been saved. If invoices are missing, upload a smaller batch."
+      : response.status === 413
+        ? "The upload was too large for the server. Split the archive into smaller batches."
+        : `The batch could not be accepted (HTTP ${response.status}). Try again.`;
+    const detail = typeof result?.detail === "string" ? result.detail : fallback;
     throw new UploadError(detail, response.status, detail, Number(response.headers.get("Retry-After")) || null);
   }
   return { id: result.id, invoices: (result.invoices as ServiceInvoice[]).map(toSupplierInvoice), duplicates: result.duplicates ?? [] };
