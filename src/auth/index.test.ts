@@ -21,6 +21,7 @@ describe("HttpOnly cookie authentication", () => {
   });
 
   it("preserves the verified administrator role when checking the sign-in cookie", async () => {
+    vi.stubGlobal("window", {});
     const user = { id: "admin-id", email: "admin@example.com", role: "admin" };
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/auth/sign-in")
       ? Response.json({ ok: true, user })
@@ -113,7 +114,9 @@ describe("HttpOnly cookie authentication", () => {
 
 it.each(["server rejection", "network failure"])("keeps the user signed in after a sign-out %s so they can retry", async (failure) => {
   vi.stubGlobal("window", {});
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true, user: { email: "security-test" } })));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/auth/me")
+    ? Response.json({ authenticated: true, user: { email: "security-test" } })
+    : Response.json({ ok: true, user: { email: "security-test" } })));
   expect((await signIn("security-test", "test-password")).ok).toBe(true);
   vi.stubGlobal("fetch", failure === "network failure"
     ? vi.fn().mockRejectedValue(new TypeError("offline"))
