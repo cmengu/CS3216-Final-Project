@@ -14,7 +14,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Compare drawer | Master list vs invoice price and the difference per item | `src/components/invoices/Dialogs.tsx` `CompareDrawer` ← `present.ts` `unit`, `signed`, `shortDescription` |
 | Raise with supplier email | The lines listed in the pre-written message | `Dialogs.tsx` `RaiseDialog`; `CheckPane.tsx` `DecisionBar` (Copy email) ← `present.ts` `raiseEmail`, `mailto` |
 | Invoices tab count | Amber count of invoices to decide | `src/components/AppShell.tsx` `Switcher` ← `src/checker/summary.ts` `summarize` (`piles.decide`) |
-| Search and filters | To decide / Done membership | `Queue.tsx` `Queue` (`match`, To decide / Done segment) ← `summary.ts` `summarize`, `reviewPile`, `supersededBy` |
+| Search and filters | To decide / Done membership, To decide order (problems first) | `Queue.tsx` `Queue` (`match`, To decide / Done segment) ← `summary.ts` `summarize`, `attentionRank`, `reviewPile`, `supersededBy` |
 
 ## Invoice status: `status`, `error`
 
@@ -43,6 +43,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Queue | To decide vs Done; pill and decided time in Done | `Queue.tsx` `Card` ← `present.ts` `OUTCOME_PILL`, `whenLabel`; piles from `summary.ts` `summarize` |
 | Decision bar | Decided state: pill, time, Copy email, Undo | `CheckPane.tsx` `DecisionBar` ← `present.ts` `OUTCOME_PILL`, `whenLabel`, `raiseEmail`; saved by `api.ts` `decideInvoice` |
 | Audit trail | One row per decision | `audit/page.tsx` ← `present.ts` `auditRows` |
+| Pay anyway reason | A reason ticked per flagged line, joined into the one saved reason, then a confirm step | `Dialogs.tsx` `PayAnywayDialog` ← `present.ts` `payItems`, `joinPayReasons` |
 | CSV export | Only `ready_to_pay` and `ready_to_pay_anyway` | `present.ts` `exportReadyToPay` |
 | Nothing to decide | Shown when no invoice lacks an outcome | `Queue.tsx` `Queue` (empty To decide); `CheckPane.tsx` `AllDecided`, chosen in `invoices/page.tsx` `Workspace` |
 
@@ -62,7 +63,9 @@ The single modules every screen above must use. If a screen formats or labels an
 
 | Helper | Used for | File |
 |---|---|---|
-| Line status → label and pill colour | Queue card, check pane title, Lines card pills | `src/checker/present.ts` `LINE_PILL`, `checkPill`, `statusPill`, `linesPill` |
+| Line status → label and pill colour | Queue card, check pane title, Lines card pills | `src/checker/present.ts` `LINE_PILL`, `lineTone`, `checkPill`, `statusPill`, `linesPill` |
+| Line status icon | Check pane lines, original-invoice sidebar | `src/components/invoices/PriceComparison.tsx` `LineIcon` ← `present.ts` `lineTone` |
+| Service reason → plain words | Line attention, queue attention, wrong line total mark | `present.ts` `plainReason`, `LINE_TOTAL_WRONG`; applied in `convert.ts` `toSupplierInvoice` |
 | Invoice status → label | Queue card, check pane title and Couldn't read card, decided pills | `src/checker/present.ts` `checkPill`, `failureSentence`, `OUTCOME_PILL`, `statusPill`; state from `src/checker/convert.ts` `stateOf` |
 | Allowed outcomes for an invoice | Decision bar buttons and summary | `src/checker/review.ts` `choices`, `allowed`, `overSheet`; `src/checker/present.ts` `decision` |
 | Money formatting (currency, decimals) | Queue totals, Totals card, line prices, drawer, email, audit, master list prices | `src/checker/present.ts` `money`, `unit`, `signed` |

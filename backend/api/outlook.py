@@ -26,6 +26,7 @@ from fastapi.responses import RedirectResponse, Response
 from openai import OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .admin_alerts import notify_admin
 from .auth import extract_request_claims, is_auth_required, session_cookie_options
 from .limits import allowance
 from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id
@@ -464,10 +465,7 @@ def _get_valid_access_token(
 ) -> str:
     sid = normalize_session_id(session_id or _ACTIVE_OUTLOOK_SESSION.get())
     if not cfg.configured:
-        raise HTTPException(
-            status_code=503,
-            detail="Microsoft OAuth is not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET.",
-        )
+        raise _not_configured(cfg)
     with store.connect() as conn:
         row = _read_connection_row(conn, sid)
     if row is None:
@@ -560,14 +558,32 @@ def _graph_get(
     return resp.json()
 
 
+NOT_CONFIGURED = "Outlook import isn't available yet. Your administrator has been told."
+
+
+def _alert_not_configured(cfg: OutlookConfig) -> None:
+    notify_admin(
+        "outlook-not-configured",
+        "Invoice Checker: Outlook import is not set up",
+        "Someone tried to use Outlook import, but Microsoft sign-in is not configured.\n\n"
+        "Add MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET and\n"
+        f"MICROSOFT_REDIRECT_URI={cfg.redirect_uri}\n"
+        "to backend/.env, then restart the backend.\n\n"
+        "Users only see that Outlook import isn't available yet.\n",
+    )
+
+
+def _not_configured(cfg: OutlookConfig) -> HTTPException:
+    """The user's plain error; the setup details go to the administrator."""
+    _alert_not_configured(cfg)
+    return HTTPException(status_code=503, detail=NOT_CONFIGURED)
+
+
 @router.get("/auth/outlook/login")
 def outlook_login(request: Request, return_to: str = "/invoices"):
     cfg = get_outlook_config()
     if not cfg.configured:
-        raise HTTPException(
-            status_code=503,
-            detail="Microsoft OAuth is not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in backend/.env.",
-        )
+        raise _not_configured(cfg)
 
     store: Store = request.app.state.outlook_store
     sid = request_session_id(request)
@@ -769,6 +785,8 @@ def outlook_status(request: Request):
     sid = request_session_id(request)
     with store.connect() as conn:
         row = _read_connection_row(conn, sid)
+    if not cfg.configured:
+        _alert_not_configured(cfg)
     if row is None or not cfg.configured:
         return OutlookStatusResponse(
             configured=cfg.configured,

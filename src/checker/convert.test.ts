@@ -112,7 +112,13 @@ describe("toSupplierInvoice", () => {
     expect(invoice.fixture).toBe(false);
     expect(invoice.overchargeTotal).toBeNull();
     expect(overcharge(invoice)).toBe(0);
-    expect(invoice.warnings).toEqual(["Invoice arithmetic does not reconcile"]);
+    expect(invoice.warnings).toEqual(["Invoice totals don't add up"]);
+  });
+
+  it("shows the service's arithmetic reasons on each line in plain words", () => {
+    const lines = invoice02.check!.lines.map((line) => ({ ...line, status: "needs_person" as const, reason: "Quantity times price does not equal line total" }));
+    const invoice = toSupplierInvoice({ ...invoice02, check: { ...invoice02.check!, overcharge_total: null, lines } });
+    expect(invoice.lines.every((l) => l.reason === "Line total doesn't match quantity × price")).toBe(true);
   });
 
   it("shows the service's overcharge on a line, not its own multiplication", () => {

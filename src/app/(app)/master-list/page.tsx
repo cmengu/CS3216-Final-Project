@@ -7,7 +7,8 @@ import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
 import { Notice, Search } from "@/components/ui";
 import { money, whenLabel } from "@/checker/present";
-import { useProjectMaster } from "@/checker/projects";
+import { useProjectMaster, type Project } from "@/checker/projects";
+import { CreateProject } from "@/components/invoices/CreateProject";
 import type { MasterItem } from "@/masterList";
 import { MasterImport } from "@/components/MasterImport";
 import { ColumnMappings } from "@/components/ColumnMappings";
@@ -22,17 +23,22 @@ const valid = (i: MasterItem) => (i.validFrom || i.validTo ? `${day(i.validFrom)
 const pct = (d: string | number | null) => (d ? `${Number((Number(d) * 100).toFixed(2))}%` : "");
 
 function MasterListView() {
-  const { projects, projectsLoading, projectError } = useApp();
+  const { projects, projectsLoading, projectError, reloadProjects } = useApp();
   const params = useSearchParams();
   const router = useRouter();
   const eligible = projects.filter((p) => p.comparison_mode === "master_list");
   const requestedProject = params.get("project");
-  const project = requestedProject ? eligible.find((p) => p.id === requestedProject) : eligible[0];
+  // A master list belongs to one group. The group is chosen first and then stays fixed on the page;
+  // with a single eligible group there is nothing to choose.
+  const choosing = params.get("pick") === "1";
+  const project = requestedProject ? eligible.find((p) => p.id === requestedProject) : !choosing && eligible.length === 1 ? eligible[0] : undefined;
   const { masterList, loading, error, reload } = useProjectMaster(project?.id ?? null);
   const base = `/master-list?project=${encodeURIComponent(project?.id ?? "")}`;
-  const selector = <label>Invoice group <select className="ic-select" value={project?.id ?? ""} onChange={(e) => router.push(`/master-list?project=${encodeURIComponent(e.target.value)}`)}>
-    {eligible.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-  </select></label>;
+  const crumb = project ? <nav className="ic-crumb" aria-label="Breadcrumb">
+    <Link href="/master-list?pick=1">Master lists</Link>
+    <span aria-hidden="true">/</span>
+    <span className="here" aria-current="page"><Icon name="folder" />{project.name}</span>
+  </nav> : null;
   const [q, setQ] = useState("");
   const [supplier, setSupplier] = useState("");
   const [replace, setReplace] = useState(false);
@@ -51,8 +57,34 @@ function MasterListView() {
 
   if (projectsLoading || loading) return <p className="ic-empty">Loading…</p>;
   if (projectError || error) return <div className="ic-page"><p role="alert">{projectError ?? error}</p><button onClick={reload}>Retry</button></div>;
-  if (!project) return <div className="ic-page"><h1>Group master lists</h1><p>Create an invoice group with master-list comparison to upload a price sheet.</p><Link className="ic-link" href="/invoices">Go to invoice groups</Link></div>;
-  if (!masterList) return <div className="ic-page ic-page--narrow">{selector}<h1 className="ic-h1">Upload master list</h1>
+  const created = (p: Project) => {
+    reloadProjects();
+    router.push(p.comparison_mode === "master_list" ? `/master-list?project=${encodeURIComponent(p.id)}` : `/invoices?project=${encodeURIComponent(p.id)}`);
+  };
+  if (!eligible.length) return <div className="ic-page ic-page--narrow">
+    <div className="ic-titleblock">
+      <h1 className="ic-h1">Create an invoice group</h1>
+      <p className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>A master list belongs to an invoice group. Create one that compares with a master list to upload your price sheet.</p>
+    </div>
+    <div><CreateProject onCreated={created} label="Create invoice group" defaultMode="master_list" /></div>
+  </div>;
+  if (!project) return <div className="ic-page ic-page--narrow">
+    <div className="ic-headrow">
+      <div className="ic-titleblock">
+        <h1 className="ic-h1">Choose an invoice group</h1>
+        <p className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>Each group has its own master list.</p>
+      </div>
+      <CreateProject onCreated={created} defaultMode="master_list" />
+    </div>
+    <div className="ic-card ic-pick" role="list" aria-label="Invoice groups">
+      {eligible.map((p) => (
+        <Link role="listitem" className="ic-project-name ic-project-entry" key={p.id} href={`/master-list?project=${encodeURIComponent(p.id)}${params.get("replace") === "1" ? "&replace=1" : ""}`}>
+          <Icon name="folder" /><b>{p.name}</b><span className="muted">{p.has_master_list ? "Master list uploaded" : "No master list yet"}</span><Icon name="chev" />
+        </Link>
+      ))}
+    </div>
+  </div>;
+  if (!masterList) return <div className="ic-page ic-page--narrow">{crumb}<h1 className="ic-h1">Upload master list</h1>
     <MasterImport key={project.id} projectId={project.id} onSaved={() => { reload(); router.replace(`${base}&uploaded=1`); }} />
   </div>;
 
@@ -61,6 +93,7 @@ function MasterListView() {
     if (params.get("replace")) router.replace(base);
   };
   if (replaceOpen) return <div className="ic-page ic-page--narrow" style={{ paddingTop: 40 }}>
+    {crumb}
     <div className="ic-headrow"><h1 className="ic-h1">Replace master list</h1>
       <button className="ic-btn ic-btn--secondary" type="button" onClick={closeReplacement}>Cancel replacement</button>
     </div>
@@ -70,7 +103,7 @@ function MasterListView() {
 
   return (
     <div className="ic-page" style={{ height: "calc(100vh - var(--header-height))" }}>
-      {selector}
+      {crumb}
       {uploaded ? (
         <Notice>
           <span className="ic-ok">

@@ -2,10 +2,18 @@
 
 import { useState } from "react";
 import { Dropzone } from "@/components/ui";
-import { ColumnMappings, columnLabel } from "@/components/ColumnMappings";
+import { ColumnMappings, columnLabel, columnName } from "@/components/ColumnMappings";
 import { previewMasterList, replaceMasterList, uploadMasterList, type ImportOptions, type ImportPreview } from "@/masterList";
 
 const ACCEPT = ".csv,.xlsx,.xls";
+
+/** A row as its first few non-empty cells: "part_number, description, currency, …". */
+const rowSummary = (row: string[]) => {
+  const cells = row.map((cell) => String(cell ?? "").trim()).filter(Boolean);
+  if (!cells.length) return "(empty row)";
+  const text = cells.slice(0, 4).join(", ") + (cells.length > 4 ? ", …" : "");
+  return text.length > 70 ? text.slice(0, 69) + "…" : text;
+};
 
 /** Preview with AI column mapping and open the mapping dialog so the user only needs to confirm. */
 export function MasterImport({ replace = false, onSaved, projectId }: { replace?: boolean; onSaved: () => void; projectId?: string }) {
@@ -17,6 +25,7 @@ export function MasterImport({ replace = false, onSaved, projectId }: { replace?
   const [busy, setBusy] = useState<"reading" | "saving" | null>(null);
   const [error, setError] = useState("");
   const [mappingOpen, setMappingOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
   const selected = preview?.sheets.find((candidate) => candidate.name === sheet);
   const rows = selected?.rows ?? [];
   const columns = rows[header] ?? [];
@@ -66,7 +75,7 @@ export function MasterImport({ replace = false, onSaved, projectId }: { replace?
     {error && !mappingOpen ? <p className="ic-hint ic-hint--error" role="alert">{error}</p> : null}
     {preview ? <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <span className="muted">{sheet} · Table preview</span>
+        <span className="muted">Preview of your file</span>
         <button type="button" className="ic-btn ic-btn--secondary" disabled={!!busy} onClick={() => setMappingOpen(true)}>Column mappings</button>
       </div>
       <div style={{ overflow: "auto", maxHeight: 400 }}>
@@ -86,12 +95,12 @@ export function MasterImport({ replace = false, onSaved, projectId }: { replace?
             {busy === "saving" ? "Importing…" : replace ? "Replace master list" : "Import master list"}
           </button>
         </>}>
-        <p className="ic-hint">{replace ? "Confirm the columns before replacing your current list." : "AI matched your spreadsheet columns automatically. Review and confirm to import."}</p>
-        {missing.length ? <p className="ic-hint ic-hint--error" role="alert">Choose a column for {missing.map(columnLabel).join(" and ")} to import this file.</p> : null}
-        {selected?.note || selected?.mappingSource !== "ai" ? (
+        <p className="ic-lead">{selected?.mappingSource === "ai" ? "AI matched these columns. Make sure they're right." : "Choose which column holds each field."}</p>
+        {missing.length ? <p className="ic-hint ic-hint--error" role="alert">Choose a column for {missing.map(columnLabel).join(" and ")}.</p> : null}
+        {selected?.mappingSource !== "ai" ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             {selected?.note ? <p className="ic-hint" role="status" style={{ margin: 0 }}>{selected.note}</p> : null}
-            {selected?.mappingSource !== "ai" && file ? (
+            {file ? (
               <button type="button" className="ic-btn ic-btn--secondary ic-btn--sm" disabled={!!busy} onClick={() => void loadPreview(file, true)}>
                 {busy === "reading" ? "Retrying…" : "Retry AI mapping"}
               </button>
@@ -99,22 +108,31 @@ export function MasterImport({ replace = false, onSaved, projectId }: { replace?
           </div>
         ) : null}
         {error ? <p className="ic-hint ic-hint--error" role="alert">{error}</p> : null}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <label>Worksheet <select className="ic-select" disabled={!!busy} value={sheet} onChange={(e) => {
-            const next = preview.sheets.find((candidate) => candidate.name === e.target.value)!;
-            setSheet(next.name); setHeader(next.header); setMapping(next.mapping); setError("");
-          }}>{preview.sheets.map((candidate) => <option key={candidate.name}>{candidate.name}</option>)}</select></label>
-          <label>Header row <select className="ic-select" disabled={!!busy} value={header} onChange={(e) => {
-            const next = Number(e.target.value);
-            setHeader(next); setMapping(next === selected?.header ? selected.mapping : {}); setError("");
-          }}>{rows.map((_, index) => <option key={index} value={index}>Row {index + 1}</option>)}</select></label>
+        {/* Where the AI found the headings, said with the headings themselves; changing it is rarely needed. */}
+        <div className="ic-source">
+          <p style={{ margin: 0 }}>
+            Headings read from {preview.sheets.length > 1 ? <>sheet <b>{sheet}</b>, </> : null}row {header + 1}: <span className="muted">{rowSummary(columns)}</span>
+          </p>
+          {!sourceOpen ? <button type="button" className="ic-link ic-link--sm" style={{ minHeight: 32 }} onClick={() => setSourceOpen(true)}>Change</button> : null}
         </div>
-        <table className="ic-grid"><thead><tr><th>Master list field</th><th>Spreadsheet column</th></tr></thead>
+        {sourceOpen || missing.length > 0 ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {preview.sheets.length > 1 ? <label className="ic-field">Sheet <select className="ic-select ic-select--block" disabled={!!busy} value={sheet} onChange={(e) => {
+              const next = preview.sheets.find((candidate) => candidate.name === e.target.value)!;
+              setSheet(next.name); setHeader(next.header); setMapping(next.mapping); setError("");
+            }}>{preview.sheets.map((candidate) => <option key={candidate.name}>{candidate.name}</option>)}</select></label> : null}
+            <label className="ic-field">Which row has the headings? <select className="ic-select ic-select--block" disabled={!!busy} value={header} onChange={(e) => {
+              const next = Number(e.target.value);
+              setHeader(next); setMapping(next === selected?.header ? selected.mapping : {}); setError("");
+            }}>{rows.slice(0, Math.max(20, header + 1)).map((row, index) => <option key={index} value={index}>Row {index + 1}: {rowSummary(row)}</option>)}</select></label>
+          </div>
+        ) : null}
+        <table className="ic-grid ic-grid--strong"><thead><tr><th>Field</th><th>Column in your file</th></tr></thead>
           <tbody>{[...preview.required, ...preview.fields.filter((key) => !preview.required.includes(key))].map((field) => <tr key={field}>
             <td><label htmlFor={`mapping-${field}`}>{columnLabel(field)}{preview.required.includes(field) ? " *" : ""}</label></td>
-            <td><select id={`mapping-${field}`} className="ic-select" style={{ maxWidth: "100%" }} disabled={!!busy} value={mapping[field] ?? ""} onChange={(e) => changeMapping(field, e.target.value)}>
-              <option value="">{preview.required.includes(field) ? "Select column" : "Not provided"}</option>
-              {columns.map((name, index) => <option key={index} value={index}>{index + 1}: {name || "Unnamed column"}</option>)}
+            <td><select id={`mapping-${field}`} className="ic-select ic-select--block" disabled={!!busy} value={mapping[field] ?? ""} onChange={(e) => changeMapping(field, e.target.value)}>
+              <option value="">{preview.required.includes(field) ? "Choose a column" : "Not in file"}</option>
+              {columns.map((_, index) => <option key={index} value={index}>{columnName(columns, index)}</option>)}
             </select></td>
           </tr>)}</tbody>
         </table>

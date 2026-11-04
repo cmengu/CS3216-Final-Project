@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { REASON_MAX } from "@/checker/review";
-import { mailto, payAnywayLine, raiseEmail } from "@/checker/present";
+import { joinPayReasons, mailto, payAnywayLine, payItems, raiseEmail } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
 import { Icon } from "@/components/icons";
 import { Dialog } from "@/components/ui";
@@ -18,69 +18,126 @@ export function PayAnywayDialog({
   onClose: () => void;
   onSubmit: (reason: string) => Promise<string | null>;
 }) {
-  const [reason, setReason] = useState("");
+  const items = payItems(inv);
+  // The reason ticked for each item; OTHER means the clerk's own words in `other`.
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [other, setOther] = useState<Record<string, string>>({});
+  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const close = () => {
-    setReason("");
+    setPicked({});
+    setOther({});
+    setConfirming(false);
     setError(null);
     onClose();
   };
-  const ok = reason.trim().length > 0;
+  const chosen = Object.fromEntries(items.map((item) => [item.key, picked[item.key] === OTHER ? (other[item.key] ?? "") : (picked[item.key] ?? "")]));
+  const missing = items.filter((item) => !chosen[item.key].trim()).length;
+  const reason = joinPayReasons(items, chosen, REASON_MAX);
+  const name = inv.number ?? inv.fileName;
+  const pick = (key: string, value: string) => setPicked((old) => ({ ...old, [key]: value }));
   return (
     <Dialog
       open={open}
-      title="Pay anyway"
+      title={confirming ? "Are you sure?" : "Pay anyway"}
       size="sm"
       onClose={close}
       footer={
-        <>
-          <button type="button" className="ic-btn ic-btn--secondary" onClick={close}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="ic-btn ic-btn--primary"
-            disabled={!ok || busy}
-            onClick={async () => {
-              setBusy(true);
-              const err = await onSubmit(reason.trim());
-              setBusy(false);
-              if (err) setError(err);
-              else close();
-            }}
-          >
-            Ready to pay anyway
-          </button>
-        </>
+        confirming ? (
+          <>
+            <button type="button" className="ic-btn ic-btn--secondary" disabled={busy} onClick={() => setConfirming(false)}>
+              Go back
+            </button>
+            <button
+              type="button"
+              className="ic-btn ic-btn--primary"
+              disabled={busy}
+              data-autofocus
+              onClick={async () => {
+                setBusy(true);
+                const err = await onSubmit(reason);
+                setBusy(false);
+                if (err) setError(err);
+                else close();
+              }}
+            >
+              {busy ? "Saving…" : "Yes, pay anyway"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="ic-btn ic-btn--secondary" onClick={close}>
+              Cancel
+            </button>
+            <button type="button" className="ic-btn ic-btn--primary" disabled={missing > 0} onClick={() => setConfirming(true)}>
+              Pay anyway
+            </button>
+          </>
+        )
       }
     >
-      <p style={{ margin: 0 }}>{payAnywayLine(inv)}</p>
-      <div className="ic-field">
-        <label htmlFor="reason">Reason</label>
-        <textarea
-          id="reason"
-          data-autofocus
-          className="ic-textarea"
-          maxLength={REASON_MAX}
-          placeholder="e.g. Price increase agreed by phone"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          aria-describedby="reason-count"
-        />
-        <span id="reason-count" className="ic-hint" style={{ alignSelf: "flex-end" }}>
-          {reason.length} / {REASON_MAX}
-        </span>
-        {!ok ? <span className="ic-hint">Enter a reason to continue.</span> : null}
-        {error ? (
-          <p className="ic-hint ic-hint--error" role="alert">
-            {error}
+      {confirming ? (
+        <>
+          <p style={{ margin: 0 }}>
+            <b>{name}</b> will be marked ready to pay, even though it doesn&rsquo;t fully match the master list.
           </p>
-        ) : null}
-      </div>
+          <div className="ic-field">
+            <span className="lbl">Reason saved with it</span>
+            <p className="ic-pay-summary">{reason}</p>
+          </div>
+          {error ? (
+            <p className="ic-hint ic-hint--error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p style={{ margin: 0 }}>{payAnywayLine(inv)} Tick why it&rsquo;s OK to pay{items.length > 1 ? " each line" : ""}.</p>
+          {items.map((item, i) => (
+            <fieldset className="ic-pay-item" key={item.key}>
+              <legend>{item.title}</legend>
+              {item.why ? <span className={`ic-attn${item.tone === "bad" || item.tone === "info" ? ` ic-attn--${item.tone}` : ""}`}>{item.why}</span> : null}
+              <div className="ic-pay-choices">
+                {[...item.choices, OTHER].map((choice) => (
+                  <label key={choice} className="ic-pay-choice">
+                    <input type="radio" name={`pay-${item.key}`} checked={picked[item.key] === choice} onChange={() => pick(item.key, choice)} {...(i === 0 && choice === item.choices[0] ? { "data-autofocus": true } : {})} />
+                    {choice}
+                  </label>
+                ))}
+              </div>
+              {picked[item.key] === OTHER ? (
+                <input
+                  className="ic-input"
+                  aria-label={`Your reason for ${item.title}`}
+                  maxLength={120}
+                  placeholder="Price increase agreed by phone"
+                  value={other[item.key] ?? ""}
+                  onChange={(e) => setOther((old) => ({ ...old, [item.key]: e.target.value }))}
+                  autoFocus
+                />
+              ) : null}
+              {i === 0 && items.length > 1 && picked[item.key] && picked[item.key] !== OTHER ? (
+                <button
+                  type="button"
+                  className="ic-link ic-link--sm"
+                  style={{ minHeight: 32 }}
+                  onClick={() => setPicked(Object.fromEntries(items.map((x) => [x.key, x.choices.includes(picked[item.key]) ? picked[item.key] : (picked[x.key] ?? "")])))}
+                >
+                  Use this reason for every line it fits
+                </button>
+              ) : null}
+            </fieldset>
+          ))}
+          {missing ? <span className="ic-hint">{missing === items.length ? "Tick a reason to continue." : `${missing} more to tick.`}</span> : null}
+        </>
+      )}
     </Dialog>
   );
 }
+
+const OTHER = "Other reason";
 
 export function RaiseDialog({
   inv,

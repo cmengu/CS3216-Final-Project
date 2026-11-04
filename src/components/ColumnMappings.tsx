@@ -10,17 +10,19 @@ export const columnLabel = (field: string) => ({
   currency: "Currency", discount: "Discount", tax: "Tax", validFrom: "Valid from", validTo: "Valid to",
 }[field] ?? field);
 
+/** A file column as the clerk knows it: its heading, or "Column 3" when it has none. */
+export const columnName = (columns: string[], index: number) => columns[index] || `Column ${index + 1}`;
+
 export function ColumnMappings({ open, onClose, selection, children, footer }: {
   open: boolean; onClose: () => void; selection: ColumnMapping; children?: ReactNode; footer?: ReactNode;
 }) {
   return <Dialog open={open} title="Column mappings" onClose={onClose}
-    sub={`${selection.sheet} · Header row ${selection.header + 1}`}
     footer={footer ?? <button className="ic-btn ic-btn--primary" type="button" onClick={onClose}>Done</button>}>
     {children ?? <>
-      <p className="ic-hint">These are the spreadsheet columns used for your master list.</p>
-      <table className="ic-grid"><thead><tr><th>Master list field</th><th>Spreadsheet column</th></tr></thead>
+      <p className="ic-hint">The columns used from your file.</p>
+      <table className="ic-grid ic-grid--strong"><thead><tr><th>Field</th><th>Column in your file</th></tr></thead>
         <tbody>{Object.entries(selection.mapping).map(([field, index]) => <tr key={field}>
-          <td>{columnLabel(field)}</td><td>{index + 1}: {selection.columns[index] || "Unnamed column"}</td>
+          <td>{columnLabel(field)}</td><td>{columnName(selection.columns, index)}</td>
         </tr>)}</tbody>
       </table>
       {selection.mapping.quantity === undefined ? <p className="ic-hint">Quantity was not provided.</p> : null}

@@ -12,6 +12,7 @@ import { Notice, Pill, Search } from "@/components/ui";
 
 function Card({ inv, current, done }: { inv: SupplierInvoice; current: boolean; done: boolean }) {
   const attn = done ? null : queueAttention(inv);
+  const pill = statusPill(inv);
   return (
     <Link className="ic-qcard" href={`/invoices?project=${encodeURIComponent(inv.projectId ?? "")}&id=${inv.id}`} aria-current={current ? "true" : undefined} scroll={false}>
       <span className="r1">
@@ -31,8 +32,8 @@ function Card({ inv, current, done }: { inv: SupplierInvoice; current: boolean; 
           </>
         ) : (
           <>
-            <Pill pill={statusPill(inv)} />
-            {attn ? <span className="ic-attn">{attn}</span> : null}
+            <Pill pill={pill} />
+            {attn ? <span className={`ic-attn${pill.tone === "bad" || pill.tone === "info" ? ` ic-attn--${pill.tone}` : ""}`}>{attn}</span> : null}
           </>
         )}
       </span>

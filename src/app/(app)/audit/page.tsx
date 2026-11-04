@@ -9,7 +9,7 @@ import { download, Pill, Search } from "@/components/ui";
 import { useProjectEvents } from "@/checker/projects";
 
 const FILTERS: [AuditKind | "all", string][] = [
-  ["all", "All"],
+  ["all", "All decisions"],
   ["ready", "Ready to pay"],
   ["raised", "Raised"],
   ["anyway", "Paid anyway"],
@@ -54,28 +54,28 @@ export default function Audit() {
         <div style={{ flex: "1 1 280px", maxWidth: 420 }}>
           <Search label="Search audit trail" placeholder="Search supplier or invoice number" value={q} onChange={setQ} full />
         </div>
-        <label className="ic-field">Invoice group
+        <label className="ic-field ic-field--strong">Invoice group
           <select className="ic-select" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(e) => setProjectId(e.target.value)}>
             {!projects.length ? <option value="">No invoice groups</option> : null}
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
-        <label className="ic-field">Status
+        <label className="ic-field ic-field--strong">Decision
           <select className="ic-select" value={filter} onChange={(e) => setFilter(e.target.value as AuditKind | "all")}>
             {FILTERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
-        <label className="ic-field">From
+        <label className="ic-field ic-field--strong">From
           <input className="ic-input" type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} />
         </label>
-        <label className="ic-field">To
+        <label className="ic-field ic-field--strong">To
           <input className="ic-input" type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} />
         </label>
       </div>
       {invalidDates ? <p className="ic-hint ic-hint--error" role="alert">The end date must be on or after the start date.</p> : null}
       <section className="ic-card" aria-label="Audit trail" style={{ padding: "8px 24px" }}>
         <div role="table" aria-label="Audit trail">
-          <div role="row" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "8px 0", fontSize: "calc(13px * var(--text-scale))", color: "var(--ink2)" }}>
+          <div role="row" style={{ display: "grid", gridTemplateColumns: COLS, gap: 16, padding: "10px 0", fontSize: "calc(14.5px * var(--text-scale))", fontWeight: 600, color: "var(--ink)" }}>
             <span role="columnheader">When</span>
             <span role="columnheader">Invoice</span>
             <span role="columnheader">Decision</span>

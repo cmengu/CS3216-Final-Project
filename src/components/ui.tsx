@@ -6,7 +6,7 @@ import type { Pill as PillT } from "@/checker/present";
 import { Icon } from "./icons";
 
 export function Pill({ pill, className }: { pill: PillT; className?: string }) {
-  const tone = pill.tone === "good" ? " ic-pill--good" : pill.tone === "warn" ? " ic-pill--warn" : "";
+  const tone = pill.tone === "neutral" ? "" : ` ic-pill--${pill.tone}`;
   return <span className={`ic-pill${tone}${className ? " " + className : ""}`}>{pill.text}</span>;
 }
 

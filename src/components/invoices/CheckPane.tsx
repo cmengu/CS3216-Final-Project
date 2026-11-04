@@ -7,6 +7,7 @@ import {
   decision,
   failureSentence,
   lineAttention,
+  lineTone,
   money,
   OUTCOME_PILL,
   orderedLines,
@@ -20,7 +21,7 @@ import type { Outcome, SupplierInvoice } from "@/checker/types";
 import { Icon } from "@/components/icons";
 import { Pill } from "@/components/ui";
 import type { MasterList } from "@/masterList";
-import { PriceComparison } from "./PriceComparison";
+import { LineIcon, PriceComparison } from "./PriceComparison";
 import { PayAnywayDialog, RaiseDialog } from "./Dialogs";
 
 export async function decide(inv: SupplierInvoice, outcome: Outcome | null, reason: string | null = null): Promise<string | null> {
@@ -104,37 +105,47 @@ export function DecisionBar({ inv, onPayAnyway, onRaise }: { inv: SupplierInvoic
   );
 }
 
-function Failed({ inv }: { inv: SupplierInvoice }) {
+function Failed({ inv, onShow }: { inv: SupplierInvoice; onShow: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <section className="ic-card ic-card--tight" aria-labelledby="fail-h">
-      <div className="ic-card-h">
+    <section className="ic-card ic-failcard" aria-labelledby="fail-h">
+      <span className="ic-failcard-ico">
+        <Icon name="warn" />
+      </span>
+      <div>
         <h2 id="fail-h">Couldn’t read this invoice</h2>
+        <p>{failureSentence(inv)} No lines were checked.</p>
+        <div className="acts">
+          <button type="button" className="ic-btn ic-btn--primary" onClick={onShow}>
+            <Icon name="eye" size="ui" />
+            Show invoice
+          </button>
+          <button
+            type="button"
+            className="ic-btn ic-btn--secondary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                rememberInvoice(await retryInvoice(inv));
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "It couldn’t be tried again.");
+              }
+              setBusy(false);
+            }}
+          >
+            {busy ? "Trying again…" : "Try again"}
+          </button>
+          <span className="muted">Or pay it anyway with a reason.</span>
+        </div>
+        {error ? (
+          <p className="ic-hint ic-hint--error" role="alert" style={{ marginTop: 8 }}>
+            {error}
+          </p>
+        ) : null}
       </div>
-      <p style={{ margin: "0 0 12px" }}>{failureSentence(inv)}</p>
-      <button
-        type="button"
-        className="ic-btn ic-btn--secondary"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            rememberInvoice(await retryInvoice(inv));
-          } catch (e) {
-            setError(e instanceof Error ? e.message : "It couldn’t be tried again.");
-          }
-          setBusy(false);
-        }}
-      >
-        {busy ? "Trying again…" : "Try again"}
-      </button>
-      {error ? (
-        <p className="ic-hint ic-hint--error" role="alert" style={{ marginTop: 8 }}>
-          {error}
-        </p>
-      ) : null}
     </section>
   );
 }
@@ -195,7 +206,7 @@ export function CheckPane({
         ) : null}
 
         {failed ? (
-          <Failed inv={inv} />
+          <Failed inv={inv} onShow={() => onShow(0)} />
         ) : inv.state === "checking" ? (
           <section className="ic-card ic-card--tight">
             <p className="muted" style={{ margin: 0 }}>
@@ -210,6 +221,7 @@ export function CheckPane({
                   {orderedLines(inv).map(({ line, n }) => {
                     const totalsOnly = inv.comparisonMode === "totals_only";
                     const flagged = !totalsOnly && line.result !== "match";
+                    const tone = lineTone(line);
                     const quantityUnit = line.unit?.toUpperCase() === "M3" ? "m³" : line.unit;
                     const qty = line.quantity === null ? null : `${line.quantity.toLocaleString("en-SG")}${quantityUnit ? " " + quantityUnit : ""}`;
                     const priceUnit = quantityUnit ? ` / ${quantityUnit}` : "";
@@ -225,20 +237,12 @@ export function CheckPane({
                         onClick={() => onShow(n)}
                         style={{ cursor: "pointer" }}
                       >
-                        {totalsOnly ? <Icon name="doc" size="row" /> : flagged ? (
-                          <span style={{ color: "var(--warn)" }}>
-                            <Icon name="warn" size="row" style={{ color: "var(--warn)" }} />
-                          </span>
-                        ) : (
-                          <span>
-                            <Icon name="tick" size="row" style={{ color: "var(--good)", strokeWidth: 2 }} />
-                          </span>
-                        )}
+                        <span><LineIcon line={line} totalsOnly={totalsOnly} size="row" /></span>
                         <div className="ic-line-content">
                           <span className="ic-line-title">
                             {n}. {line.description.trim() || line.part || "No description"}
                           </span>
-                          {flagged && line.result !== "price_mismatch" ? <span className="ic-attn">{lineAttention(line, cur)}</span> : null}
+                          {flagged ? <span className={`ic-attn${tone === "info" || tone === "bad" ? ` ic-attn--${tone}` : ""}`}>{lineAttention(line, cur)}</span> : null}
                           {flagged ? (
                             <PriceComparison line={line} currency={cur} number={n} />
                           ) : (

@@ -48,6 +48,38 @@ def test_outlook_status_when_unconfigured(tmp_path, monkeypatch):
         assert login.status_code == 503
 
 
+def test_unconfigured_outlook_tells_the_admin_once_and_the_user_plainly(tmp_path, monkeypatch):
+    from api import admin_alerts
+
+    monkeypatch.delenv("MICROSOFT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_CLIENT_SECRET", raising=False)
+    monkeypatch.setenv("AUTH_ADMIN_EMAIL", "admin@example.com")
+    monkeypatch.setattr(admin_alerts, "_sent", {})
+    sent = []
+    monkeypatch.setattr(
+        admin_alerts.security_mail,
+        "_agentmail_send",
+        lambda to, subject, body, delivery_id: sent.append((to, subject, body)),
+    )
+    monkeypatch.setattr(admin_alerts, "_in_background", lambda fn, *args: fn(*args))
+
+    with TestClient(create_app(storage_dir=tmp_path)) as client:
+        client.get("/outlook/status")
+        login = client.get("/auth/outlook/login", follow_redirects=False)
+
+    assert login.status_code == 503
+    assert (
+        login.json()["detail"]
+        == "Outlook import isn't available yet. Your administrator has been told."
+    )
+    assert "MICROSOFT" not in login.text
+    assert len(sent) == 1
+    to, subject, body = sent[0]
+    assert to == "admin@example.com"
+    assert "Outlook" in subject
+    assert "MICROSOFT_CLIENT_ID" in body
+
+
 def test_outlook_oauth_flow_messages_attachments_and_refresh(tmp_path, monkeypatch):
     monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id-123")
     monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "client-secret-xyz")
