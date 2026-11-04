@@ -6,6 +6,38 @@ afterEach(() => {
 });
 
 describe("HttpOnly cookie authentication", () => {
+  it("does not accept sign-in when the browser cannot use the session cookie", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/auth/sign-in")
+      ? new Response(JSON.stringify({ ok: true, user: { email: "demo-account" } }), { status: 200 })
+      : new Response(JSON.stringify({ authenticated: false }), { status: 401 })));
+    expect(await signIn("demo-account", "invoice-checker")).toEqual({ ok: false, error: "invalid" });
+    expect(currentUser()).toBeFalsy();
+  });
+
+  it("does not invent a signed-in user when the backend is unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network"); }));
+    expect(await signIn("demo-account", "invoice-checker")).toEqual({ ok: false, error: "unreachable" });
+    expect(currentUser()).toBeFalsy();
+  });
+
+  it("preserves the verified administrator role when checking the sign-in cookie", async () => {
+    const user = { id: "admin-id", email: "admin@example.com", role: "admin" };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/auth/sign-in")
+      ? Response.json({ ok: true, user })
+      : Response.json({ authenticated: true, user })));
+    expect(await signIn("admin", "password")).toEqual({ ok: true, user });
+    expect(currentUser()).toEqual(user);
+    await signOut();
+  });
+
+  it("reports a failed cookie verification service as unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/auth/sign-in")
+      ? Response.json({ ok: true, user: { email: "demo-account" } })
+      : new Response("Gateway unavailable", { status: 504 })));
+    expect(await signIn("demo-account", "invoice-checker")).toEqual({ ok: false, error: "unreachable" });
+    expect(currentUser()).toBeFalsy();
+  });
+
   it("authenticates via POST /auth/sign-in with credentials: include, purges legacy localStorage, and never stores provider=password", async () => {
     const localMap = new Map<string, string>([
       ["ic.session.v1", '{"email":"you@company.com","provider":"google"}'],

@@ -154,7 +154,24 @@ export async function signIn(username: string, password: string): Promise<SignIn
         return { ok: false, error: "two_factor", challenge: data as TwoFactorChallenge };
       }
       if (data.ok && data.user?.email) {
-        const user: User = data.user;
+        // Confirm the browser accepted the session cookie before completing sign-in.
+        const verified = await fetch(`${SERVICE_URL}/auth/me`, {
+          credentials: "include",
+          cache: "no-store",
+          signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+        });
+        if (verified.status === 401 || verified.status === 403) {
+          return { ok: false, error: "invalid" };
+        }
+        if (!verified.ok) throw new Error("Session service unavailable");
+        const session = (await verified.json()) as {
+          authenticated?: boolean;
+          user?: User;
+        };
+        if (!session.authenticated || session.user?.email !== data.user.email) {
+          return { ok: false, error: "invalid" };
+        }
+        const user: User = session.user;
         setSessionState(user);
         return { ok: true, user };
       }
