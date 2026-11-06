@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 import type { Outcome, SupplierInvoice } from "./types";
 import { broadcastServiceChange, listenForServiceChanges } from "@/lib/service-sync";
+import { RECHECK_MS, startReloads } from "./reloads";
 import { resolveServiceUrl } from "./service-url";
 
 export const SERVICE_URL = resolveServiceUrl(
@@ -72,8 +73,6 @@ const MAX_BYTES = 20 * 1024 * 1024;
 const PAGE = 100;
 /** A read that takes longer than this is treated as unreachable. An upload has no limit: a check can take a minute. */
 const READ_TIMEOUT_MS = 15_000;
-/** How often a page looks again while an invoice is still being checked. */
-const RECHECK_MS = 3_000;
 
 async function read(path: string): Promise<Response> {
   try {
@@ -269,51 +268,48 @@ export function rememberInvoice(saved: SupplierInvoice): void {
 export function useInvoices(): { invoices: SupplierInvoice[] | null; error: string | null } {
   const [invoices, setInvoices] = useState<SupplierInvoice[] | null>(cache);
   const [error, setError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
   useEffect(() => {
+    let live = true;
+    const reloads = startReloads({
+      load: async () => {
+        const startedAt = cacheRevision;
+        try {
+          const list = await listInvoices();
+          if (!live) return;
+          if (startedAt !== cacheRevision) {
+            setInvoices(cache);
+            return;
+          }
+          cache = list;
+          setInvoices(list);
+          setError(null);
+        } catch (reason) {
+          if (!live || startedAt !== cacheRevision) return;
+          setError(reason instanceof Error ? reason.message : unreachable);
+        }
+      },
+      keepGoing: () => !!cache?.some(invoice => invoice.state === "checking"),
+      hidden: () => document.visibilityState === "hidden",
+    });
     const listener = (list: SupplierInvoice[] | null) => {
       if (list) {
         setInvoices(list);
+        reloads.settle();
         return;
       }
       setError(null);
-      setRevision((n) => n + 1);
+      reloads.reload();
     };
     listeners.add(listener);
     const stopSync = listenForServiceChanges(SYNC_KEY, reloadInvoices);
-    return () => {
-      listeners.delete(listener);
-      stopSync();
-    };
-  }, []);
-  useEffect(() => {
-    let live = true;
-    const startedAt = cacheRevision;
-    listInvoices().then(
-      (list) => {
-        if (!live) return;
-        if (startedAt !== cacheRevision) {
-          setInvoices(cache);
-          return;
-        }
-        cache = list;
-        setInvoices(list);
-        setError(null);
-      },
-      (reason: unknown) => {
-        if (!live || startedAt !== cacheRevision) return;
-        setError(reason instanceof Error ? reason.message : unreachable);
-      },
-    );
+    reloads.reload();
     return () => {
       live = false;
+      listeners.delete(listener);
+      stopSync();
+      reloads.stop();
     };
-  }, [revision]);
-  useEffect(() => {
-    if (!invoices?.some(invoice => invoice.state === "checking")) return;
-    const timer = setTimeout(() => setRevision(value => value + 1), RECHECK_MS);
-    return () => clearTimeout(timer);
-  }, [invoices, revision]);
+  }, []);
   return { invoices, error };
 }
 
