@@ -60,8 +60,19 @@ OLLAMA_REQUEST_TIMEOUT_SECONDS=120
 
 The credential belongs on the backend host, outside source control, with Cloud Run Invoker
 on the backup service. A Google-hosted backend can instead use its attached service identity.
+On Railway, add a private `GOOGLE_SERVICE_ACCOUNT_JSON` variable containing the complete
+downloaded service-account JSON. This variable takes precedence over the credential-file
+path and avoids requiring a local file on Railway. Never use a `NEXT_PUBLIC_` variable for it.
 An unreachable primary is briefly bypassed while the backup handles requests. The Qwen
 challenger keeps its own model name; `OLLAMA_FALLBACK_CHALLENGER_MODEL` can override it.
+
+The primary URL must be reachable from the Railway container. The `100.89.215.68` address
+is private to the Tailscale network; Railway needs a connection to that network to use it.
+Otherwise, the configured backup handles the model requests after the primary fails.
+On Vercel set `NEXT_PUBLIC_INVOICE_API=/api`; the existing rewrite forwards API calls to
+Railway. The model URLs, credentials and timeout variables belong to the Railway backend.
+Ollama extraction does not require an OpenAI API key, even though the model setting is
+named `OPENAI_MODEL` for compatibility with the existing extraction configuration.
 
 Before sending invoice text to Cloud Run, the transport sends an empty model-load request.
 It allows up to 600 seconds for startup, including transient service errors and a model

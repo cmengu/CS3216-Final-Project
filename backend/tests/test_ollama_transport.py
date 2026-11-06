@@ -42,6 +42,7 @@ def isolated_transport(monkeypatch):
         "OPENAI_MODEL",
         "OLLAMA_REQUEST_TIMEOUT_SECONDS",
         "OLLAMA_STARTUP_TIMEOUT_SECONDS",
+        "GOOGLE_SERVICE_ACCOUNT_JSON",
     ):
         monkeypatch.delenv(name, raising=False)
     transport._unavailable_until.clear()
@@ -353,6 +354,40 @@ def test_authentication_failure_does_not_expose_credentials(monkeypatch):
         raise RuntimeError("private-key-material")
 
     monkeypatch.setattr(google.oauth2.id_token, "fetch_id_token_credentials", fail)
+    with pytest.raises(ValueError, match="Cloud Run authentication failed") as caught:
+        transport.cloud_run_headers(BACKUP)
+    assert "private-key-material" not in str(caught.value)
+
+
+def test_railway_json_credentials_are_used_and_refreshed_after_rotation(monkeypatch):
+    from google.oauth2 import service_account
+
+    provided = []
+
+    def from_info(info, target_audience):
+        assert target_audience == BACKUP
+        provided.append(info)
+        credentials = SimpleNamespace(valid=False, token=None)
+
+        def refresh(request):
+            credentials.valid = True
+            credentials.token = info["private_key_id"]
+
+        credentials.refresh = refresh
+        return credentials
+
+    monkeypatch.setattr(service_account.IDTokenCredentials, "from_service_account_info", from_info)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/unavailable/windows/path.json")
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", json.dumps({"private_key_id": "test-key-1"}))
+    assert transport.cloud_run_headers(BACKUP) == {"Authorization": "Bearer test-key-1"}
+    assert transport.cloud_run_headers(BACKUP) == {"Authorization": "Bearer test-key-1"}
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", json.dumps({"private_key_id": "test-key-2"}))
+    assert transport.cloud_run_headers(BACKUP) == {"Authorization": "Bearer test-key-2"}
+    assert len(provided) == 2
+
+
+def test_invalid_json_credentials_are_redacted(monkeypatch):
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", "invalid-json-private-key-material")
     with pytest.raises(ValueError, match="Cloud Run authentication failed") as caught:
         transport.cloud_run_headers(BACKUP)
     assert "private-key-material" not in str(caught.value)

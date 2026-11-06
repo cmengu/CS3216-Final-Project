@@ -1,5 +1,7 @@
 """Ollama requests with an authenticated backup and a separate startup allowance."""
 
+import hashlib
+import json
 import logging
 import math
 import os
@@ -49,10 +51,16 @@ def cloud_run_headers(base_url: str, timeout_seconds: float = 15) -> dict[str, s
     try:
         import requests
         from google.auth.transport.requests import Request
+        from google.oauth2 import service_account
         from google.oauth2.id_token import fetch_id_token_credentials
 
         deadline = time.monotonic() + timeout_seconds
-        key = (audience, os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""))
+        credential_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+        key = (
+            audience,
+            os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", ""),
+            hashlib.sha256(credential_json.encode()).hexdigest(),
+        )
         with _lock, requests.Session() as session:
             request = Request(session=session)
 
@@ -65,7 +73,12 @@ def cloud_run_headers(base_url: str, timeout_seconds: float = 15) -> dict[str, s
 
             credentials = _credentials.get(key)
             if credentials is None:
-                credentials = fetch_id_token_credentials(audience, request=bounded_request)
+                if credential_json:
+                    credentials = service_account.IDTokenCredentials.from_service_account_info(
+                        json.loads(credential_json), target_audience=audience
+                    )
+                else:
+                    credentials = fetch_id_token_credentials(audience, request=bounded_request)
                 _credentials[key] = credentials
             if not credentials.valid:
                 credentials.refresh(bounded_request)
@@ -75,7 +88,8 @@ def cloud_run_headers(base_url: str, timeout_seconds: float = 15) -> dict[str, s
     except Exception:
         # Provider errors can contain credential details. Keep them out of saved invoice errors.
         raise ValueError(
-            "Cloud Run authentication failed. Configure GOOGLE_APPLICATION_CREDENTIALS "
+            "Cloud Run authentication failed. Configure GOOGLE_SERVICE_ACCOUNT_JSON "
+            "or GOOGLE_APPLICATION_CREDENTIALS "
             "and grant its service account Cloud Run Invoker."
         ) from None
 

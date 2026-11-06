@@ -30,6 +30,13 @@ const listeners = new Set<() => void>();
 
 let sessionUser: User | null | undefined = undefined;
 let checkingSession: Promise<User | null> | null = null;
+let sessionError: string | null = null;
+let sessionVersion = 0;
+const AUTH_TIMEOUT_MS = 30_000;
+
+function notifySession() {
+  listeners.forEach((listener) => listener());
+}
 
 function purgeLegacyStorage() {
   if (typeof window === "undefined") return;
@@ -48,12 +55,14 @@ function purgeLegacyStorage() {
 }
 
 function setSessionState(user: User | null) {
+  ++sessionVersion;
+  sessionError = null;
   purgeLegacyStorage();
   sessionUser = user;
   setActiveSessionId(null);
   resetUploadsSession();
   resetMasterListSession();
-  listeners.forEach((l) => l());
+  notifySession();
 }
 
 /** Verify the browser's HttpOnly ic_session cookie against GET /auth/me. */
@@ -62,6 +71,10 @@ export async function refreshAuthSession(): Promise<User | null> {
   purgeLegacyStorage();
   if (checkingSession) return checkingSession;
 
+  const startedAt = sessionVersion;
+  sessionError = null;
+  notifySession();
+
   let pending: Promise<User | null> | null = null;
   pending = (async () => {
     try {
@@ -69,28 +82,34 @@ export async function refreshAuthSession(): Promise<User | null> {
         method: "GET",
         credentials: "include",
         cache: "no-store",
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
       });
+      // An older session check must not overwrite a sign-in or sign-out that
+      // completed while the request was waiting on the service.
+      if (startedAt !== sessionVersion) return sessionUser ?? null;
       if (resp.ok) {
         const data = (await resp.json()) as {
           ok?: boolean;
           authenticated?: boolean;
           user?: User;
         };
+        if (startedAt !== sessionVersion) return sessionUser ?? null;
         if (data.authenticated && data.user?.email) {
           const verified: User = data.user;
           sessionUser = verified;
-          listeners.forEach((l) => l());
+          notifySession();
           return verified;
         }
       }
-      sessionUser = null;
-      listeners.forEach((l) => l());
-      return null;
+      if (resp.status === 401 || resp.status === 403) {
+        setSessionState(null);
+        return null;
+      }
+      throw new Error("Session service unavailable");
     } catch {
-      if (sessionUser === undefined) {
-        sessionUser = null;
-        listeners.forEach((l) => l());
+      if (startedAt === sessionVersion) {
+        sessionError = "The connection is slow or the service is unavailable. Try checking your session again.";
+        notifySession();
       }
       return sessionUser ?? null;
     } finally {
@@ -110,6 +129,12 @@ export function currentUser(): User | null | undefined {
   return sessionUser;
 }
 
+export function currentSessionError(): string | null { return sessionError; }
+
+export function useSessionError(): string | null {
+  return useSyncExternalStore(subscribe, currentSessionError, () => null);
+}
+
 export async function signIn(username: string, password: string): Promise<SignInResult> {
   const trimmed = username.trim();
   if (!trimmed || !password) return { ok: false, error: "invalid" };
@@ -120,7 +145,7 @@ export async function signIn(username: string, password: string): Promise<SignIn
       credentials: "include",
       headers: sessionHeaders({ "Content-Type": "application/json" }, true),
       body: JSON.stringify({ username: trimmed, password }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     });
     if (resp.ok) {
       const data = (await resp.json()) as { ok: boolean; user?: User } & Partial<TwoFactorChallenge>;
@@ -129,7 +154,24 @@ export async function signIn(username: string, password: string): Promise<SignIn
         return { ok: false, error: "two_factor", challenge: data as TwoFactorChallenge };
       }
       if (data.ok && data.user?.email) {
-        const user: User = data.user;
+        // Confirm the browser accepted the session cookie before completing sign-in.
+        const verified = await fetch(`${SERVICE_URL}/auth/me`, {
+          credentials: "include",
+          cache: "no-store",
+          signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
+        });
+        if (verified.status === 401 || verified.status === 403) {
+          return { ok: false, error: "invalid" };
+        }
+        if (!verified.ok) throw new Error("Session service unavailable");
+        const session = (await verified.json()) as {
+          authenticated?: boolean;
+          user?: User;
+        };
+        if (!session.authenticated || session.user?.email !== data.user.email) {
+          return { ok: false, error: "invalid" };
+        }
+        const user: User = session.user;
         setSessionState(user);
         return { ok: true, user };
       }
@@ -138,8 +180,18 @@ export async function signIn(username: string, password: string): Promise<SignIn
       const retry = resp.headers.get("Retry-After");
       return { ok: false, error: "limited", message: `Too many sign-in attempts. ${retry ? `Try again in ${retry} seconds.` : "Please wait and try again."}` };
     }
+    if (resp.status >= 500) {
+      return { ok: false, error: "unreachable", message: "The sign-in service is temporarily unavailable. Please try again shortly." };
+    }
+    if (resp.status !== 401 && resp.status !== 403) {
+      const body = await resp.json().catch(() => null);
+      if (typeof body?.detail === "string") return { ok: false, error: "unreachable", message: body.detail };
+    }
     return { ok: false, error: "invalid" };
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      return { ok: false, error: "unreachable", message: "Sign-in took too long to respond. Please wait a moment and try again." };
+    }
     return { ok: false, error: "unreachable" };
   }
 }
