@@ -8,7 +8,7 @@ import Link from "next/link";
 import { Brand } from "@/components/Brand";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { signOut, useUser, type User } from "@/auth";
+import { refreshAuthSession, signOut, useSessionError, useUser, type User } from "@/auth";
 import { useInvoices } from "@/checker/api";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
@@ -154,21 +154,35 @@ function Account({ user }: { user: User }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const user = useUser();
-  const projectState = useProjects();
-  const reloadProjects = projectState.reload;
+  const sessionError = useSessionError();
   const router = useRouter();
-  const { invoices, error } = useInvoices();
-
-
-  useEffect(() => {
-    if (user) reloadProjects();
-  }, [user, invoices, reloadProjects]);
 
   useEffect(() => {
     if (user === null) router.replace("/sign-in");
   }, [user, router]);
 
-  if (!user) return null;
+  if (!user) return <div className="ic-auth">
+    <Brand />
+    <main className="ic-card" aria-busy={!sessionError}>
+      <h1>{sessionError ? "Couldn’t check your session" : "Checking your session…"}</h1>
+      {sessionError ? <>
+        <p className="ic-hint" role="alert">{sessionError}</p>
+        <button type="button" className="ic-btn ic-btn--primary" onClick={() => { void refreshAuthSession(); }}>Try again</button>
+      </> : <p className="ic-hint">Waiting for the service to confirm your sign-in.</p>}
+    </main>
+  </div>;
+  return <SignedInShell user={user}>{children}</SignedInShell>;
+}
+
+function SignedInShell({ user, children }: { user: User; children: ReactNode }) {
+  const projectState = useProjects();
+  const reloadProjects = projectState.reload;
+  const { invoices, error } = useInvoices();
+
+  useEffect(() => {
+    reloadProjects();
+  }, [invoices, reloadProjects]);
+
   const phase: Phase = invoices === null && !error ? "loading" : "ready";
   const toDecide = invoices ? summarize(invoices.filter((i) => i.comparisonMode !== "totals_only")).piles.decide.length : 0;
 

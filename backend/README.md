@@ -45,6 +45,50 @@ without a master. See [projects and Supabase migration](../docs/projects-and-sup
 `.env`. Provider access/quota errors can still occur on the first extraction. Extraction
 uses `store=False` and may make a correction request after its initial model request.
 
+For an Ollama primary with a private Cloud Run backup, configure the backend environment:
+
+```ini
+OLLAMA_BASE_URL=http://100.89.215.68:11434
+OPENAI_MODEL=gemma4:e4b
+OLLAMA_CHALLENGER_MODEL=qwen3.5:4b
+OLLAMA_FALLBACK_BASE_URL=https://linecheck-gemma-backup-387784514551.asia-southeast1.run.app
+OLLAMA_FALLBACK_MODEL=gemma4:e4b
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/private/cloud-run-caller.json
+OLLAMA_STARTUP_TIMEOUT_SECONDS=600
+OLLAMA_REQUEST_TIMEOUT_SECONDS=120
+```
+
+The credential belongs on the backend host, outside source control, with Cloud Run Invoker
+on the backup service. A Google-hosted backend can instead use its attached service identity.
+On Railway, add a private `GOOGLE_SERVICE_ACCOUNT_JSON` variable containing the complete
+downloaded service-account JSON. This variable takes precedence over the credential-file
+path and avoids requiring a local file on Railway. Never use a `NEXT_PUBLIC_` variable for it.
+An unreachable primary is briefly bypassed while the backup handles requests. The Qwen
+challenger keeps its own model name; `OLLAMA_FALLBACK_CHALLENGER_MODEL` can override it.
+
+The primary URL must be reachable from the Railway container. The `100.89.215.68` address
+is private to the Tailscale network; Railway needs a connection to that network to use it.
+Otherwise, the configured backup handles the model requests after the primary fails.
+On Vercel set `NEXT_PUBLIC_INVOICE_API=/api`; the existing rewrite forwards API calls to
+Railway. The model URLs, credentials and timeout variables belong to the Railway backend.
+Ollama extraction does not require an OpenAI API key, even though the model setting is
+named `OPENAI_MODEL` for compatibility with the existing extraction configuration.
+
+Before sending invoice text to Cloud Run, the transport sends an empty model-load request.
+It allows up to 600 seconds for startup, including transient service errors and a model
+that is still downloading. Once loading succeeds, inference gets its separate 120-second
+budget. These limits are configurable positive seconds. Permanent authentication/permission
+errors fail immediately. An unavailable backup eventually fails with a startup-specific error.
+Queued invoices stay in extraction while waiting, and their worker renews the job lease.
+
+Set the Cloud Run service's request timeout to 900 seconds so the platform allows the model
+load to finish. The transport also retries a platform 504 during loading within the original
+startup deadline. Increasing the client timeout alone does not change Cloud Run's timeout.
+Interactive master-list suggestions share a shorter 45-second budget across primary and
+challenger calls. If a model is still starting, preview returns editable manual mappings
+within the browser's 60-second preview limit. The longer startup allowance applies to
+background invoice processing.
+
 Map arbitrary spreadsheet headings to the import fields described below. Name and unit price
 are required; currency, unit and quantity constrain the comparison when mapped. Without a
 master currency, the agreed price is interpreted in the invoice unit-price currency.

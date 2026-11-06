@@ -194,6 +194,20 @@ def test_live_startup_configuration(sheet, tmp_path, monkeypatch):
         assert http.get("/health").json()["mode"] == "live"
 
 
+@pytest.mark.parametrize("checker", ["master_list", "csv_context"])
+@pytest.mark.parametrize("model", ["gemma4:e4b", "qwen3.5:4b"])
+def test_ollama_startup_does_not_require_openai_key(tmp_path, monkeypatch, checker, model):
+    monkeypatch.setenv("INVOICE_MODE", "live")
+    monkeypatch.setenv("INVOICE_CHECKER", checker)
+    monkeypatch.setenv("OPENAI_MODEL", model)
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://primary.invalid:11434")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with TestClient(create_app(storage_dir=tmp_path)) as http:
+        health = http.get("/health").json()
+        assert health["mode"] == "live"
+        assert health["processing_configured"] is True
+
+
 def test_ocr_timeout_is_bounded(monkeypatch):
     monkeypatch.setenv("INVOICE_OCR_TIMEOUT", "0.001")
     with pytest.raises(TimeoutError, match="worker terminated"):
