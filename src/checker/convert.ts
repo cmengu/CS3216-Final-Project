@@ -3,6 +3,7 @@ import { tableRows, type TableDocument } from "@/components/pdfEvidence";
  * Turn one saved invoice from the checking service into the shape the screens use.
  * No other file needs the service's names.
  */
+import { plainReason } from "./present";
 import type { CheckState, InvoiceLine, LineResult, Outcome, SourceBlock, SupplierInvoice } from "./types";
 
 export interface ServiceLine {
@@ -117,10 +118,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
       result: check?.status ?? "needs_person",
       sheetPrice: numberOf(check?.agreed_price),
       difference: numberOf(check?.difference),
-      // Older saved checks retain the original backend wording.
-      reason: check?.reason === "No exact item or code-free description match in the agreement"
-        ? "Not exist in Master Sheet"
-        : check?.reason ?? "The check gave no result for this line.",
+      reason: plainReason(check?.reason ?? "The check gave no result for this line."),
       overcharge: numberOf(check?.overcharge),
       unit: line.unit ?? null,
     };
@@ -147,7 +145,7 @@ export function toSupplierInvoice(saved: ServiceInvoice): SupplierInvoice {
     priceSheet: saved.price_sheet_version,
     overchargeTotal: saved.check ? numberOf(saved.check.overcharge_total) : null,
     fixture: saved.mode === "fixture",
-    warnings: saved.check?.warnings ?? [],
+    warnings: (saved.check?.warnings ?? []).map(plainReason),
     error: errorOf(saved),
     outcome: outcomeOf(saved.outcome),
     outcomeReason: outcomeOf(saved.outcome) ? (saved.outcome_reason ?? null) : null,

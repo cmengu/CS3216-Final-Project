@@ -304,24 +304,16 @@ export function OutlookDialog({
           </p>
           {status && !status.configured ? (
             <Notice tone="warn">
-              <span>
-                Microsoft OAuth is not configured on the backend yet. Add{" "}
-                <code>MICROSOFT_CLIENT_ID</code>, <code>MICROSOFT_CLIENT_SECRET</code>, and{" "}
-                <code>MICROSOFT_REDIRECT_URI={status.redirectUri}</code> to{" "}
-                <code>backend/.env</code> and restart the backend server.
-              </span>
+              <span>Outlook import isn&rsquo;t available yet. Your administrator has been told.</span>
             </Notice>
-          ) : null}
-          <div>
-            <a
-              className="ic-btn ic-btn--primary"
-              href={outlookLoginUrl(returnTo)}
-              aria-disabled={status ? !status.configured : false}
-            >
-              <Icon name="mail" size="ui" />
-              Connect Microsoft Outlook
-            </a>
-          </div>
+          ) : (
+            <div>
+              <a className="ic-btn ic-btn--primary" href={outlookLoginUrl(returnTo)}>
+                <Icon name="mail" size="ui" />
+                Connect Microsoft Outlook
+              </a>
+            </div>
+          )}
         </div>
       ) : (
         <div className="ic-outlook">

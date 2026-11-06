@@ -79,8 +79,12 @@ The approved design mockups draw terracotta as `#A8481F`; the code uses `#B84A27
 | Pill | Background | Text |
 |---|---|---|
 | Neutral (counts, Delivered, Draft) | `--panel2` `#F2E9DC` | `--ink2` `#665247` |
-| Amber (attention) | `--warn-soft` `#F9EBD2` | `--warn` `#9A5B0A` |
+| Red (price over, couldn't read) | `--bad-soft` `#FBE6E6` | `--bad` `#A82020` |
+| Amber (needs you, under, totals unclear) | `--warn-soft` `#F9EBD2` | `--warn` `#9A5B0A` |
+| Blue (not on master list) | `--info-soft` `#E4EEF7` | `--info` `#2B5B84` |
 | Green (success) | `--good-soft` `#E3F2E7` | `--good` `#2D6A3E` |
+
+**Invoice status colours (approved 4 Nov 2026).** The invoice screens use four status hues so each problem reads at a glance: red for what stops payment (a line priced over the master list, an invoice that couldn't be read), with a bolder warning sign; amber for what needs the clerk's judgement; blue with a question-mark icon for items missing from the master list; green for matches. Every colour is paired with a text label. The single source is `src/checker/present.ts` (`Tone`, `lineTone`, `checkPill`).
 
 ### 1.6 Other hues in the code: flag and collapse
 
@@ -88,8 +92,8 @@ None of these appear on Home or Customers.
 
 | Token / source | Hex | Used on | Proposed |
 |---|---|---|---|
-| `--bad` / `--bad-soft` | `#A82020` / `#FBE6E6` | Red "Blocked" and "Overdue" labels, alerts, Invoices and Orders | Collapse into **amber** (`--warn` / `--warn-soft`): these are attention states. |
-| `--info` / `--info-soft` | `#2B5B84` / `#E4EEF7` | **Global focus ring**, "Draft" label, unread dots, Invoices | Focus ring becomes **terracotta**. Labels and dots become **neutral** (`--ink2` / `--panel2`). |
+| `--bad` / `--bad-soft` | `#A82020` / `#FBE6E6` | Red "Blocked" and "Overdue" labels, alerts, Invoices and Orders | **Kept for invoice status** (price over, couldn't read; see 1.5). Elsewhere collapse into amber. |
+| `--info` / `--info-soft` | `#2B5B84` / `#E4EEF7` | **Global focus ring**, "Draft" label, unread dots, Invoices | **Kept for "Not on master list"** (see 1.5). Focus ring becomes **terracotta**; other labels and dots become **neutral**. |
 | `--purple` / `--purple-soft` | `#62479E` / `#ECE6F3` | Invoices | Collapse into **neutral**. |
 | `--flag` / `--flag-ink` | `#FED7AA` / `#9A3412` | Flagged cells (Orders and Invoices) | Collapse into **amber** (`--warn-soft` / `--warn`). |
 | `--leaf1` | `#6FB583` | Assistant seedling animation (parked) | Collapse into **green** `--good`. |

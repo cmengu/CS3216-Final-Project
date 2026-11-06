@@ -140,7 +140,22 @@ export function supersededBy(inv: SupplierInvoice, list: SupplierInvoice[]): Sup
   return newestFirst(list).find((x) => x.id !== inv.id && x.projectId === inv.projectId && x.documentHash === inv.documentHash && x.uploadedAt > inv.uploadedAt) ?? null;
 }
 
-/** The totals boxes on the Invoices page, and the invoices in each pile (newest first). */
+/**
+ * How soon an undecided invoice needs the clerk, lowest first: priced over the sheet or unreadable,
+ * then needs a person (or under, or totals unconfirmed), then not on the master list, then still
+ * checking, then matching.
+ */
+export function attentionRank(inv: SupplierInvoice): number {
+  if (inv.state === "failed") return 0;
+  if (inv.state === "checking") return 3;
+  if (inv.comparisonMode === "totals_only") return 4;
+  if (inv.lines.some((l) => l.result === "price_mismatch" && l.difference !== null && l.difference > 0)) return 0;
+  if (inv.lines.some((l) => l.result === "needs_person" || l.result === "price_mismatch") || !totalKnown(inv) || !inv.lines.length) return 1;
+  if (inv.lines.some((l) => l.result === "unknown_part")) return 2;
+  return 4;
+}
+
+/** The totals boxes on the Invoices page, and the invoices in each pile (To decide problems first, then newest). */
 export function summarize(list: SupplierInvoice[]): Summary {
   const over = new Map<string, number>();
   let overInvoices = 0;
@@ -159,6 +174,7 @@ export function summarize(list: SupplierInvoice[]): Summary {
       over.set(cur, round2((over.get(cur) ?? 0) + o));
     }
   }
+  piles.decide.sort((a, b) => attentionRank(a) - attentionRank(b));
   piles.done.sort((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""));
   return { over: [...over], overInvoices, known, unknown, piles };
 }

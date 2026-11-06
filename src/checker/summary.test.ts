@@ -81,8 +81,8 @@ describe("summarize", () => {
     expect(s.over).toEqual([["SGD", 170.2]]);
     expect(s.overInvoices).toBe(2);
   });
-  it("puts every undecided invoice in To decide, newest first, whatever the check found", () => {
-    expect(s.piles.decide.map((i) => i.id)).toEqual(["tk-2210", "acme-0412", "bv-77810", "kp-0931", "qs-00451", "acme-0398"]);
+  it("puts every undecided invoice in To decide, problems first, then newest first", () => {
+    expect(s.piles.decide.map((i) => i.id)).toEqual(["acme-0412", "qs-00451", "kp-0931", "tk-2210", "bv-77810", "acme-0398"]);
     expect(s.piles.done).toEqual([]);
   });
   it("puts a decided invoice in Done, newest decision first", () => {
@@ -95,7 +95,7 @@ describe("summarize", () => {
     );
     const t = summarize(decided);
     expect(t.piles.done.map((i) => i.id)).toEqual(["acme-0398", "bv-77810"]);
-    expect(t.piles.decide.map((i) => i.id)).toEqual(["tk-2210", "acme-0412", "kp-0931", "qs-00451"]);
+    expect(t.piles.decide.map((i) => i.id)).toEqual(["acme-0412", "qs-00451", "kp-0931", "tk-2210"]);
     expect(pileOf(byId("bv-77810"))).toBe("match");
   });
   it("counts the invoices checked in full apart from those it cannot speak for", () => {

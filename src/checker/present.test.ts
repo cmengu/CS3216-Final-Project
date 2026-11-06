@@ -5,16 +5,22 @@ import {
   decision,
   exportReadyToPay,
   failureSentence,
+  joinPayReasons,
+  LINE_TOTAL_WRONG,
   lineAttention,
   lineDelta,
   linesPill,
+  lineTone,
   money,
   orderedLines,
   payAnywayLine,
+  payItems,
+  plainReason,
   queueAttention,
   raiseEmail,
   statusPill,
   taxLabel,
+  TOTALS_DONT_ADD_UP,
 } from "./present";
 import type { InvoiceLine, SupplierInvoice } from "./types";
 
@@ -59,12 +65,27 @@ const under = line({ quantity: 4, unitPrice: 10, sheetPrice: 15, difference: -5,
 describe("statuses", () => {
   it("names the check result, then the outcome once decided", () => {
     expect(checkPill(inv({}))).toEqual({ text: "Matches", tone: "good" });
-    expect(checkPill(inv({ lines: [over, line({})], overchargeTotal: 159.6 }))).toEqual({ text: "1 out of 2 differs", tone: "warn" });
-    expect(checkPill(inv({ lines: [line({ result: "unknown_part" })] }))).toEqual({ text: "Not on master list", tone: "warn" });
+    expect(checkPill(inv({ lines: [over, line({})], overchargeTotal: 159.6 }))).toEqual({ text: "1 out of 2 differs", tone: "bad" });
+    expect(checkPill(inv({ lines: [under, line({})] }))).toEqual({ text: "1 out of 2 differs", tone: "warn" });
+    expect(checkPill(inv({ lines: [line({ result: "unknown_part" })] }))).toEqual({ text: "Not on master list", tone: "info" });
     expect(checkPill(inv({ lines: [line({ result: "needs_person", reason: "Line total doesn't add up" })], overchargeTotal: null }))).toEqual({ text: "Needs you", tone: "warn" });
-    expect(checkPill(inv({ state: "failed", error: "reading: x" }))).toEqual({ text: "Couldn't read", tone: "warn" });
+    expect(checkPill(inv({ state: "failed", error: "reading: x" }))).toEqual({ text: "Couldn't read", tone: "bad" });
     expect(checkPill(inv({ state: "checking" }))).toEqual({ text: "Checking…", tone: "neutral" });
     expect(statusPill(inv({ outcome: "ready_to_pay_anyway" }))).toEqual({ text: "Paid anyway", tone: "neutral" });
+  });
+
+  it("colours each line by what it needs: red over, amber under or unclear, blue unknown", () => {
+    expect(lineTone(over)).toBe("bad");
+    expect(lineTone(under)).toBe("warn");
+    expect(lineTone(line({ result: "needs_person" }))).toBe("warn");
+    expect(lineTone(line({ result: "unknown_part" }))).toBe("info");
+    expect(lineTone(line({}))).toBe("good");
+  });
+
+  it("puts the service's arithmetic reasons in plain words", () => {
+    expect(plainReason("Invoice arithmetic does not reconcile")).toBe(TOTALS_DONT_ADD_UP);
+    expect(plainReason("Quantity times price does not equal line total")).toBe(LINE_TOTAL_WRONG);
+    expect(plainReason("Conflicting sheet prices")).toBe("Conflicting sheet prices");
   });
 
   it("maps each failed step to one sentence", () => {
@@ -85,10 +106,25 @@ describe("queue and line wording", () => {
   });
 
   it("describes a flagged line", () => {
-    expect(lineAttention(over, "SGD")).toBe("SGD 6.00 more per LG than the master list");
+    expect(lineAttention(over, "SGD")).toBe("Overcharged: SGD 6.00 more per LG than the master list");
+    expect(lineAttention(under, "SGD")).toBe("Undercharged: SGD 5.00 less per LG than the master list");
     expect(lineDelta(over, "SGD")).toBe("SGD 159.60 over");
     expect(lineDelta(under, "SGD")).toBe("SGD 20.00 under");
     expect(lineAttention(line({ result: "needs_person", reason: "Line total doesn't add up" }), "SGD")).toBe("Line total doesn't add up");
+  });
+
+  it("asks for a pay-anyway reason per flagged line and joins them within the limit", () => {
+    const i = inv({ lines: [line({}), over, line({ result: "unknown_part" })] });
+    const items = payItems(i);
+    expect(items.map((x) => x.key)).toEqual(["line-2", "line-3"]);
+    expect(items[0].why).toMatch(/^Overcharged/);
+    const reason = joinPayReasons(items, { "line-2": "Supplier confirmed the price", "line-3": "Supplier confirmed the price" }, 500);
+    expect(reason).toBe("Lines 2, 3: Supplier confirmed the price");
+    expect(joinPayReasons(items, { "line-2": "A", "line-3": "B" }, 500)).toBe("Line 2: A; Line 3: B");
+    expect(joinPayReasons(items, { "line-2": "x".repeat(600) }, 500)).toHaveLength(500);
+    const failed = payItems(inv({ state: "failed", error: "reading: x", lines: [] }));
+    expect(failed.map((x) => x.key)).toEqual(["invoice"]);
+    expect(joinPayReasons(failed, { invoice: "Checked the original invoice by hand" }, 500)).toBe("Checked the original invoice by hand");
   });
 
   it("puts flagged lines first and keeps line numbers", () => {

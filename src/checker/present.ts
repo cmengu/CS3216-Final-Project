@@ -9,7 +9,8 @@ import { choices, csvCell, invoiceDate, overSheet } from "./review";
 import { problemLines, totalKnown } from "./summary";
 import type { InvoiceLine, Outcome, SupplierInvoice } from "./types";
 
-export type Tone = "good" | "warn" | "neutral";
+/** bad: money over or unreadable; warn: needs the clerk; info: not on the master list. */
+export type Tone = "good" | "warn" | "bad" | "info" | "neutral";
 export interface Pill {
   text: string;
   tone: Tone;
@@ -24,6 +25,20 @@ export const money = (n: number, cur: string | null | undefined) => `${cur ? cur
 export const unit = (n: number) => n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 /** "+6.00" / "-20.00" for a per-unit difference. */
 
+/* ----------------------------------------------------------------- wording ---- */
+
+export const TOTALS_DONT_ADD_UP = "Invoice totals don't add up";
+export const LINE_TOTAL_WRONG = "Line total doesn't match quantity × price";
+
+/** The service's reasons and warnings in the clerk's words. Anything not listed reads as sent. */
+const PLAIN: Record<string, string> = {
+  "Invoice arithmetic does not reconcile": TOTALS_DONT_ADD_UP,
+  "Quantity times price does not equal line total": LINE_TOTAL_WRONG,
+  // Older saved checks retain the original backend wording.
+  "No exact item or code-free description match in the agreement": "Not exist in Master Sheet",
+};
+export const plainReason = (text: string) => PLAIN[text] ?? text;
+
 /* ---------------------------------------------------------------- statuses ---- */
 
 export const OUTCOME_PILL: Record<Outcome, Pill> = {
@@ -35,9 +50,16 @@ export const OUTCOME_PILL: Record<Outcome, Pill> = {
 export const LINE_PILL: Record<InvoiceLine["result"], Pill> = {
   match: { text: "Matches", tone: "good" },
   price_mismatch: { text: "Price differs", tone: "warn" },
-  unknown_part: { text: "Not on master list", tone: "warn" },
+  unknown_part: { text: "Not on master list", tone: "info" },
   needs_person: { text: "Needs you", tone: "warn" },
 };
+
+/** A line's tone: red when priced over the master list, amber when under or unclear, blue when unknown. */
+export function lineTone(l: InvoiceLine): Tone {
+  if (l.result === "match") return "good";
+  if (overSheet(l)) return "bad";
+  return LINE_PILL[l.result].tone;
+}
 
 /** The step a failed invoice stopped at, from the service's "step: reason". */
 export const failedStep = (inv: SupplierInvoice) => inv.error?.match(/^(reading|extracting|checking):/)?.[1] ?? null;
@@ -59,10 +81,10 @@ function worst(inv: SupplierInvoice): InvoiceLine["result"] | null {
 /** The invoice's check status, before any decision. */
 export function checkPill(inv: SupplierInvoice): Pill {
   if (inv.state === "checking") return { text: inv.queued ? "Queued" : "Checking…", tone: "neutral" };
-  if (inv.state === "failed") return { text: "Couldn't read", tone: "warn" };
+  if (inv.state === "failed") return { text: "Couldn't read", tone: "bad" };
   if (inv.comparisonMode === "totals_only") return { text: "Extracted", tone: "neutral" };
   const w = worst(inv);
-  if (w === "price_mismatch") return { text: `${inv.lines.filter((l) => l.result === "price_mismatch").length} out of ${inv.lines.length} differs`, tone: "warn" };
+  if (w === "price_mismatch") return { text: `${inv.lines.filter((l) => l.result === "price_mismatch").length} out of ${inv.lines.length} differs`, tone: inv.lines.some(overSheet) ? "bad" : "warn" };
   if (w) return LINE_PILL[w];
   if (!totalKnown(inv) || !inv.lines.length) return LINE_PILL.needs_person;
   return LINE_PILL.match;
@@ -122,7 +144,8 @@ export function lineAttention(l: InvoiceLine, cur: string | null): string | null
   if (l.result === "match") return null;
   if (l.result === "price_mismatch" && l.difference !== null && l.difference !== 0) {
     const per = l.unit ? ` per ${l.unit}` : " each";
-    return `${cur ? cur + " " : ""}${unit(Math.abs(l.difference))} ${l.difference > 0 ? "more" : "less"}${per} than the master list`;
+    const kind = l.difference > 0 ? "Overcharged" : "Undercharged";
+    return `${kind}: ${cur ? cur + " " : ""}${unit(Math.abs(l.difference))} ${l.difference > 0 ? "more" : "less"}${per} than the master list`;
   }
   if (l.result === "unknown_part") return "This item isn't on the master list.";
   return l.reason || "Check this line.";
@@ -192,6 +215,52 @@ export function decision(inv: SupplierInvoice): DecisionSummary {
   const needs = inv.lines.filter((l) => l.result === "needs_person").length;
   if (needs) return { mode: "anyway", title: `${plural(needs, "line needs", "lines need")} you`, sub: "Pay with a reason" };
   return { mode: "anyway", title: "The totals couldn't be confirmed", sub: "Pay with a reason" };
+}
+
+/** What the clerk gives a reason for when paying anyway: each flagged line, or the invoice as a whole. */
+export interface PayItem {
+  key: string;
+  title: string;
+  why: string | null;
+  tone: Tone;
+  choices: string[];
+}
+
+const LINE_REASONS: Record<Exclude<InvoiceLine["result"], "match">, string[]> = {
+  price_mismatch: ["Supplier confirmed the price", "Price change agreed internally", "Difference too small to raise"],
+  unknown_part: ["New item, price agreed", "One-off purchase, price approved"],
+  needs_person: ["Checked by hand, it's correct", "Supplier confirmed the figures"],
+};
+
+export function payItems(inv: SupplierInvoice): PayItem[] {
+  const whole = (why: string): PayItem[] => [{ key: "invoice", title: "This invoice", why, tone: inv.state === "failed" ? "bad" : "warn", choices: ["Checked the original invoice by hand", "Supplier sent a corrected copy"] }];
+  if (inv.state === "failed") return whole(failureSentence(inv));
+  const flagged = orderedLines(inv).filter((x) => x.line.result !== "match");
+  if (!flagged.length) return whole(inv.warnings?.[0] ?? "The totals couldn't be confirmed.");
+  return flagged.map(({ line, n }) => ({
+    key: `line-${n}`,
+    title: `${n}. ${shortDescription(line)}`,
+    why: lineAttention(line, inv.currency),
+    tone: lineTone(line),
+    choices: LINE_REASONS[line.result as keyof typeof LINE_REASONS],
+  }));
+}
+
+/**
+ * The one reason saved with Pay anyway, from the reason picked for each item. Items with the same
+ * reason share a line ("Lines 1, 3: Supplier confirmed the price") so it stays within the limit.
+ */
+export function joinPayReasons(items: PayItem[], picked: Record<string, string>, max: number): string {
+  const groups = new Map<string, string[]>();
+  for (const item of items) {
+    const reason = picked[item.key]?.trim();
+    if (!reason) continue;
+    groups.set(reason, [...(groups.get(reason) ?? []), item.key === "invoice" ? "" : item.title.split(".")[0]]);
+  }
+  const text = [...groups]
+    .map(([reason, ns]) => (ns[0] === "" ? reason : `${ns.length === 1 ? "Line" : "Lines"} ${ns.join(", ")}: ${reason}`))
+    .join("; ");
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
 /** The one line in the Pay anyway dialog. */

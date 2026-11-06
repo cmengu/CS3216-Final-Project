@@ -283,14 +283,19 @@ export function PdfView({
                 />
                 {placed.boxes
                   .filter((b) => b.page === i + 1 && focus?.n === b.n)
-                  .map((b) => (
-                    <div
-                      key={b.n}
-                      data-line={b.n}
-                      className={`ic-hl${focus?.n === b.n ? " ic-hl--focus" : ""}`}
-                      style={{ left: screenBox(s, b).left * scale, top: screenBox(s, b).top * scale, width: screenBox(s, b).width * scale, height: screenBox(s, b).height * scale }}
-                    />
-                  ))}
+                  .map((b) => {
+                    const box = screenBox(s, b);
+                    // The line follows the size of the printed row: thin around small text, heavier around large text.
+                    const line = Math.min(7, Math.max(3, Math.round(box.height * scale * 0.25)));
+                    return (
+                      <div
+                        key={b.n}
+                        data-line={b.n}
+                        className="ic-hl"
+                        style={{ left: box.left * scale, top: box.top * scale, width: box.width * scale, height: box.height * scale, outlineWidth: line, outlineOffset: Math.ceil(line * 0.75) }}
+                      />
+                    );
+                  })}
               </div>
             );
           })

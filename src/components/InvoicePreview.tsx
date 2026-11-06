@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { orderedLines } from "@/checker/present";
+import { lineAttention, lineTone, orderedLines } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
 import { Icon } from "./icons";
-import { PriceComparison } from "./invoices/PriceComparison";
+import { LineIcon, PriceComparison } from "./invoices/PriceComparison";
 import styles from "./InvoicePreview.module.css";
 
 export const PREVIEW_ZOOMS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
@@ -98,10 +98,13 @@ export function InvoicePreview({ inv, url, fileName, activeLine, onSelectLine, o
               {orderedLines(inv).map(({ line, n }) => (
                 <div key={n} role="listitem" className="ic-pdfmodal-item" aria-current={activeLine === n ? "true" : undefined}>
                   <button type="button" className="ic-pdfmodal-line" aria-current={activeLine === n ? "true" : undefined} onClick={() => onSelectLine?.(n)}>
-                    <span className="ico">{inv.comparisonMode === "totals_only" ? <Icon name="doc" /> : line.result === "match" ? <Icon name="tick" style={{ color: "var(--good)", strokeWidth: 2 }} /> : <Icon name="warn" style={{ color: "var(--warn)" }} />}</span>
+                    <span className="ico"><LineIcon line={line} totalsOnly={inv.comparisonMode === "totals_only"} /></span>
                     <span className="lbl"><span>{n} · {line.description.trim() || line.part || "No description"}</span></span>
                   </button>
-                  {inv.comparisonMode === "totals_only" ? <p className="ic-hint">Qty: {line.quantity ?? "—"} · Unit price: {line.priceCurrency ?? inv.currency} {line.unitPrice ?? "—"} · Total: {inv.currency} {line.lineTotal ?? "—"}</p> : <PriceComparison line={line} currency={inv.currency} number={n} />}
+                  {inv.comparisonMode !== "totals_only" && line.result !== "match" ? (
+                    <span className={`ic-attn ic-pdfmodal-why${lineTone(line) === "bad" || lineTone(line) === "info" ? ` ic-attn--${lineTone(line)}` : ""}`}>{lineAttention(line, inv.currency)}</span>
+                  ) : null}
+                  {inv.comparisonMode === "totals_only" ?<p className="ic-hint">Qty: {line.quantity ?? "—"} · Unit price: {line.priceCurrency ?? inv.currency} {line.unitPrice ?? "—"} · Total: {inv.currency} {line.lineTotal ?? "—"}</p> : <PriceComparison line={line} currency={inv.currency} number={n} />}
                 </div>
               ))}
             </div>
