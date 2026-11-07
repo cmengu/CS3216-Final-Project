@@ -34,3 +34,17 @@ it("broadcasts only a change token and tolerates blocked browser storage", () =>
   setItem.mockImplementation(() => { throw new Error("blocked"); });
   expect(() => broadcastServiceChange("master", "version-3")).not.toThrow();
 });
+
+it("allows focus refreshes to obey a different cadence from confirmed data changes", () => {
+  const browser = new EventTarget();
+  vi.stubGlobal("window", browser);
+  vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
+  const changed = vi.fn();
+  const focus = vi.fn();
+  const stop = listenForServiceChanges("invoices", changed, focus);
+  browser.dispatchEvent(new Event("focus"));
+  browser.dispatchEvent(Object.assign(new Event("storage"), { key: "invoices" }));
+  expect(focus).toHaveBeenCalledOnce();
+  expect(changed).toHaveBeenCalledOnce();
+  stop();
+});

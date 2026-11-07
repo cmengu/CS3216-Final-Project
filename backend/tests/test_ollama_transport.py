@@ -89,6 +89,25 @@ def test_healthy_primary_does_not_contact_backup(monkeypatch):
     assert calls[0].extensions["timeout"]["connect"] == 3
 
 
+def test_model_calls_share_the_invoice_deadline(monkeypatch, clock):
+    from read import budget
+
+    monkeypatch.setattr(budget, "time", clock)
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return result()
+
+    with budget.invoice_budget(5):
+        transport.request_ollama(PRIMARY, PAYLOAD, client_factory=factory(handler))
+        assert calls[0].extensions["timeout"]["read"] == 5
+        clock.now = 6
+        with pytest.raises(budget.ProcessingTimeout):
+            transport.request_ollama(PRIMARY, PAYLOAD, client_factory=factory(handler))
+    assert len(calls) == 1
+
+
 def test_primary_outage_allows_three_minute_startup_then_full_inference_budget(
     monkeypatch, clock, authenticated
 ):

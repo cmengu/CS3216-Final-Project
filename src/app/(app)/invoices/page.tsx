@@ -123,7 +123,7 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
         notices={uploads.notices}
         onUpload={picker.open}
         onOutlook={project ? () => onOutlook(project.id) : undefined}
-        loadError={projectError ?? (invoices === null ? invoiceError : null)}
+        loadError={projectError ?? invoiceError}
         onRetryLoad={() => { reloadInvoices(); reloadProjects(); }}
         onCollapse={() => setSidebarCollapsed(true)}
       />}

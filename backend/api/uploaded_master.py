@@ -36,6 +36,10 @@ class UploadedPriceSheet(PriceSheet):
         ]
 
     def _line(self, invoice, line, index):
+        from read.budget import check_budget
+
+        check_budget()
+
         def review(reason, status="needs_person"):
             return LineResult(
                 line_index=index,

@@ -17,10 +17,14 @@ describe("invoice archive validation", () => {
     expect(invoiceEntries([entry("__proto__/invoice.xml"), entry("constructor/invoice.pdf")]).invoices).toHaveLength(2);
     expect(Object.prototype).not.toHaveProperty("invoice.xml");
   });
-  it("rejects huge listings and expanded sizes before extraction", () => {
-    expect(() => invoiceEntries(Array.from({ length: 1001 }, () => entry("invoice.xml")))).toThrow("1,000");
-    expect(() => invoiceEntries([entry("large.bin", 101 * 1024 * 1024)])).toThrow("100 MB");
+  it("rejects huge listings and invalid entry sizes before extraction", () => {
+    expect(() => invoiceEntries(Array.from({ length: 10_001 }, () => entry("invoice.xml")))).toThrow("10,000");
+    expect(invoiceEntries([entry("large.bin", 101 * 1024 * 1024)]).skipped).toBe(1);
     expect(() => invoiceEntries([entry("bad.pdf", -1)])).toThrow("invalid file size");
+  });
+  it("accepts a large archive listing while per-invoice sizes remain bounded", () => {
+    expect(invoiceEntries(Array.from({ length: 10_000 }, (_, index) => entry(`invoice-${index}.xml`))).invoices).toHaveLength(10_000);
+    expect(invoiceEntries(Array.from({ length: 6 }, (_, index) => entry(`invoice-${index}.pdf`, 20 * 1024 * 1024))).invoices).toHaveLength(6);
   });
   it("rejects duplicate paths rather than extracting the wrong invoice twice", () => {
     expect(() => invoiceEntries([entry("same.xml"), entry("same.xml")])).toThrow("duplicate file paths");

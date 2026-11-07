@@ -3,12 +3,11 @@
 import os
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
 
 from read.reader import MAX_BYTES, validate_pdf
 from read.xml_invoice import read_xml_invoice
 
-from .limits import charge_checks, reserve_upload
 from .master_list import current_master
 from .projects import require_project
 from .storage import request_session_id
@@ -16,7 +15,25 @@ from .uploaded_master import UploadedMasterStages
 
 router = APIRouter(prefix="/invoice-batches")
 MAX_BATCH_BYTES = 100 * 1024 * 1024
-MAX_BATCH_FILES = 1000
+MAX_BATCH_FILES = 500
+
+
+@router.head("")
+def capacity(request: Request, project_id: str | None = None):
+    workspace = request_session_id(request)
+    if project_id:
+        require_project(request.app.state.store, project_id, workspace)
+    fleet = request.app.state.fleet
+    with fleet.connect() as db:
+        remaining = min(MAX_BATCH_FILES, fleet.queue_space(db, workspace))
+    return Response(
+        status_code=204,
+        headers={
+            "X-Invoice-Batch-Limit": str(remaining),
+            "Retry-After": "30" if remaining == 0 else "1",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("", status_code=202)
@@ -24,12 +41,13 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
     store, selected = request.app.state.store, request.app.state.stages
     workspace = request_session_id(request)
     temporary, accepted, duplicates, documents = [], [], [], []
-    reserved = 0
     try:
         if not selected:
             raise HTTPException(503, "The checking service is not configured.")
         if not 1 <= len(files) <= MAX_BATCH_FILES:
-            raise HTTPException(413, "Upload 1 to 1,000 invoices in one batch.")
+            raise HTTPException(
+                413, "Upload 1 to 500 invoices in one batch. Queue additional batches."
+            )
         project = require_project(store, project_id, workspace) if project_id else None
         totals_only = project is not None and project["comparison_mode"] == "totals_only"
         if project and selected.mode == "live" and not isinstance(selected, UploadedMasterStages):
@@ -97,40 +115,19 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
                     "size": size,
                 }
             )
-        existing = request.app.state.jobs.existing_many(
-            workspace, (item["document_hash"] for item in documents), project_id
-        )
-        fresh = []
-        seen = set()
-        for item in documents:
-            existing_id = existing.get(item["document_hash"])
-            if existing_id or item["document_hash"] in seen:
-                duplicates.append({"filename": item["filename"], "existing_id": existing_id})
-            else:
-                seen.add(item["document_hash"])
-                fresh.append(item)
-        documents = fresh
-        charge_checks(
-            request,
-            len(documents),
-            sum(not item["filename"].lower().endswith(".xml") for item in documents),
-        )
-        reserved = reserve_upload(request, sum(item["size"] for item in documents))
         batch_id, accepted, raced_duplicates = request.app.state.jobs.enqueue(
             workspace,
             documents,
             version,
             project_id=project_id,
             comparison_mode="totals_only" if totals_only else "master_list",
+            limits=request.app.state.limits,
+            intake=getattr(request.state, "intake", None),
         )
         duplicates.extend(
             {"filename": item["filename"], "existing_id": item["existing_id"]}
             for item in raced_duplicates
         )
-        if raced_duplicates:
-            amount = sum(item["size"] for item in raced_duplicates)
-            request.app.state.limits.release_storage(workspace, amount)
-            reserved -= amount
         if request.app.state.worker:
             request.app.state.worker.wake.set()
         return {
@@ -139,10 +136,6 @@ def upload_batch(request: Request, files: list[UploadFile], project_id: str | No
             "duplicates": duplicates,
             "processing": "background",
         }
-    except BaseException:
-        if reserved and not accepted:
-            request.app.state.limits.release_storage(workspace, reserved)
-        raise
     finally:
         for file in files:
             file.file.close()

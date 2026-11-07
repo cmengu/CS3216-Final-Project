@@ -68,6 +68,58 @@ def test_complete_upload_is_persisted_without_running_reader(configuration, tmp_
             assert client.get(row["file_url"]).content == (DATA / row["filename"]).read_bytes()
 
 
+def test_batch_hard_limit_refuses_501_files_before_saving_anything(configuration, tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as client:
+        login(client)
+        response = client.post(
+            "/invoice-batches",
+            headers=HEADERS,
+            files=[
+                ("files", (f"invoice-{i}.xml", b"not parsed", "application/xml"))
+                for i in range(501)
+            ],
+        )
+        assert response.status_code == 413
+        assert "500" in response.json()["detail"]
+        assert client.get("/invoices").json() == []
+        assert list(app.state.store.files.iterdir()) == []
+
+
+def test_batch_hard_limit_accepts_exactly_500_durable_xml_jobs(configuration, tmp_path):
+    app = create_app(
+        storage_dir=tmp_path, stages=UploadedMasterStages(model="unused-xml"), start_worker=False
+    )
+    with TestClient(app) as client:
+        login(client)
+        group = client.post(
+            "/projects",
+            headers=HEADERS,
+            json={"name": "Synthetic batch limit", "comparison_mode": "totals_only"},
+        ).json()
+        response = client.post(
+            "/invoice-batches",
+            params={"project_id": group["id"]},
+            headers=HEADERS,
+            files=[
+                (
+                    "files",
+                    (
+                        f"invoice-{i}.xml",
+                        XML.replace(b"DEMO-1", f"DEMO-{i}".encode()),
+                        "application/xml",
+                    ),
+                )
+                for i in range(500)
+            ],
+        )
+        assert response.status_code == 202, response.text
+        receipt = response.json()
+        assert len(receipt["invoices"]) == 500
+        assert all(row["status"] == "queued" for row in receipt["invoices"])
+        assert client.get("/invoice-batches/" + receipt["id"]).json()["queued"] == 500
+
+
 def test_large_batch_uses_bounded_invoice_reads(configuration, tmp_path, monkeypatch):
     app = app_for(tmp_path)
     with TestClient(app) as client:
@@ -131,7 +183,10 @@ def test_bulk_job_failure_rolls_back_invoices_and_releases_sources(configuration
         assert list(app.state.store.files.iterdir()) == []
         with app.state.store.connect() as db:
             assert db.execute("SELECT COUNT(*) FROM invoice_batches").fetchone()[0] == 0
-            assert db.execute("SELECT SUM(reserved) FROM storage_limits").fetchone()[0] == 0
+            assert (
+                db.execute("SELECT COALESCE(SUM(reserved),0) FROM storage_limits").fetchone()[0]
+                == 0
+            )
 
 
 def test_queued_batches_resume_after_service_restart(configuration, tmp_path):
@@ -174,6 +229,10 @@ def test_expired_lease_recovers_and_old_worker_cannot_write(configuration, tmp_p
         with app.state.store.connect() as db:
             db.execute(
                 "UPDATE invoice_jobs SET lease_until=0 WHERE invoice_id=?", (old["invoice_id"],)
+            )
+            db.execute(
+                "UPDATE fleet_leases SET lease_until=0,safe_until=0 WHERE id=?",
+                (old["invoice_id"],),
             )
         replacement = app.state.jobs.claim("new-worker")
         assert replacement["invoice_id"] == old["invoice_id"]

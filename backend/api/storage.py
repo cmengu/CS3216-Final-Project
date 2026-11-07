@@ -14,8 +14,9 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from .auth import extract_request_claims, is_auth_required
 from .contracts import InvoiceSummary, SavedInvoice
@@ -80,6 +81,10 @@ class MasterListExists(Exception):
 
 class NoMasterList(Exception):
     """A replacement was attempted before any master list was saved."""
+
+
+class StorageUnavailable(RuntimeError):
+    """A bounded database wait failed; callers may retry without private details."""
 
 
 def _saved(row: dict, invoice_id: str) -> SavedInvoice:
@@ -179,11 +184,20 @@ class Store(ProjectStore):
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.database, timeout=30.0)
+        db = sqlite3.connect(self.database, timeout=10.0)
         db.row_factory = sqlite3.Row
         try:
             with db:
                 yield db
+        except sqlite3.OperationalError as exc:
+            if (getattr(exc, "sqlite_errorcode", 0) & 255) in {
+                sqlite3.SQLITE_BUSY,
+                sqlite3.SQLITE_LOCKED,
+                sqlite3.SQLITE_FULL,
+                sqlite3.SQLITE_IOERR,
+            }:
+                raise StorageUnavailable("The database is temporarily unavailable") from exc
+            raise
         finally:
             db.close()
 
@@ -229,11 +243,20 @@ class Store(ProjectStore):
         project_id: str | None = None,
         comparison_mode: str = "master_list",
         session_id: str = DEFAULT_SESSION_ID,
+        limits=None,
     ):
         project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
         at = now()
         sid = normalize_session_id(session_id)
         with self.connect() as db:
+            if limits is not None:
+                limits.reserve_invoices(
+                    sid,
+                    1,
+                    int(not filename.lower().endswith(".xml")),
+                    self.path(invoice_id).stat().st_size,
+                    db=db,
+                )
             db.execute(
                 """INSERT INTO invoices
                 (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode)
@@ -386,6 +409,7 @@ class Store(ProjectStore):
         replace: bool,
         session_id: str = DEFAULT_SESSION_ID,
         project_id: str | None = None,
+        limits=None,
     ):
         """Save one version. The first upload must find none; a replacement must find one."""
         project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
@@ -403,6 +427,13 @@ class Store(ProjectStore):
                 is not None
             )
             _check_state(exists, replace)
+            if limits is not None:
+                limits.reserve_storage(
+                    normalize_session_id(session_id),
+                    len(source),
+                    maximum=limits.storage_maximum(),
+                    db=db,
+                )
             db.execute(
                 "INSERT INTO master_lists (id,created_at,document,event,source,session_id,project_id) VALUES (?,?,?,?,?,?,?)",
                 (
@@ -470,9 +501,24 @@ class PostgresStore(ProjectStore):
         if not SCHEMA_NAME.fullmatch(schema):
             raise ValueError(f"Invalid Postgres schema name: {schema!r}")
 
+        from psycopg.conninfo import conninfo_to_dict
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
+        host = conninfo_to_dict(url).get("host", "")
+        self.storage_profile = os.environ.get(
+            "INVOICE_STORAGE_PROFILE", "supabase_free" if ".supabase." in host else "custom"
+        )
+        self.source_budget_default_mb = 400 if self.storage_profile == "supabase_free" else 1024
+        budget_mb = int(
+            os.environ.get(
+                "INVOICE_DATABASE_BUDGET_MB",
+                "400" if self.storage_profile == "supabase_free" else "0",
+            )
+        )
+        if budget_mb < 0:
+            raise ValueError("INVOICE_DATABASE_BUDGET_MB must be non-negative")
+        self.database_budget_bytes = budget_mb * 1024 * 1024
         self.schema = schema
         self.directory = directory.resolve()
         self.files = self.directory / "files"
@@ -481,8 +527,18 @@ class PostgresStore(ProjectStore):
         self.pool = ConnectionPool(
             url,
             min_size=1,
-            max_size=10,
-            kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            max_size=4,
+            timeout=10,
+            max_waiting=16,
+            kwargs={
+                "row_factory": dict_row,
+                "prepare_threshold": None,
+                "connect_timeout": 5,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 3,
+                "tcp_user_timeout": 60000,
+            },
             open=True,
         )
         with self.connect() as db:
@@ -496,8 +552,49 @@ class PostgresStore(ProjectStore):
 
     @contextmanager
     def connect(self):
-        with self.pool.connection() as db:
-            yield db
+        from psycopg import InterfaceError, OperationalError
+        from psycopg.errors import LockNotAvailable, QueryCanceled, ReadOnlySqlTransaction
+        from psycopg_pool import PoolTimeout, TooManyRequests
+
+        try:
+            with self.pool.connection() as db:
+                # Transaction-local settings also work with transaction poolers.
+                db.execute(
+                    "SELECT set_config('statement_timeout','30000',true), set_config('lock_timeout','10000',true)"
+                )
+                yield db
+        except (
+            PoolTimeout,
+            TooManyRequests,
+            QueryCanceled,
+            LockNotAvailable,
+            OperationalError,
+            InterfaceError,
+            ReadOnlySqlTransaction,
+        ) as exc:
+            raise StorageUnavailable("The database is temporarily unavailable") from exc
+
+    def check_growth(self, db, addition):
+        """Guard source and parsed-result writes using the whole database size."""
+        budget = getattr(self, "database_budget_bytes", 0)
+        if not budget or addition <= 0:
+            return
+        present = db.execute(
+            f"SELECT reserved FROM {self.schema}.fleet_storage WHERE id='main'"
+        ).fetchone()
+        if present is None:
+            db.execute(
+                f"INSERT INTO {self.schema}.fleet_storage (id,reserved) SELECT 'main', (SELECT COALESCE(SUM(octet_length(content)),0) FROM {self.schema}.invoice_files) + (SELECT COALESCE(SUM(octet_length(source)),0) FROM {self.schema}.master_lists) ON CONFLICT(id) DO NOTHING"
+            )
+        db.execute(f"UPDATE {self.schema}.fleet_storage SET reserved=reserved WHERE id='main'")
+        used = db.execute("SELECT pg_database_size(current_database()) AS bytes").fetchone()[
+            "bytes"
+        ]
+        if used + addition > budget:
+            raise HTTPException(
+                413,
+                "The database storage budget is nearly full. New uploads/results are paused to preserve existing data. Contact your administrator.",
+            )
 
     def revoke_session(self, session_id: str, expires_at: int) -> None:
         with self.connect() as db:
@@ -538,7 +635,25 @@ class PostgresStore(ProjectStore):
                 ).fetchone()
             if row is not None:
                 self.files.mkdir(parents=True, exist_ok=True)
-                local.write_bytes(row["content"])
+                temporary = None
+                try:
+                    with NamedTemporaryFile(
+                        dir=self.files, prefix=f".{invoice_id}-", suffix=".tmp", delete=False
+                    ) as output:
+                        temporary = Path(output.name)
+                        output.write(row["content"])
+                        output.flush()
+                        os.fsync(output.fileno())
+                    try:
+                        os.replace(temporary, local)
+                    except OSError:
+                        # A concurrent reader may already have published/opened
+                        # the same immutable source (including on Windows).
+                        if not local.exists():
+                            raise
+                finally:
+                    if temporary is not None:
+                        temporary.unlink(missing_ok=True)
         return local
 
     def insert(
@@ -552,12 +667,21 @@ class PostgresStore(ProjectStore):
         project_id: str | None = None,
         comparison_mode: str = "master_list",
         session_id: str = DEFAULT_SESSION_ID,
+        limits=None,
     ):
         # The upload has already been written to path(); keep the bytes with the row.
         project_id = project_id or self.ensure_legacy_project(normalize_session_id(session_id))
         at = now()
         content = self.path(invoice_id).read_bytes()
         with self.connect() as db:
+            if limits is not None:
+                limits.reserve_invoices(
+                    normalize_session_id(session_id),
+                    1,
+                    int(not filename.lower().endswith(".xml")),
+                    len(content),
+                    db=db,
+                )
             db.execute(
                 f"""INSERT INTO {self.schema}.invoices
                 (id,filename,document_hash,status,mode,created_at,updated_at,price_sheet_version,session_id,project_id,comparison_mode)
@@ -587,6 +711,14 @@ class PostgresStore(ProjectStore):
             return Jsonb(model.model_dump(mode="json")) if model is not None else None
 
         with self.connect() as db:
+            self.check_growth(
+                db,
+                sum(
+                    len(model.model_dump_json().encode("utf-8"))
+                    for model in (document, invoice, check)
+                    if model is not None
+                ),
+            )
             db.execute(
                 f"""UPDATE {self.schema}.invoices SET status=%s, updated_at=%s, error=%s,
                 document=COALESCE(%s::jsonb, document), invoice=COALESCE(%s::jsonb, invoice),
@@ -698,6 +830,7 @@ class PostgresStore(ProjectStore):
         replace: bool,
         session_id: str = DEFAULT_SESSION_ID,
         project_id: str | None = None,
+        limits=None,
     ):
         from psycopg.types.json import Jsonb
 
@@ -713,6 +846,13 @@ class PostgresStore(ProjectStore):
                 ),
             ).fetchone()
             _check_state(exists is not None, replace)
+            if limits is not None:
+                limits.reserve_storage(
+                    normalize_session_id(session_id),
+                    len(source),
+                    maximum=limits.storage_maximum(),
+                    db=db,
+                )
             db.execute(
                 f"""INSERT INTO {self.schema}.master_lists (id, created_at, document, event, source, session_id, project_id)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)""",

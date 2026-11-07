@@ -34,7 +34,7 @@ def describe(store, project, sid):
 @router.get("")
 def list_projects(request: Request):
     store, sid = request.app.state.store, request_session_id(request)
-    return [describe(store, p, sid) for p in store.list_projects(session_id=sid)]
+    return store.list_project_details(session_id=sid)
 
 
 @router.post("", status_code=201)

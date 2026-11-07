@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SERVICE_URL, sessionHeaders } from "./api";
 import type { MasterList, MasterListEvent } from "@/masterList";
+import { createReadLoop } from "@/lib/read-loop";
+import { listenForServiceChanges } from "@/lib/service-sync";
+import { serviceReadFailure } from "@/lib/service-error";
 
 export interface Project {
   id: string;
@@ -16,21 +19,28 @@ export interface Project {
   totals: Record<string, string>;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${SERVICE_URL}${path}`, {
-    ...options, credentials: "include", cache: "no-store",
-    headers: sessionHeaders(options?.headers as Record<string, string> | undefined, !!options?.method && options.method !== "GET"),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Could not load invoice groups.");
+export async function projectRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${SERVICE_URL}${path}`, {
+      ...options, credentials: "include", cache: "no-store",
+      headers: sessionHeaders(options?.headers as Record<string, string> | undefined, !!options?.method && options.method !== "GET"),
+      signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(options?.signal ? [options.signal] : [])]),
+    });
+  } catch (error) {
+    throw new Error(error instanceof Error && error.name === "TimeoutError"
+      ? "The checking service took too long to respond. Try again."
+      : "The checking service could not be reached. Try again.");
+  }
+  const body = await response.json().catch(() => undefined);
+  if (!response.ok || body === undefined) throw serviceReadFailure(response, typeof body?.detail === "string" ? body.detail : "Could not load invoice groups. Try again.");
   return body;
 }
 
 export function projectsChanged() { window.dispatchEvent(new Event("projects-changed")); }
 
 export async function createProject(name: string, comparison_mode: Project["comparison_mode"]) {
-  const project = await request<Project>("/projects", {
+  const project = await projectRequest<Project>("/projects", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, comparison_mode }),
   });
   projectsChanged();
@@ -41,20 +51,31 @@ export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
-  const reload = useCallback(() => setRevision((r) => r + 1), []);
+  const reader = useRef<{ refresh: (force?: boolean) => void } | null>(null);
+  const reload = useCallback(() => reader.current?.refresh(), []);
   useEffect(() => {
-    window.addEventListener("projects-changed", reload);
+    const loop = createReadLoop({
+      read: (signal) => projectRequest<Project[]>("/projects", { signal }),
+      success: (data) => {
+        setProjects(previous => JSON.stringify(previous) === JSON.stringify(data) ? previous : data);
+        setError(null); setLoading(false);
+      },
+      failure: (err) => { setError(err instanceof Error ? err.message : "Could not load invoice groups. Try again."); setLoading(false); },
+    });
+    reader.current = loop;
+    loop.refresh();
+    const changed = () => loop.refresh(true);
+    window.addEventListener("projects-changed", changed);
     window.addEventListener("focus", reload);
-    return () => { window.removeEventListener("projects-changed", reload); window.removeEventListener("focus", reload); };
+    document.addEventListener("visibilitychange", reload);
+    return () => {
+      loop.stop();
+      reader.current = null;
+      window.removeEventListener("projects-changed", changed);
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", reload);
+    };
   }, [reload]);
-  useEffect(() => {
-    let active = true;
-    request<Project[]>("/projects").then((data) => {
-      if (active) { setProjects(data); setError(null); setLoading(false); }
-    }, (err) => { if (active) { setError(err.message); setLoading(false); } });
-    return () => { active = false; };
-  }, [revision]);
   return { projects, error, loading, reload };
 }
 
@@ -65,7 +86,7 @@ export function useProjectMaster(projectId: string | null) {
   useEffect(() => {
     if (!projectId) return;
     let active = true;
-    request<MasterList | null>(`/master-list?project_id=${encodeURIComponent(projectId)}`).then(
+    projectRequest<MasterList | null>(`/master-list?project_id=${encodeURIComponent(projectId)}`).then(
       (master) => { if (active) setState({ id: projectId, master, error: null }); },
       (err) => { if (active) setState({ id: projectId, master: null, error: err.message }); },
     );
@@ -79,12 +100,27 @@ export function useProjectMaster(projectId: string | null) {
 export function useProjectEvents(projects: Project[]) {
   const [events, setEvents] = useState<(MasterListEvent & { projectId: string })[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Invoice totals change during every batch; master-list history does not.
+  const projectIds = JSON.stringify(projects.filter(project => project.comparison_mode === "master_list").map(project => project.id));
   useEffect(() => {
-    let active = true;
-    Promise.all(projects.map((p) => request<MasterListEvent[]>(`/master-list/events?project_id=${encodeURIComponent(p.id)}`).then((history) => history.map((event) => ({ ...event, projectId: p.id })))))
-      .then((lists) => { if (active) { setEvents(lists.flat()); setError(null); } },
-        () => { if (active) setError("Could not load group master-list history."); });
-    return () => { active = false; };
-  }, [projects]);
+    const ids = JSON.parse(projectIds) as string[];
+    const loop = createReadLoop({
+      read: async signal => {
+        const found: (MasterListEvent & { projectId: string })[] = [];
+        for (const id of ids) {
+          const history = await projectRequest<MasterListEvent[]>(`/master-list/events?project_id=${encodeURIComponent(id)}`, { signal });
+          found.push(...history.map(event => ({ ...event, projectId: id })));
+        }
+        return found;
+      },
+      success: data => { setEvents(data); setError(null); },
+      failure: () => setError("Could not load group master-list history."),
+    });
+    const refresh = () => loop.refresh();
+    const stopSync = listenForServiceChanges(`ic.master-list.changed:${SERVICE_URL}`, refresh);
+    window.addEventListener("projects-changed", refresh);
+    loop.refresh();
+    return () => { loop.stop(); stopSync(); window.removeEventListener("projects-changed", refresh); };
+  }, [projectIds]);
   return { events, error };
 }

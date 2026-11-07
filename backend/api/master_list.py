@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
-from .limits import allowance, reserve_upload
+from .limits import allowance
 from .master_import import normalize, preview, read_tables
 from .projects import require_project
 from .storage import DEFAULT_SESSION_ID, MasterListExists, NoMasterList, now, request_session_id
@@ -96,8 +96,6 @@ def inspect(file: UploadFile, request: Request):
 def upload(
     request: Request, file: UploadFile, options: str = Form("{}"), project_id: str | None = None
 ):
-    reserved = 0
-    saved = False
     try:
         if project_id:
             project = require_project(
@@ -145,7 +143,6 @@ def upload(
             "items": len(items),
             "suppliers": document["supplierCount"],
         }
-        reserved = reserve_upload(request, len(data))
         try:
             request.app.state.store.add_master_list(
                 document,
@@ -154,14 +151,12 @@ def upload(
                 replace=replace,
                 session_id=request_session_id(request),
                 project_id=project_id,
+                limits=request.app.state.limits,
             )
         except MasterListExists:
             raise HTTPException(409, "A master list already exists. Use Replace file.") from None
         except NoMasterList:
             raise HTTPException(409, "No master list exists yet. Upload one first.") from None
-        saved = True
         return document
     finally:
-        if reserved and not saved:
-            request.app.state.limits.release_storage(request_session_id(request), reserved)
         file.file.close()

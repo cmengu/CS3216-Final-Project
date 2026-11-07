@@ -6,7 +6,7 @@ import type { Project } from "@/checker/projects";
 import { CreateProject } from "./CreateProject";
 import { OUTCOME_PILL, queueAttention, shortDate, statusPill, whenLabel } from "@/checker/present";
 import type { SupplierInvoice } from "@/checker/types";
-import { dismissNotice, type QueueItem, type UploadNotice } from "@/checker/uploads";
+import { dismissNotice, resetUploadsSession, resumeUploads, type QueueItem, type UploadNotice } from "@/checker/uploads";
 import { Icon } from "@/components/icons";
 import { Notice, Pill, Search } from "@/components/ui";
 
@@ -126,9 +126,13 @@ export function Queue({
       {!project ? <CreateProject onCreated={(p) => onProject(p.id)} /> : null}
       <div className="ic-queue-list">
         {notices.map((n) => (
-          <Notice key={n.key} tone={n.kind === "queued" ? undefined : "warn"} onDismiss={() => dismissNotice(n.key)}>
+          <Notice key={n.key} tone={n.kind === "queued" ? undefined : "warn"} onDismiss={n.retryUpload ? undefined : () => dismissNotice(n.key)}>
             <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "calc(13px * var(--text-scale))" }}>
               {n.text}
+              {n.retryUpload ? <span style={{ display: "flex", gap: 12 }}>
+                <button type="button" className="ic-link ic-link--sm" onClick={resumeUploads}>Retry uploads</button>
+                <button type="button" className="ic-link ic-link--sm" onClick={resetUploadsSession}>Cancel waiting uploads</button>
+              </span> : null}
               {n.invoiceId ? (
                 <Link className="ic-link ic-link--sm" href={`/invoices?id=${n.invoiceId}`} onClick={() => dismissNotice(n.key)} style={{ minHeight: 28 }}>
                   Open it
@@ -165,7 +169,7 @@ export function Queue({
             <Icon name="folder" /><b>{p.name}</b><span className="muted">{p.invoice_count}</span><Icon name="chev" />
           </button>
         ))}
-        {!projects.length ? <p className="ic-hint">Create an invoice group to add invoices.</p> : null}
+        {!projects.length && !loadError ? <p className="ic-hint">Create an invoice group to add invoices.</p> : null}
       </div>
     </aside>
   );
