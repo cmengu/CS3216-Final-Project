@@ -25,6 +25,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Check pane | The "Couldn't read" card and its Try again button | `CheckPane.tsx` `Failed` ← `present.ts` `failureSentence`; `src/checker/api.ts` `retryInvoice` |
 | Decision bar | No decision while checking (409); only Pay anyway when failed | `CheckPane.tsx` `DecisionBar` ← `present.ts` `decision` ← `review.ts` `choices` |
 | Upload queue | Archive unpacking, complete batch upload, server-queued progress, skipped/duplicate files and errors (415, 413, 422, 429) | `src/checker/uploads.ts` `precheck`, `refusal`, `run`; `src/checker/archives.ts` `unpackInvoices`; `api.ts` `uploadInvoice`; shown in `Queue.tsx` and `invoices/page.tsx` `GuidedSetup` |
+| Reloading while checking | One reload at a time, spaced by how long the last took; none in a hidden tab | `api.ts` `useInvoices` ← `src/checker/reloads.ts` `startReloads`, `reloadDelay` |
 | Guided setup | When setup ends and the workspace appears | `AppShell.tsx` `phaseOf`, `Stepper`; `invoices/page.tsx` `InvoicesView`, `GuidedSetup` |
 
 ## Invoice totals: `check.overcharge_total`, `invoice.subtotal`, `tax`, `invoice_total`

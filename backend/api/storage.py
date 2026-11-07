@@ -481,7 +481,7 @@ class PostgresStore(ProjectStore):
         self.pool = ConnectionPool(
             url,
             min_size=1,
-            max_size=4,
+            max_size=10,
             kwargs={"row_factory": dict_row, "prepare_threshold": None},
             open=True,
         )
