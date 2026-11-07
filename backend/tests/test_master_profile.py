@@ -169,6 +169,56 @@ def test_missing_optional_fields_cannot_be_replaced_by_codes_or_amounts(field, c
         suggest_layouts([{"name": "T1", "rows": receipts()}], client=model, model="test")
 
 
+@pytest.mark.parametrize(
+    "label",
+    ["Mã nx", "Mã kho", "Mã dự án", "Account code", "Warehouse code", "Receipt date", "Diễn giải"],
+)
+def test_accounting_metadata_is_never_a_purchase_order(label):
+    rows = receipts()
+    rows[0].append(label)
+    for row in rows[1:]:
+        row.append("331111")
+    bad = mapping()
+    bad.sheets[0].columns.append(Column(field="po", column=8))
+    model = client(understanding(), bad, mapping())
+    result = suggest_layouts([{"name": "T1", "rows": rows}], client=model, model="test")
+    assert all(c.field != "po" for c in result.sheets[0].columns)
+    assert model.responses.parse.call_count == 3
+
+
+def test_receipt_memo_cannot_replace_product_description():
+    rows = receipts()
+    rows[0].append("Diễn giải")
+    for row in rows[1:]:
+        row.append("Receipt for warehouse stock")
+    bad = mapping()
+    bad.sheets[0].columns.append(Column(field="description", column=8))
+    model = client(understanding(), bad, mapping())
+    result = suggest_layouts([{"name": "T1", "rows": rows}], client=model, model="test")
+    assert all(c.field != "description" for c in result.sheets[0].columns)
+
+
+def test_real_purchase_order_reference_is_preserved():
+    rows = receipts()
+    rows[0].append("PO reference")
+    for row in rows[1:]:
+        row.append("PO-2026-123")
+    proposed = mapping()
+    proposed.sheets[0].columns.append(Column(field="po", column=8))
+    model = client(understanding(), proposed)
+    result = suggest_layouts([{"name": "T1", "rows": rows}], client=model, model="test")
+    assert next(c.column for c in result.sheets[0].columns if c.field == "po") == 8
+
+
+@pytest.mark.parametrize("field", ["item", "unit", "quantity"])
+def test_repair_cannot_drop_explicit_populated_source_constraints(field):
+    reduced = mapping()
+    reduced.sheets[0].columns = [c for c in reduced.sheets[0].columns if c.field != field]
+    model = client(understanding(), reduced, reduced)
+    with pytest.raises(ValueError, match="Preserve this source constraint"):
+        suggest_layouts([{"name": "T1", "rows": receipts()}], client=model, model="test")
+
+
 def test_numeric_identifier_is_not_accepted_as_price():
     rows = receipts()
     for i, row in enumerate(rows[1:]):

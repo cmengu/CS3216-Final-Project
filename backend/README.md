@@ -97,7 +97,9 @@ supported quantity × rate = amount relationships. A separate structured mapping
 uses that analysis. Source row/column indices are retained; cell values are never rewritten.
 Deterministic gates reject inconsistent numeric columns, identifier-as-quantity mappings,
 and line/document totals mapped as unit rates when quantities are present. Receipt/document
-numbers cannot substitute for purchase orders, and numeric amounts cannot be descriptions. A failed repair
+numbers or accounting/warehouse/project codes cannot substitute for purchase orders, and
+receipt memos or numeric amounts cannot be product descriptions. Explicit populated
+item-code, unit and quantity columns cannot be dropped during repair. A failed repair
 returns editable manual suggestions instead of accepting the rejected mapping. Payloads are
 bounded to 150,000 characters (12,000 for the local model's context). Manual import still
 validates every row; ten samples cannot establish that every source row is valid.

@@ -108,12 +108,19 @@ A receipt number, document number or invoice number is NOT a purchase order. Omi
 an actual purchase-order field exists. Description is human-readable product/service text,
 never a numeric amount or total. It may share the product-name column; otherwise omit it
 when absent. A receipt memo is not automatically a product description.
+Accounting codes ('Mã nx'), warehouse codes ('Mã kho'), project codes ('Mã dự án'), dates,
+and receipt memos ('Diễn giải') are not purchase-order fields. A stock-movement account code
+such as 331111 is not a PO. Do not map these metadata columns as product descriptions either.
 tax means the agreed tax/GST rate, not a tax amount. discount means a rate, not an amount.
 Do not invent a column for a missing field or extract constants from title text.
 Omit mappings you cannot identify confidently; return header=null and no columns if there
 is no identifiable table. Never map name, price and quantity to the same column. A field
-may appear at most once; name and description may share a column. Give a short note about
-uncertainties/unsupported layout for user review, or an empty string when unambiguous.
+may appear at most once; name and description may share a column.
+Preserve explicit, populated item-code, unit and quantity columns. Do not omit these
+constraints during repair. Vietnamese 'Mã vật tư', 'Đvt' and 'Số lượng' are item, unit and
+quantity respectively when supported by their sample values.
+Give a short note about uncertainties/unsupported layout for user review, or an empty string
+when unambiguous.
 Do not calculate, rewrite or return any data values. Only propose structure.
 """
 
@@ -236,6 +243,8 @@ def _validate_layouts(result: Layouts, sheets: list[dict]) -> Layouts:
 
 
 def _find_layout_critiques(result: Layouts, sheets: list[dict]) -> list[str]:
+    from .master_import import FIELDS
+
     critiques: list[str] = []
     any_mapped = any(layout.header is not None and layout.columns for layout in result.sheets)
     if not any_mapped and any(len([r for r in s["rows"] if any(r)]) >= 2 for s in sheets):
@@ -271,6 +280,29 @@ def _find_layout_critiques(result: Layouts, sheets: list[dict]) -> list[str]:
             "so hoa don",
             "so phieu",
             "so phieu nhap",
+        }
+        metadata = {
+            "ma nx",
+            "ma kho",
+            "ma du an",
+            "ma c tu in",
+            "ngay c tu",
+            "account",
+            "account code",
+            "account number",
+            "ledger code",
+            "warehouse",
+            "warehouse code",
+            "project",
+            "project code",
+            "receipt date",
+            "document date",
+            "invoice date",
+            "document type",
+            "document class",
+            "receipt memo",
+            "document memo",
+            "dien giai",
         }
         if "name" not in by_field or "price" not in by_field:
             critiques.append(
@@ -322,12 +354,33 @@ def _find_layout_critiques(result: Layouts, sheets: list[dict]) -> list[str]:
                 f"Sheet {layout.sheet}: `quantity` column {quantity_col} is a row/document/item identifier, not the actual quantity."
             )
         samples = sampled_indices(rows, start=layout.header + 1)
+        # A repair may omit invented metadata, but must not bypass clear source
+        # identity/measurement constraints to obtain more successful comparisons.
+        for field in ("item", "unit", "quantity"):
+            explicit = [i for i, label in enumerate(headings) if label in FIELDS[field]]
+            if len(explicit) != 1 or field in by_field or not samples:
+                continue
+            column = explicit[0]
+            populated = sum(
+                column < len(rows[i]) and bool(rows[i][column].strip()) for i in samples
+            )
+            if populated >= len(samples) * 0.8:
+                critiques.append(
+                    f"Sheet {layout.sheet}: explicit populated `{field}` column {column} was omitted. Preserve this source constraint; do not bypass item codes, units or quantities by dropping their mapping."
+                )
         po_col = by_field.get("po")
-        if po_col is not None and headings[po_col] in identifiers:
+        if po_col is not None and (
+            headings[po_col] in identifiers | metadata
+            or po_col in {column for field, column in by_field.items() if field != "po"}
+        ):
             critiques.append(
-                f"Sheet {layout.sheet}: `po` column {po_col} is a receipt/document/item identifier, not a purchase-order reference. Omit `po` when no purchase-order column exists."
+                f"Sheet {layout.sheet}: `po` column {po_col} is receipt/accounting metadata or another mapped field, not a purchase-order reference. Omit `po` when no purchase-order column exists."
             )
         desc_col = by_field.get("description")
+        if desc_col is not None and headings[desc_col] in metadata:
+            critiques.append(
+                f"Sheet {layout.sheet}: `description` column {desc_col} contains receipt/accounting metadata. Use the product-name column or omit description; do not substitute a receipt memo."
+            )
         if desc_col is not None and samples:
             numeric_descriptions = sum(
                 desc_col < len(rows[i]) and number(rows[i][desc_col]) is not None for i in samples
