@@ -1,7 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkPill, queueAttention } from "./present";
 import { supersededBy } from "./summary";
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
+import { projectRequest } from "./projects";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("allows a valid null response when a project has no master list yet", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(null)));
+  expect(await projectRequest("/master-list")).toBeNull();
+});
+
+it("preserves the server cooldown on group availability errors", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("Gateway unavailable", { status: 503, headers: { "Retry-After": "120" } })));
+  await expect(projectRequest("/projects")).rejects.toMatchObject({ retryAfter: 120 });
+});
 
 const saved: ServiceInvoice = {
   id: "one", project_id: "expenses", comparison_mode: "totals_only",

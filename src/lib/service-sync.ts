@@ -8,10 +8,10 @@ export function broadcastServiceChange(key: string, version: string): void {
   }
 }
 
-export function listenForServiceChanges(key: string, refresh: () => void): () => void {
+export function listenForServiceChanges(key: string, refresh: () => void, focusRefresh = refresh): () => void {
   if (typeof window === "undefined") return () => {};
   const visible = () => {
-    if (document.visibilityState !== "hidden") refresh();
+    if (document.visibilityState !== "hidden") focusRefresh();
   };
   const changed = (event: StorageEvent) => {
     if (event.key === key || event.key === null) refresh();

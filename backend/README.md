@@ -399,11 +399,25 @@ over an existing target workspace. Keep a database/files backup before an operat
 
 ## Background batches and usage limits
 
-`POST /invoice-batches` accepts multipart `files` (1–1,000 PDF/XML files, at most 20 MiB each
+`POST /invoice-batches` accepts multipart `files` (1–500 PDF/XML files, at most 20 MiB each
 and 100 MiB together). ZIP/RAR extraction stays in the browser. Keep the browser open while
 unpacking/uploading. Only after HTTP 202 does the UI promise that checking continues without
 the browser. A malformed batch is rejected before any invoices/jobs are committed. Exact
 file duplicates are skipped. Results appear under the same approved account after re-login.
+The browser splits larger selections into successive batches of at most 500 files and keeps
+the remainder waiting. Only one upload request runs at a time. A 429 pauses unsent files until
+`Retry-After`; temporary connection/service failures retry with backoff. The browser must remain
+open until every upload is acknowledged. Each request is also capped at 100 MiB; the whole
+selection has no aggregate byte cap. Archives are indexed first and extracted only for the
+current request, with one decoder active and periodic decoder recycling. Storage budgets and
+any explicitly enabled hourly/daily quotas remain in force. This does not start 500 workers.
+Before hashing/extracting a batch, the browser checks free queue slots with `HEAD /invoice-batches`.
+This check is advisory; atomic admission rechecks the actual number of new invoices after
+deduplication. An optional `X-Invoice-Batch-Count` lets POST reject a capacity race before parsing
+the body. When free queue space or an enabled checking allowance is smaller than a batch, the browser reduces its batch size using
+`X-Invoice-Batch-Limit`. A permanent rejection retains waiting files with explicit retry/cancel
+controls. Resetting the upload queue aborts its active request; an upload whose receipt was lost
+may already have committed, so retries use content deduplication to recover it safely.
 `GET /invoice-batches/{id}` returns private queued/processing/completed/failed counts.
 
 An optional `project_id` query selects an owned project. Duplicate detection is scoped to
@@ -420,22 +434,138 @@ Use an always-running backend and persistent SQLite storage, or Postgres for dur
 blobs and queue records. An autosleeping or stopped service cannot process until it resumes.
 Outlook’s token store still needs persistent local storage.
 
+Admission serializes batch uploads across replicas sharing the database and returns retryable 503 when busy.
+Deduplication, checking allowances, storage accounting and invoice/job inserts commit in one
+transaction; refused work consumes no checking allowance. Actual streamed request bytes are
+bounded even without Content-Length. The normal API reader runs the complete OCR/model/check
+pipeline in a reusable child process. The supervisor enforces a 900-second hard invoice deadline
+(`INVOICE_PROCESSING_TIMEOUT_SECONDS`) and a separate 180-second reading deadline
+(`INVOICE_OCR_TIMEOUT`). A timed-out child is terminated and replaced; successful jobs reuse
+the reader's model caches. Standalone `read_pdf_bounded` retains its single-use subprocess.
+
+Postgres uses at most four connections with sixteen waiters, a ten-second acquisition timeout,
+five-second connection timeout, thirty-second statement timeout and ten-second lock timeout.
+Database contention/outages return a safe retryable 503. The worker backs off after database
+failures. `/health` remains a responsive liveness check; it does not prove database readiness.
+Browser reads pause in hidden tabs, honor server cooldowns and slow their polling as invoice
+history grows. Initial loading still reads the complete history; this is not paginated browsing.
+
 Limits are persistent across service restarts and atomic across workers:
 
 | Setting | Default per private workspace |
 | --- | --- |
-| `INVOICE_CHECKS_PER_HOUR` | 1,000 invoices |
-| `INVOICE_CHECKS_PER_DAY` | 2,000 invoices |
-| `INVOICE_AI_CHECKS_PER_DAY` | 200 PDF checks |
+| `INVOICE_CHECKS_PER_HOUR` | Disabled (0) |
+| `INVOICE_CHECKS_PER_DAY` | Disabled (0) |
+| `INVOICE_AI_CHECKS_PER_DAY` | Disabled (0) |
 | `INVOICE_PREVIEWS_PER_HOUR` | 30 master-list previews |
 | `INVOICE_MAIL_SCANS_PER_HOUR` | 12 Outlook scans |
-| `INVOICE_STORAGE_LIMIT_MB` | 1,024 MiB of original invoices/master files |
+| `INVOICE_STORAGE_LIMIT_MB` | 400 MiB on the Supabase Free profile; 1,024 MiB otherwise |
 
-Use positive whole numbers. Allowance windows start with the first request; daily means 24 hours. Login is limited to 20 attempts/IP/10 minutes and eight attempts
+Checking quotas accept non-negative whole numbers: absent/blank/0 disables each quota; a positive
+value enables it as a business/cost policy. Existing explicitly configured values still apply.
+Other allowances require positive whole numbers. Enabled allowance windows start with the first
+request; daily means 24 hours. Login is limited to 20 attempts/IP/10 minutes and eight attempts
 per username/IP/10 minutes. Administrator account changes and password changes are also
-limited. HTTP 429 carries `Retry-After`. These are request/source-storage allowances, not
+limited. HTTP 429 carries `Retry-After`; invoice allowance responses also carry the available
+batch size in `X-Invoice-Batch-Limit`. Both headers are exposed to browser clients. These are request/source-storage allowances, not
 currency-denominated AI budgets or a cap on database/parsed-document overhead. Provider budgets,
 backups, parser isolation and the remaining security-report findings still need production review.
+
+## Shared capacity and scheduling rules
+
+These rules cover the API upload queue and the durable invoice worker. Global means every
+replica using the same database/schema, including immediate invoice processing capacity.
+Use Postgres for replicas on different machines; unrelated SQLite files cannot coordinate.
+
+| Setting | Default | Scope |
+| --- | --- | --- |
+| `INVOICE_FLEET_UPLOADS` | 1 | Batch requests being accepted across the fleet |
+| `INVOICE_FLEET_PROCESSING` | 1 | Heavy invoice pipelines across the fleet |
+| `INVOICE_WORKSPACE_PROCESSING` | 1 | Running pipelines from one workspace |
+| `INVOICE_TURN_INVOICES` | 20 | Maximum invoice starts in one workspace turn |
+| `INVOICE_TURN_SECONDS` | 60 | Stop starting invoices in a turn after this many seconds |
+| `INVOICE_FLEET_PENDING` | 1,500 | Accepted queued/running jobs across the fleet |
+| `INVOICE_WORKSPACE_PENDING` | 500 | Accepted queued/running jobs from one workspace |
+| `INVOICE_FLEET_STORAGE_LIMIT_MB` | 400 on Supabase Free; 1,024 otherwise | Committed original invoice/master source bytes across the fleet |
+| `INVOICE_DATABASE_BUDGET_MB` | 400 on Supabase Free; 0 otherwise | Whole-Postgres database growth budget; 0 disables this extra guard |
+| `INVOICE_UPLOAD_TIMEOUT_SECONDS` | 120 | Deadline for batch acceptance, including body reception |
+| `INVOICE_PROCESSING_TIMEOUT_SECONDS` | 900 | Hard full-pipeline deadline, including process startup |
+| `INVOICE_OCR_TIMEOUT` | 180 | Reading/OCR stage deadline after worker startup |
+| `INVOICE_WORKER_MAX_JOBS` | 100 | Successful/failed completed jobs before replacing a warm child |
+
+1. Batch size and processing concurrency are independent. A request carries at most 500
+   invoices; it never launches 500 OCR jobs. The browser keeps one upload in flight.
+2. The database is the capacity authority. Short transactions serialize admission and claims;
+   database locks are released before OCR/model processing. Lease clocks come from the database.
+3. Workspace turns persist across replicas/restarts. Each workspace gets up to 20 invoice
+   starts, then the least recently served eligible workspace gets a turn. Invoices remain
+   oldest-first within a workspace. Empty/busy workspaces are skipped; idle capacity is usable.
+   Invoice groups do not create additional workspace turns.
+4. The 60-second turn budget is a soft scheduling boundary: it prevents starting another
+   invoice. The current invoice is subject to its independent hard execution/reading deadline.
+   With multiple execution slots, a busy workspace can be skipped before using its full turn.
+5. Receiving capacity, pending-job counts and source-byte allowances are bounded independently.
+   Queue saturation is retryable 503 with Retry-After. Hard source-storage exhaustion is 413
+   with retained waiting files and explicit retry/cancel. No acknowledged job is dropped to
+   make room. Original source storage includes completed invoices and historical master lists.
+6. Deduplication, all hourly/daily allowances, workspace/shared storage and invoice/source/job
+   inserts commit together. Refused transactions consume no checking quota. Failed invoices
+   can be uploaded again; content deduplication is scoped to an owned invoice group.
+7. Only acknowledged uploads are durable server jobs. Files still waiting in the browser need
+   that page to stay open. At most 10,000 files may be selected; each request is limited to
+   100 MiB and available queue slots. Optional hourly/daily/PDF quotas apply only when enabled.
+8. One reusable child per API process performs the full production pipeline. Reader caches
+   stay warm across invoices. Parent-supervised deadlines cover native stalls and model calls;
+   termination is confirmed before local capacity is reused. Recycle after 100 jobs to release
+   retained native memory. Custom adapters must be importable/pickleable; injected test readers
+   run inline for deterministic tests and are not the production isolation path.
+9. Jobs renew ownership every 20 seconds with a 90-second lease. Losing ownership cancels the
+   supervised child. An expired heartbeat alone does not free capacity: recovery also waits
+   through the original hard deadline plus ten seconds of termination margin. Completion and
+   failure writes are fenced by owner. Interrupted jobs get at most three claims; a hard timeout
+   is recorded as failed and requires an explicit user retry, not an endless automatic retry.
+10. Unconfirmed termination quarantines its shared capacity reservation for operator recovery.
+    Database outages prevent new admission/claims. Already running work is cancelled on failed
+    lease renewal; slots are not optimistically returned when database release fails.
+11. Browser reads never overlap within a reader. Slow successful reads get twice their elapsed
+    time before polling again (latency allowance capped at 60 seconds); history size may require
+    a longer interval. Failures retry with backoff and honor Retry-After, including after initial
+    load failure. Focus does not bypass cooldowns; hidden tabs stop automatic reads. Changed
+    results are fetched by page and one batch receipt emits one notification.
+12. Upload retries honor server delays and add up to one second of random spacing to avoid
+    synchronized retries across workspaces. Receipt loss is uncertain acceptance: retry content
+    safely, recover duplicates, and refresh saved invoices. Signing out/reset aborts the request.
+13. Log process-start and reading/extraction/checking durations without invoice contents. Keep
+    health checks asynchronous and independent of the database; health is liveness, not readiness.
+    Bound database connections, waiters, acquisition time, SQL statement time and lock time.
+    Idle/capacity-blocked workers back off to five seconds and wake promptly on local uploads;
+    storage failures back off to thirty seconds, with spacing between replica retries.
+14. All replicas must agree on the stored fleet settings. A mismatch pauses new admission and
+    processing on that replica; saved reads, sign-in and liveness remain available. Change settings during a drained maintenance rollout:
+    stop old workers, update the matching `fleet_settings` values/environment, then restart.
+    Old versions ignore the new tables, so mixed old/new workers do not enforce a shared cap.
+
+Set the shared storage cap below usable provisioned database/disk capacity with room for
+parsed results, indexes, temporary files, migrations and backups. Supabase hosts default to the
+`supabase_free` storage profile (override `INVOICE_STORAGE_PROFILE=custom` for a provisioned
+alternative). It uses a 400 MiB source ceiling and also checks whole-database size plus proposed
+source/result bytes against 400 MiB before growth, leaving headroom below the confirmed 500 MB
+plan allowance. Status/error-only writes are still allowed to record a capacity failure.
+The app currently stores original files in Postgres, not Supabase Storage: the separate 1 GB
+object-storage allowance is not used by this implementation. No data is migrated automatically.
+A fleet with
+N API replicas can open up to 4N invoice-store connections; include rollout overlap and other
+services in the database connection budget. Keep processing at one until representative
+PDF/model load tests establish safe CPU, RAM and provider concurrency limits.
+Increasing a fleet limit does not create workers: each API process still runs one invoice
+worker and one supervised child. Add measured worker/replica capacity separately within the
+database connection and host/container resource budgets.
+
+Cancelling a client request cannot prove that a remote model stopped computing. Provider-side
+concurrency/deadline controls and spend limits must be configured on the model service itself;
+this repository cannot enforce those remote server settings. Interactive master-list model
+suggestions have their own shorter timeout/allowances and are not invoice worker slots.
+Initial invoice browsing still reads the complete history, rather than paginating the UI.
 
 ## HTTP contract for Nam
 
@@ -444,6 +574,7 @@ backups, parser isolation and the remaining security-report findings still need 
 | GET | `/health` | Active mode and whether processing is configured |
 | POST | `/invoices` | Legacy immediate multipart `file`; 201 with saved result |
 | POST | `/invoice-batches` | Multipart `files`; 202 with persisted queued invoices and duplicates |
+| HEAD | `/invoice-batches` | Private advisory queue space in `X-Invoice-Batch-Limit`; no file bytes |
 | GET | `/invoice-batches/{id}` | Private batch progress |
 | GET | `/invoices?limit=50&offset=0` | Newest-first summaries; limit 1–100 |
 | GET | `/invoices/{id}` | Saved full record including read output, fields and results |

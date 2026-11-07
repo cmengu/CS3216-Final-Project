@@ -341,14 +341,23 @@ All fields are listed; `?` marks a field that may be `null`. "dec" is a decimal 
 
 ## Durable batch upload
 
-`POST /invoice-batches` accepts an optional owned `project_id` query and receives multipart `files`: 1–1,000 invoices, at most 20 MiB per file
+`HEAD /invoice-batches` accepts the same optional owned `project_id` and returns 204 with
+`X-Invoice-Batch-Limit` (0–500), `Retry-After` and no body. This private, non-reserving check lets
+the browser wait before decoding/hashing invoice bytes. POST still rechecks actual new jobs
+atomically after deduplication. POST may include `X-Invoice-Batch-Count` for an earlier advisory
+refusal before parsing its body; omit it when replaying an uncertain receipt directly.
+
+`POST /invoice-batches` accepts an optional owned `project_id` query and receives multipart `files`: 1–500 invoices, at most 20 MiB per file
 and 100 MiB total. It validates the complete batch, reserves storage/usage allowance, pins the
 current master version, and persists source files and jobs before returning **202**:
 `{id, invoices: SavedInvoice[], duplicates: [{filename, existing_id}], processing: "background"}`.
 New records have status `queued`, then use the existing reading/extracting/checking/completed/failed
 pipeline. Exact previously uploaded content is skipped; there is no business-number duplicate guarantee.
 Invalid files reject the batch before job creation; 413 signals a file/batch/storage limit;
-429 signals an allowance limit. The browser must stay open until upload is acknowledged.
+429 signals an explicitly enabled allowance limit. Queue saturation returns 503, Retry-After
+and X-Invoice-Batch-Limit so the next request can fit available space. Defaults are 500 pending
+jobs per workspace and 1,500 across the fleet. Hourly/daily checking quotas default to disabled.
+The browser must stay open until upload is acknowledged.
 
 `GET /invoice-batches/{id}` returns `{id, invoice_ids, total, queued, processing, completed, failed}`
 for the owner only; another account receives 404. Results also appear in the ordinary invoice list.

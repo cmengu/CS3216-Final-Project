@@ -16,6 +16,14 @@ Seen: 2026-10-21, `backend/api/app.py` `_load_dotenv`.
 A printed price can be in another currency (USD before the printed rate); `check.lines[].invoice_price` is in the master list's currency.
 Seen: 2026-10-21, `src/checker/convert.ts` (F01 freight showed "Invoice 85.00 · Master list 111.35 · Matches").
 
-## Time the next poll from the end of the last one
-A timer on a clock starts new reads while old ones run, so a slow service gets more requests the slower it is, and dropped results mean the same reads repeat forever.
-Seen: 2026-11-06, `src/checker/api.ts` `useInvoices` (a batch upload took the site down with "signal timed out").
+## Let slow reads finish before polling again
+Overlapping polls discard slow responses and multiply invoice/group reads. Read changed results by page, coalesce refreshes and back off after failures.
+Seen: 2026-11-06/07, `src/checker/api.ts`, `projects.ts`, `src/lib/read-loop.ts`; initial timeouts also need a retry.
+
+## Commit allowances with accepted work
+Deduplicate and reserve every quota/storage allowance in the same transaction as jobs and sources. A later refusal must not consume an earlier allowance.
+Seen: 2026-11-07, `backend/api/limits.py`, `jobs.py`, `storage.py`.
+
+## A timeout must release the resource doing the work
+Timing out a future does not kill native OCR in its thread. Use a killable subprocess and share a deadline across the invoice's model/check steps.
+Seen: 2026-11-07, `backend/read/bounded.py`, `budget.py`, `api/processing.py`.

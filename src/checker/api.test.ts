@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  batchCapacity,
   decideInvoice,
   decisionFailure,
   getInvoice,
   invoiceFileUrl,
+  invoicePollInterval,
   listInvoices,
+  rememberInvoice,
+  rememberInvoices,
   retryInvoice,
   setActiveSessionId,
   uploadFailure,
@@ -15,6 +19,26 @@ import {
 import { toSupplierInvoice, type ServiceInvoice } from "./convert";
 
 const id = "11111111-1111-1111-1111-111111111111";
+
+it("checks queue space without sending invoice bytes", async () => {
+  const fetchMock = vi.fn(async () => new Response(null, { status: 204, headers: { "X-Invoice-Batch-Limit": "17" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await batchCapacity("group")).toBe(17);
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/invoice-batches?project_id=group"), expect.objectContaining({ method: "HEAD", cache: "no-store" }));
+});
+
+it("waits on a full queue and supports an older backend without capacity checks", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204, headers: { "X-Invoice-Batch-Limit": "0", "Retry-After": "30" } })));
+  await expect(batchCapacity()).rejects.toMatchObject({ status: 503, retryAfter: 30, batchLimit: 0 });
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 405 })));
+  expect(await batchCapacity()).toBe(500);
+});
+
+it("scales polling delays instead of scanning large histories every five seconds", () => {
+  expect(invoicePollInterval(174)).toBe(5_000);
+  expect(invoicePollInterval(1_000)).toBe(20_000);
+  expect(invoicePollInterval(10_000)).toBe(200_000);
+});
 
 function saved(supplier: string, total: string | null): ServiceInvoice {
   return {
@@ -40,6 +64,9 @@ function saved(supplier: string, total: string | null): ServiceInvoice {
 }
 
 afterEach(() => {
+  setActiveSessionId(null);
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -103,6 +130,49 @@ describe("listInvoices", () => {
     expect(invoices).toHaveLength(173);
     expect(invoices.every((invoice) => invoice.supplier === "Supplier")).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes 174 changed invoices with four page requests instead of 174 individual reads", async () => {
+    const records = Array.from({ length: 174 }, (_, index) => ({
+      ...saved("Supplier", "0.00"), id: `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`,
+      updated_at: "2026-11-07T00:01:00Z",
+    }));
+    rememberInvoices(records.map(row => toSupplierInvoice({ ...row, status: "queued", invoice: null, check: null, updated_at: "2026-11-07T00:00:00Z" })));
+    const fetchMock = vi.fn(async (url: string) => {
+      const parsed = new URL(url, "http://localhost");
+      if (parsed.pathname.startsWith("/invoices/")) return Response.json(records.find(row => parsed.pathname.endsWith(row.id)));
+      const query = parsed.searchParams;
+      const offset = Number(query.get("offset"));
+      const page = records.slice(offset, offset + 100);
+      return Response.json(query.get("include_details") === "true" ? page : page.map(record => {
+        const row: Partial<ServiceInvoice> = { ...record };
+        delete row.invoice; delete row.check;
+        return row;
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const invoices = await listInvoices();
+    expect(invoices).toHaveLength(174);
+    expect(invoices.every(invoice => invoice.state === "checked")).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.every(([url]) => url.includes("/invoices?"))).toBe(true);
+  });
+
+  it("preserves the list when revisions are unchanged so group totals do not reload on every poll", async () => {
+    const record = { ...saved("Supplier", "0.00"), updated_at: "2026-11-07T00:00:00Z" };
+    const previous = toSupplierInvoice(record);
+    rememberInvoice(previous);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json([{ id, status: "completed", updated_at: record.updated_at }])));
+    const first = await listInvoices();
+    expect(await listInvoices()).toBe(first);
+    expect(first[0]).toBe(previous);
+  });
+
+  it("broadcasts a whole batch once to sibling tabs", () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("window", { localStorage: { setItem } });
+    rememberInvoices(Array.from({ length: 174 }, (_, index) => ({ ...toSupplierInvoice(saved("Supplier", "0.00")), id: String(index) })));
+    expect(setItem).toHaveBeenCalledOnce();
   });
 });
 
@@ -263,6 +333,40 @@ it("uploads a complete batch once and treats queued receipts as unfinished invoi
   expect(init.credentials).toBe("include");
   expect(init.headers).toMatchObject({ "X-Requested-With": "InvoiceChecker" });
   expect(receipt.invoices[0]).toMatchObject({ state: "checking", queued: true, lines: [] });
+});
+
+it("refuses more than 500 invoices in one request before contacting the service", async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(uploadInvoiceBatch(Array.from({ length: 501 }, () => new File(["xml"], "synthetic.xml"))))
+    .rejects.toMatchObject({ status: 413, message: expect.stringContaining("500") });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("passes account batch limits and Retry-After through to the upload queue", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Smaller batch required." }, { status: 429, headers: { "Retry-After": "86400", "X-Invoice-Batch-Limit": "200" } })));
+  await expect(uploadInvoiceBatch([new File(["pdf"], "synthetic.pdf")])).rejects.toMatchObject({ status: 429, retryAfter: 86400, batchLimit: 200 });
+});
+
+it("bounds a stalled upload and treats its result as unconfirmed", async () => {
+  vi.useFakeTimers();
+  const budgets: number[] = [];
+  vi.spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
+    budgets.push(milliseconds);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), milliseconds);
+    return controller.signal;
+  });
+  vi.stubGlobal("fetch", vi.fn((_url: string, options: RequestInit) => new Promise((_resolve, reject) => options.signal?.addEventListener("abort", () => reject(options.signal?.reason)))));
+  const pending = expect(uploadInvoiceBatch([new File(["xml"], "synthetic.xml")])).rejects.toMatchObject({ status: null });
+  await vi.advanceTimersByTimeAsync(5 * 60_000);
+  await pending;
+  expect(budgets).toEqual([5 * 60_000]);
+});
+
+it("retries when response headers arrived but the upload receipt body timed out", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Object.assign(Response.json({ invoices: [] }, { status: 202 }), { json: async () => { throw new DOMException("Timed out", "TimeoutError"); } })));
+  await expect(uploadInvoiceBatch([new File(["xml"], "synthetic.xml")])).rejects.toMatchObject({ status: null });
 });
 
 it("reports batch limits without claiming that checking has started", async () => {

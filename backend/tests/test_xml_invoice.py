@@ -152,33 +152,37 @@ def test_xml_upload_uses_real_master_check_without_ocr_or_model_and_keeps_source
         assert client.get(f"/invoices/{saved['id']}").json()["invoice"] == saved["invoice"]
 
 
+class LegacyStages:
+    """Module-level adapter so the regression also runs inside the isolated worker."""
+
+    mode = "live"
+    price_sheet_version = "legacy"
+
+    def extract(self, document):
+        raise AssertionError("XML must not use model extraction")
+
+    def check(self, invoice):
+        from api.contracts import CheckResult, LineResult
+
+        return CheckResult(
+            price_sheet_version=self.price_sheet_version,
+            lines=[
+                LineResult(
+                    line_index=0,
+                    status="match",
+                    reason="Legacy match",
+                    invoice_price="10.1250",
+                    agreed_price="10.1250",
+                    difference="0",
+                    overcharge="0",
+                )
+            ],
+            overcharge_total="0",
+            warnings=[],
+        )
+
+
 def test_xml_warnings_cannot_be_cleared_by_a_legacy_checker(tmp_path):
-    from api.contracts import CheckResult, LineResult
-
-    class LegacyStages:
-        mode = "live"
-        price_sheet_version = "legacy"
-
-        def extract(self, document):
-            raise AssertionError("XML must not use model extraction")
-
-        def check(self, invoice):
-            return CheckResult(
-                price_sheet_version=self.price_sheet_version,
-                lines=[
-                    LineResult(
-                        line_index=0,
-                        status="match",
-                        reason="Legacy match",
-                        invoice_price="10.1250",
-                        agreed_price="10.1250",
-                        difference="0",
-                        overcharge="0",
-                    )
-                ],
-                overcharge_total="0",
-                warnings=[],
-            )
 
     with TestClient(create_app(storage_dir=tmp_path, stages=LegacyStages())) as client:
         data = XML.replace(b"<TChat>1</TChat>", b"<TChat>3</TChat>")

@@ -4,6 +4,7 @@ Signed sessions protect invoice, master-list and Outlook routes. The mode is exp
 INVOICE_MODE=fixture replays known answers, INVOICE_MODE=live runs the real steps.
 """
 
+import asyncio
 import os
 import re
 import sys
@@ -35,9 +36,10 @@ from .auth import (
     is_auth_required,
     validate_auth_configuration,
 )
-from .batches import charge_checks, reserve_upload
 from .batches import router as batch_router
+from .body_limits import BodyLimitMiddleware, request_body_limit
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
+from .execution import InvoiceExecutor
 from .jobs import InvoiceJobs, InvoiceWorker
 from .limits import UsageLimits
 from .master_list import current_master
@@ -48,7 +50,7 @@ from .processing import process_stored_invoice
 from .projects import require_project
 from .projects import router as projects_router
 from .stages import FixtureStages, Stages
-from .storage import Store, open_store, request_session_id
+from .storage import StorageUnavailable, Store, open_store, request_session_id
 from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -125,6 +127,8 @@ def create_app(
         app.state.jobs = (
             InvoiceJobs(app.state.store) if hasattr(app.state.store, "connect") else None
         )
+        app.state.fleet = app.state.jobs.fleet if app.state.jobs else None
+        app.state.executor = InvoiceExecutor() if reader is read_pdf_bounded else None
         app.state.reader = reader
         app.state.store.recover()
         # Outlook keeps its sign-in tokens in SQLite on the service's own disk, even when invoices
@@ -139,6 +143,7 @@ def create_app(
         except ValueError:
             max_concurrent = 1
         app.state.slot = BoundedSemaphore(max_concurrent)
+        app.state.batch_upload_slot = BoundedSemaphore(1)
         worker = InvoiceWorker(app) if start_worker and app.state.jobs else None
         app.state.worker = worker
         if worker:
@@ -148,6 +153,8 @@ def create_app(
         finally:
             if worker:
                 worker.stop()
+            if app.state.executor:
+                app.state.executor.close()
             if hasattr(app.state.store, "pool"):
                 app.state.store.pool.close()
 
@@ -168,6 +175,16 @@ def create_app(
 
     app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
 
+    @app.exception_handler(StorageUnavailable)
+    async def storage_unavailable(request, exc):
+        return JSONResponse(
+            {
+                "detail": "The database is temporarily busy or unavailable. Your request can retry shortly."
+            },
+            status_code=503,
+            headers={"Retry-After": "5", "Cache-Control": "no-store"},
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
         # Validation errors must never echo passwords, setup codes, or document inputs.
@@ -186,15 +203,11 @@ def create_app(
     @app.middleware("http")
     async def advertised_size(request, call_next):
         size = request.headers.get("content-length")
-        request_limit = (
-            101 * 1024 * 1024
-            if request.url.path.rstrip("/") == "/invoice-batches"
-            else MAX_BYTES + 65536
-        )
-        if request.url.path.startswith(("/auth/", "/admin/")):
-            request_limit = 16 * 1024
+        request_limit = request_body_limit(request.url.path)
         if size:
             try:
+                if int(size) < 0:
+                    raise ValueError()
                 if int(size) > request_limit:
                     return JSONResponse(
                         {"detail": "Upload exceeds the allowed request size"}, status_code=413
@@ -267,6 +280,8 @@ def create_app(
                     status_code=exc.status_code,
                     headers={**(exc.headers or {}), "Cache-Control": "no-store"},
                 )
+            except StorageUnavailable as exc:
+                return await storage_unavailable(request, exc)
         protected = path.startswith(
             (
                 "/projects",
@@ -281,14 +296,66 @@ def create_app(
         if protected and request.method != "OPTIONS":
             # Session/rate-limit checks use synchronous database connections. Keep
             # those waits off the event loop so one slow request cannot stall sign-in.
-            auth_error = await run_in_threadpool(_protected_auth_error, request)
+            try:
+                auth_error = await run_in_threadpool(_protected_auth_error, request)
+            except StorageUnavailable as exc:
+                return await storage_unavailable(request, exc)
             if auth_error:
                 return JSONResponse(
                     {"detail": auth_error},
                     status_code=401,
                     headers={"Cache-Control": "no-store"},
                 )
-        response = await call_next(request)
+        admission = path.rstrip("/") == "/invoice-batches" and request.method == "POST"
+        if admission and not app.state.batch_upload_slot.acquire(blocking=False):
+            return JSONResponse(
+                {"detail": "Another batch is being accepted. Your files can retry shortly."},
+                status_code=503,
+                headers={"Retry-After": "5", "Cache-Control": "no-store"},
+            )
+        try:
+            if admission and app.state.fleet is not None:
+                try:
+                    requested = request.headers.get("X-Invoice-Batch-Count")
+                    if requested is not None:
+                        try:
+                            requested = int(requested)
+                            if not 1 <= requested <= 500:
+                                raise ValueError()
+                        except ValueError:
+                            raise HTTPException(400, "Invalid batch count header") from None
+                    intake = await run_in_threadpool(
+                        app.state.fleet.acquire,
+                        "upload",
+                        _request_session_id(request),
+                        requested=requested,
+                    )
+                except HTTPException as exc:
+                    return JSONResponse(
+                        {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+                    )
+                except StorageUnavailable as exc:
+                    return await storage_unavailable(request, exc)
+                request.state.intake = intake
+                try:
+                    response = await asyncio.wait_for(
+                        call_next(request), app.state.fleet.upload_seconds
+                    )
+                except asyncio.TimeoutError:
+                    return JSONResponse(
+                        {
+                            "detail": "Batch acceptance exceeded its time limit. Retry; already saved files will be deduplicated."
+                        },
+                        status_code=503,
+                        headers={"Retry-After": "5"},
+                    )
+                finally:
+                    await run_in_threadpool(intake.close)
+            else:
+                response = await call_next(request)
+        finally:
+            if admission:
+                app.state.batch_upload_slot.release()
         if path.startswith(
             (
                 "/projects",
@@ -303,17 +370,19 @@ def create_app(
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_origin_regex=cors_origin_regex,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["Retry-After", "X-Invoice-Batch-Limit"],
     )
 
     @app.get("/health")
-    def health(request: Request):
+    async def health(request: Request):
         selected = app.state.stages
         return {
             "status": "ok",
@@ -350,10 +419,12 @@ def create_app(
         store = app.state.store
         session_id = _request_session_id(request)
         invoice_id = str(uuid4())
-        path = store.path(invoice_id)
+        path = store.files / f"{invoice_id}.pdf"
         inserted = False
-        reserved = 0
+        capacity = None
         try:
+            if app.state.fleet is not None:
+                capacity = app.state.fleet.acquire("processing", session_id)
             project = require_project(store, project_id, session_id) if project_id else None
             if (
                 project
@@ -388,8 +459,6 @@ def create_app(
                     422,
                     "XML invoices require live mode and a master list; fixture mode only replays known PDFs",
                 )
-            charge_checks(request, 1, int(not is_xml))
-            reserved = reserve_upload(request, file.size or 0)
             size = 0
             with path.open("xb") as target:
                 while chunk := file.file.read(1024 * 1024):
@@ -397,6 +466,8 @@ def create_app(
                     if size > MAX_BYTES:
                         raise HTTPException(413, "Invoice exceeds 20 MiB")
                     target.write(chunk)
+                target.flush()
+                os.fsync(target.fileno())
             try:
                 if is_xml:
                     xml_document, _ = read_xml_invoice(path.read_bytes(), filename)
@@ -414,17 +485,28 @@ def create_app(
                 session_id=session_id,
                 project_id=project_id,
                 comparison_mode="totals_only" if totals_only else "master_list",
+                limits=app.state.limits,
             )
             inserted = True
-            completed = process_stored_invoice(
+            execute = app.state.executor.execute if app.state.executor else process_stored_invoice
+            execution_options = (
+                {
+                    "cancel": capacity.lost,
+                    "timeout": app.state.fleet.remaining(capacity.id, capacity.owner),
+                }
+                if app.state.executor and capacity
+                else {}
+            )
+            completed = execute(
                 path,
                 filename,
                 document_hash,
                 selected,
-                reader,
-                lambda status, **values: store.update(invoice_id, status, **values),
+                **({"reader": reader} if app.state.executor is None else {}),
+                save=lambda status, **values: store.update(invoice_id, status, **values),
                 force_ocr=force_ocr,
                 totals_only=totals_only,
+                **execution_options,
             )
             saved = store.get(invoice_id, session_id=session_id)
             return (
@@ -434,8 +516,10 @@ def create_app(
             file.file.close()
             if not inserted:
                 path.unlink(missing_ok=True)
-                if reserved:
-                    app.state.limits.release_storage(session_id, reserved)
+            if capacity:
+                capacity.close(
+                    release=app.state.executor is None or app.state.executor.safe_to_release
+                )
             app.state.slot.release()
 
     @app.get("/invoices", response_model=list[SavedInvoice | InvoiceSummary])

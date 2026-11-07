@@ -20,12 +20,14 @@ Where each piece of data appears in the app. Before changing how any of these is
 
 | Where | What it shows or decides | File |
 |---|---|---|
-| Service → screen | `completed` → checked, `reading`/`extracting`/`checking` → checking, anything else → failed | `src/checker/convert.ts` `stateOf` |
+| Service → screen | `completed` → checked, `queued`/`reading`/`extracting`/`checking` → checking, anything else → failed | `src/checker/convert.ts` `stateOf` |
+| Server refresh | Reads changed results by page, coalesces refreshes, retries failures with backoff and pauses hidden tabs | `src/checker/api.ts` `useInvoices`, `listInvoices`; `src/lib/read-loop.ts`; shared by `AppShell.tsx`, the invoice workspace and audit trail |
+| Invoice groups | Loads private group totals with bounded database queries; preserves groups on errors and retries without overlapping reads | `src/checker/projects.ts` `useProjects` → `backend/api/projects.py` `list_projects` → `project_storage.py` `list_project_details`; shown in the invoice sidebar |
 | Queue card | Checking… / Couldn't read | `Queue.tsx` `Card` ← `present.ts` `checkPill`, `queueAttention`, `failureSentence` |
 | Check pane | The "Couldn't read" card and its Try again button | `CheckPane.tsx` `Failed` ← `present.ts` `failureSentence`; `src/checker/api.ts` `retryInvoice` |
 | Decision bar | No decision while checking (409); only Pay anyway when failed | `CheckPane.tsx` `DecisionBar` ← `present.ts` `decision` ← `review.ts` `choices` |
-| Upload queue | Archive unpacking, complete batch upload, server-queued progress, skipped/duplicate files and errors (415, 413, 422, 429) | `src/checker/uploads.ts` `precheck`, `refusal`, `run`; `src/checker/archives.ts` `unpackInvoices`; `api.ts` `uploadInvoice`; shown in `Queue.tsx` and `invoices/page.tsx` `GuidedSetup` |
-| Reloading while checking | One reload at a time, spaced by how long the last took; none in a hidden tab | `api.ts` `useInvoices` ← `src/checker/reloads.ts` `startReloads`, `reloadDelay` |
+| Upload queue | Archive indexing/on-demand extraction, batches bounded by 500 files/100 MiB/free queue slots, retained waiting files, receipt recovery and retry/cancel | `src/checker/upload-formats.ts` limits; `uploads.ts` `precheck`, `run`, `resumeUploads`; `archives.ts` `openInvoiceArchive`; `api.ts` `batchCapacity`, `uploadInvoiceBatch`, `cachedInvoices`, `rememberInvoices`; atomic admission in `backend/api/batches.py`, `jobs.py`, `limits.py`; shown in `Queue.tsx` and `invoices/page.tsx` `GuidedSetup` |
+| Workspace scheduling and execution | 500 pending/workspace, 1,500 shared, turns of up to 20 invoices or 60 seconds, hard deadlines, storage-growth guards and readable service during configuration mismatch | `backend/api/fleet.py`, `jobs.py` `claim`, `execution.py` `InvoiceExecutor`, `storage.py` `check_growth`; schema in `job_schema.py`; operational rules in `backend/README.md` |
 | Guided setup | When setup ends and the workspace appears | `AppShell.tsx` `phaseOf`, `Stepper`; `invoices/page.tsx` `InvoicesView`, `GuidedSetup` |
 
 ## Invoice totals: `check.overcharge_total`, `invoice.subtotal`, `tax`, `invoice_total`
@@ -56,7 +58,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Switcher | Green check when loaded | `AppShell.tsx` `Switcher` (`phase !== "first"`) |
 | Guided setup | Step 1 done; side panel facts | `AppShell.tsx` `Stepper`, `phaseOf`; `invoices/page.tsx` `MasterPanel`; `src/app/page.tsx` redirect |
 | Compare drawer | Master prices for the supplier | `Dialogs.tsx` `CompareDrawer`: prices are the service's `sheetPrice`; the browser list gives only the footer file name |
-| Audit trail | Upload and replace events | `masterList/index.ts` `getMasterListEvents` → `present.ts` `auditRows` |
+| Audit trail | Upload and replace events; refreshes history on group/master-list changes rather than invoice-total updates | `src/checker/projects.ts` `useProjectEvents` → `present.ts` `auditRows` |
 
 ## Shared helpers
 

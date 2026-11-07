@@ -3,6 +3,7 @@
 import asyncio
 import threading
 
+import anyio.to_thread
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +14,8 @@ from api.stages import FixtureStages
 
 
 @pytest.mark.parametrize("operation", ["session", "rate_limit"])
-def test_slow_auth_database_does_not_block_health(tmp_path, monkeypatch, operation):
+@pytest.mark.parametrize("worker_slots", [1, 40])
+def test_slow_auth_database_does_not_block_health(tmp_path, monkeypatch, operation, worker_slots):
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     monkeypatch.setenv("AUTH_USERNAME", ADMIN["username"])
     monkeypatch.setenv("AUTH_PASSWORD", ADMIN["password"])
@@ -46,6 +48,8 @@ def test_slow_auth_database_does_not_block_health(tmp_path, monkeypatch, operati
             monkeypatch.setattr(app.state.limits, "take", slow_limit)
 
         async def concurrent_requests():
+            limiter = anyio.to_thread.current_default_thread_limiter()
+            limiter.total_tokens = worker_slots
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(
                 transport=transport, base_url="http://testserver"

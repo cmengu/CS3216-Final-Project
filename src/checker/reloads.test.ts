@@ -19,17 +19,18 @@ const full = (id: string, status: string, updatedAt: string) => ({
 });
 
 /** A plain answer: a real Response reads its body on timers these tests control. */
-const answer = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body }) as Response;
+const answer = (body: unknown, status = 200) => ({ ok: status < 400, status, headers: new Headers(), json: async () => body }) as Response;
 
 /** A service that answers every read after `delay`, with one invoice finishing after the first load. */
 function slowService(delay: number) {
-  const calls = { lists: 0, details: 0, running: 0, mostAtOnce: 0 };
+  const calls = { lists: 0, details: 0, detailPages: 0, running: 0, mostAtOnce: 0 };
   let failing = false;
   const fetchMock = vi.fn((url: string) => new Promise<Response>((resolve) => {
     const detailed = url.includes("include_details=true");
     if (url.includes("/invoices?")) calls.lists += 1;
     else calls.details += 1;
     if (url.includes("/invoices?")) {
+      if (detailed) calls.detailPages += 1;
       calls.running += 1;
       calls.mostAtOnce = Math.max(calls.mostAtOnce, calls.running);
     }
@@ -38,7 +39,7 @@ function slowService(delay: number) {
       if (failing) return resolve(answer({}, 500));
       const body = url.includes("/invoices?")
         ? detailed
-          ? [full(checkingId, "checking", "a"), full(finishedId, "checking", "a")]
+          ? [full(checkingId, "checking", "a"), full(finishedId, calls.detailPages === 1 ? "checking" : "completed", calls.detailPages === 1 ? "a" : "b")]
           : [row(checkingId, "checking", "a"), row(finishedId, "completed", "b")]
         : full(finishedId, "completed", "b");
       resolve(answer(body));
@@ -99,7 +100,8 @@ describe("useInvoices reloads while an invoice is being checked", () => {
     const { calls } = slowService(SLOW_MS);
     await mount();
     await wait(120_000);
-    expect(calls.details).toBe(1);
+    expect(calls.details).toBe(0);
+    expect(calls.detailPages).toBe(2);
     expect(seen.invoices?.find((invoice) => invoice.id === finishedId)?.state).toBe("checked");
   });
 
@@ -136,7 +138,7 @@ describe("useInvoices reloads while an invoice is being checked", () => {
     await mount();
     await wait(1_000);
     service.fail(true);
-    await wait(4_000);
+    await wait(6_000);
     expect(seen.error).not.toBeNull();
     service.fail(false);
     await wait(10_000);

@@ -252,7 +252,9 @@ def _client(client):
         raise ValueError("Set OPENAI_API_KEY in the backend environment")
     from openai import OpenAI
 
-    return OpenAI(timeout=120.0, max_retries=0)
+    from read.budget import remaining_timeout
+
+    return OpenAI(timeout=remaining_timeout(120.0), max_retries=0)
 
 
 def _token_usage(response, selected: str) -> TokenUsage:

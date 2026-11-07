@@ -200,6 +200,12 @@ def _request(
 
 def request_ollama(base_url, payload, *, client_factory=httpx.Client, deadline=None):
     """Keep startup and inference budgets separate, and fail over on service failures."""
+    from read.budget import check_budget, current_deadline
+
+    check_budget()
+    shared = current_deadline()
+    if shared is not None:
+        deadline = min(shared, deadline) if deadline is not None else shared
     timeout = _seconds("OLLAMA_REQUEST_TIMEOUT_SECONDS", 120)
     startup = _seconds("OLLAMA_STARTUP_TIMEOUT_SECONDS", 600)
     primary = base_url.rstrip("/")
