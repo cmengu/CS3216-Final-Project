@@ -1,5 +1,6 @@
 "use client";
 
+import { findGroup } from "@/checker/group-url";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -40,8 +41,15 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
   const browsingProjects = params.get("view") === "projects";
   const linkedInvoice = all.find((i) => i.id === idParam);
   const defaultProject = projects.find((p) => p.id.startsWith("legacy:")) ?? projects[0];
-  const projectId = browsingProjects ? null : (params.get("project") ?? linkedInvoice?.projectId ?? defaultProject?.id ?? null);
+  const projectId = browsingProjects ? null : (findGroup(projects, params)?.id ?? (params.has("group") ? null : params.get("project") ?? linkedInvoice?.projectId ?? defaultProject?.id ?? null));
   const project = projects.find((p) => p.id === projectId);
+  useEffect(() => {
+    if (!project || params.get("group") === project.name) return;
+    const next = new URLSearchParams(params.toString());
+    next.set("group", project.name);
+    next.set("project", project.id);
+    router.replace(`/invoices?${next}`, { scroll: false });
+  }, [project, params, router]);
   const projectInvoices = all.filter((i) => i.projectId === projectId);
   const selectedId = browsingProjects ? null : (projectInvoices.find((i) => i.id === idParam)?.id ?? projectInvoices[0]?.id ?? null);
   const inv: SupplierInvoice | null = projectInvoices.find((i) => i.id === selectedId) ?? null;

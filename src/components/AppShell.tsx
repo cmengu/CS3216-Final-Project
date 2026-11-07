@@ -6,13 +6,14 @@
  */
 import Link from "next/link";
 import { Brand } from "@/components/Brand";
-import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { refreshAuthSession, signOut, useSessionError, useUser, type User } from "@/auth";
 import { useInvoices } from "@/checker/api";
 import { summarize } from "@/checker/summary";
 import type { SupplierInvoice } from "@/checker/types";
 import { useProjects, type Project } from "@/checker/projects";
+import { findGroup, groupUrl } from "@/checker/group-url";
 import { Icon } from "./icons";
 
 /**
@@ -42,10 +43,19 @@ export function useApp(): AppState {
 
 function Switcher({ toDecide }: { toDecide: number }) {
   const path = usePathname();
+  const params = useSearchParams();
+  const { projects, invoices } = useApp();
+  const linked = invoices?.find(i => i.id === params.get("id"));
+  const project = params.get("view") === "projects" || params.get("pick") === "1" ? undefined
+    : findGroup(projects, params) ?? (params.has("group") || params.has("project") ? undefined
+      : projects.find(p => p.id === linked?.projectId)
+        ?? (path === "/invoices" ? projects.find(p => p.id.startsWith("legacy:")) ?? projects[0]
+          : projects.filter(p => p.comparison_mode === "master_list").length === 1
+            ? projects.find(p => p.comparison_mode === "master_list") : undefined));
   const tab = (href: string, icon: "list" | "sheet" | "clock", label: string, extra?: ReactNode) => {
     const current = path.startsWith(href);
     return (
-      <Link href={href} aria-current={current ? "page" : undefined}>
+      <Link href={project && (href === "/invoices" || href === "/master-list") ? groupUrl(href, project) : href} aria-current={current ? "page" : undefined}>
         <Icon name={icon} size="ui" />
         {label}
         {extra}
@@ -191,7 +201,7 @@ function SignedInShell({ user, children }: { user: User; children: ReactNode }) 
       <div className="ic-app">
         <header className="ic-top">
           <Brand />
-          <Switcher toDecide={toDecide} />
+          <Suspense fallback={null}><Switcher toDecide={toDecide} /></Suspense>
           <Account user={user} />
         </header>
         <main className="ic-main">{children}</main>

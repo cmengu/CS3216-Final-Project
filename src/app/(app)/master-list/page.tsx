@@ -1,8 +1,9 @@
 "use client";
 
+import { findGroup, groupUrl } from "@/checker/group-url";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useApp } from "@/components/AppShell";
 import { Icon } from "@/components/icons";
 import { Notice, Search } from "@/components/ui";
@@ -27,13 +28,20 @@ function MasterListView() {
   const params = useSearchParams();
   const router = useRouter();
   const eligible = projects.filter((p) => p.comparison_mode === "master_list");
-  const requestedProject = params.get("project");
+  const requestedProject = params.has("group") || params.has("project");
   // A master list belongs to one group. The group is chosen first and then stays fixed on the page;
   // with a single eligible group there is nothing to choose.
   const choosing = params.get("pick") === "1";
-  const project = requestedProject ? eligible.find((p) => p.id === requestedProject) : !choosing && eligible.length === 1 ? eligible[0] : undefined;
+  const project = requestedProject ? findGroup(eligible, params) : !choosing && eligible.length === 1 ? eligible[0] : undefined;
   const { masterList, loading, error, reload } = useProjectMaster(project?.id ?? null);
-  const base = `/master-list?project=${encodeURIComponent(project?.id ?? "")}`;
+  const base = project ? groupUrl("/master-list", project) : "/master-list";
+  useEffect(() => {
+    if (!project || params.get("group") === project.name) return;
+    const next = new URLSearchParams(params.toString());
+    next.set("group", project.name);
+    next.set("project", project.id);
+    router.replace(`/master-list?${next}`, { scroll: false });
+  }, [project, params, router]);
   const crumb = project ? <nav className="ic-crumb" aria-label="Breadcrumb">
     <Link href="/master-list?pick=1">Master lists</Link>
     <span aria-hidden="true">/</span>
