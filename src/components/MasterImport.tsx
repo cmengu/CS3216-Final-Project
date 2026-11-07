@@ -97,9 +97,9 @@ export function MasterImport({ replace = false, onSaved, projectId }: { replace?
         </>}>
         <p className="ic-lead">{selected?.mappingSource === "ai" ? "AI matched these columns. Make sure they're right." : "Choose which column holds each field."}</p>
         {missing.length ? <p className="ic-hint ic-hint--error" role="alert">Choose a column for {missing.map(columnLabel).join(" and ")}.</p> : null}
+        {selected?.note ? <p className="ic-hint" role="status">{selected.note}</p> : null}
         {selected?.mappingSource !== "ai" ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            {selected?.note ? <p className="ic-hint" role="status" style={{ margin: 0 }}>{selected.note}</p> : null}
             {file ? (
               <button type="button" className="ic-btn ic-btn--secondary ic-btn--sm" disabled={!!busy} onClick={() => void loadPreview(file, true)}>
                 {busy === "reading" ? "Retrying…" : "Retry AI mapping"}

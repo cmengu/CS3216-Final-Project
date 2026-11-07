@@ -241,6 +241,7 @@ def _call_ollama_structured(
     tracker: UsageAccumulator,
     temperature: float = 0.0,
     deadline: float | None = None,
+    retry_invalid_output: bool = True,
 ) -> BaseModel:
     payload = {
         "model": model,
@@ -284,7 +285,7 @@ def _call_ollama_structured(
         try:
             return schema_type.model_validate_json(cleaned)
         except ValidationError as exc:
-            if temperature == 0.0:
+            if temperature == 0.0 and retry_invalid_output:
                 return _call_ollama_structured(
                     base_url=base_url,
                     model=model,

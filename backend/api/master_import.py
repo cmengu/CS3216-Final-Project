@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from openpyxl import load_workbook
 
 from .master_mapping import suggest_layouts
+from .master_profile import PREVIEW_ROWS, heading
 
 MAX_ROWS = 10000
 MAX_COLUMNS = 100
@@ -22,6 +23,9 @@ FIELDS = {
         "item description",
         "product",
         "material description",
+        "ten vat tu",
+        "ten hang hoa",
+        "ten san pham",
     ],
     "price": [
         "price",
@@ -31,6 +35,8 @@ FIELDS = {
         "agreed price",
         "agreed unit price",
         "cost",
+        "gia",
+        "don gia",
     ],
     "quantity": [
         "quantity",
@@ -39,6 +45,7 @@ FIELDS = {
         "agreed quantity",
         "stock",
         "stock quantity",
+        "so luong",
     ],
     "supplier": ["supplier", "supplier name", "vendor", "vendor name"],
     "item": [
@@ -51,10 +58,12 @@ FIELDS = {
         "part number",
         "part no",
         "stock code",
+        "ma vat tu",
+        "ma hang hoa",
     ],
     "description": ["description", "item description"],
     "po": ["po", "po number", "purchase order", "po reference"],
-    "unit": ["unit", "uom", "unit of measure"],
+    "unit": ["unit", "uom", "unit of measure", "dvt", "don vi tinh"],
     "currency": ["currency", "ccy"],
     "discount": ["discount", "discount rate"],
     "tax": ["tax", "tax rate", "gst", "gst rate"],
@@ -142,7 +151,7 @@ def fallback_layout(rows):
     candidates = []
     header_count = 0
     for header, row in enumerate(rows):
-        headings = [re.sub(r"[^a-z0-9]+", " ", value.lower()).strip() for value in row]
+        headings = [heading(value) for value in row]
         mapping = {}
         for field, aliases in FIELDS.items():
             matches = [i for i, heading in enumerate(headings) if heading in aliases]
@@ -174,7 +183,7 @@ def preview(tables):
     result = [
         {
             "name": name,
-            "rows": rows[:50],
+            "rows": rows[:PREVIEW_ROWS],
             "header": 0,
             "mapping": {},
             "mappingSource": "manual",
@@ -184,7 +193,8 @@ def preview(tables):
         if any(any(row) for row in rows)
     ]
     try:
-        layouts = suggest_layouts(result)
+        # Keep the editable preview small; profiling samples from the entire table.
+        layouts = suggest_layouts([{**sheet, "rows": tables[sheet["name"]]} for sheet in result])
         for layout in layouts.sheets:
             target = result[layout.sheet]
             target["header"] = layout.header if layout.header is not None else 0
@@ -207,11 +217,11 @@ def preview(tables):
                     " Header and columns suggested from spreadsheet labels; review before importing."
                 )
             continue
-        headings = [
-            re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-            for value in target["rows"][target["header"]]
-        ]
-        for field, aliases in FIELDS.items():
+        headings = [heading(value) for value in target["rows"][target["header"]]]
+        # Optional scope columns must be proposed and validated, not silently added
+        # after the model deliberately omitted an uncertain interpretation.
+        for field in REQUIRED:
+            aliases = FIELDS[field]
             if field in target["mapping"]:
                 continue
             matches = [index for index, heading in enumerate(headings) if heading in aliases]

@@ -55,6 +55,7 @@ Where each piece of data appears in the app. Before changing how any of these is
 | Where | What it shows or decides | File |
 |---|---|---|
 | Master list tab | The table, file name, counts, upload date | `src/app/(app)/master-list/page.tsx` ← `src/masterList/index.ts` `useMasterList`, `uploadMasterList`, `replaceMasterList`; `src/masterList/parse.ts` `readMasterCsv` |
+| Column review | Header candidates and ten full-sheet samples inform exploration then mapping; numeric/amount gates, receipt-history warnings and manual fallback; source values stay unchanged | `MasterImport.tsx` → `src/masterList/index.ts` `previewMasterList` → `backend/api/master_import.py` `preview`; `master_profile.py` `build_payload`; `master_mapping.py` `suggest_layouts` |
 | Switcher | Green check when loaded | `AppShell.tsx` `Switcher` (`phase !== "first"`) |
 | Guided setup | Step 1 done; side panel facts | `AppShell.tsx` `Stepper`, `phaseOf`; `invoices/page.tsx` `MasterPanel`; `src/app/page.tsx` redirect |
 | Compare drawer | Master prices for the supplier | `Dialogs.tsx` `CompareDrawer`: prices are the service's `sheetPrice`; the browser list gives only the footer file name |

@@ -84,10 +84,26 @@ Queued invoices stay in extraction while waiting, and their worker renews the jo
 Set the Cloud Run service's request timeout to 900 seconds so the platform allows the model
 load to finish. The transport also retries a platform 504 during loading within the original
 startup deadline. Increasing the client timeout alone does not change Cloud Run's timeout.
-Interactive master-list suggestions share a shorter 45-second budget across primary and
-challenger calls. If a model is still starting, preview returns editable manual mappings
+Interactive master-list suggestions share a shorter 45-second budget across exploration,
+mapping and at most one repair. Local schema retries are disabled for these calls. If a model is still starting, preview returns editable manual mappings
 within the browser's 60-second preview limit. The longer startup allowance applies to
 background invoice processing.
+
+Before proposing columns, the configured model reviews source evidence: heading candidates
+from the first 50 rows, up to ten reproducible samples spread across the full worksheet
+(including its first and last data rows), per-column numeric/nonempty/distinct counts, and
+supported quantity × rate = amount relationships. A separate structured mapping call then
+uses that analysis. Source row/column indices are retained; cell values are never rewritten.
+Deterministic gates reject inconsistent numeric columns, identifier-as-quantity mappings,
+and line/document totals mapped as unit rates when quantities are present. A failed repair
+returns editable manual suggestions instead of accepting the rejected mapping. Payloads are
+bounded to 150,000 characters (12,000 for the local model's context). Manual import still
+validates every row; ten samples cannot establish that every source row is valid.
+Vietnamese headings are recognized in the label-based manual fallback. Optional scope fields
+are not silently added after a validated AI mapping omitted them. Review notes remain visible
+for successful suggestions, including a warning when the source is a receipt history or
+invoice register rather than a price list. This improves column interpretation; item-code
+aliases and supplier/unit matching are separate comparison rules.
 
 Map arbitrary spreadsheet headings to the import fields described below. Name and unit price
 are required; currency, unit and quantity constrain the comparison when mapped. Without a

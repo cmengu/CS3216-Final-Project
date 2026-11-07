@@ -4,7 +4,14 @@ from unittest.mock import Mock
 import pytest
 
 from api.master_import import normalize, preview
-from api.master_mapping import Column, Layout, Layouts, suggest_layouts
+from api.master_mapping import (
+    Column,
+    Layout,
+    Layouts,
+    SheetUnderstanding,
+    Understanding,
+    suggest_layouts,
+)
 
 SHEETS = [
     {
@@ -12,6 +19,16 @@ SHEETS = [
         "rows": [["Tarifs"], ["Désignation", "Prix unitaire", "Quantité"], ["Boulon", "1.25", "8"]],
     }
 ]
+
+
+def understanding(kind="price_list"):
+    return Understanding(
+        sheets=[
+            SheetUnderstanding(
+                sheet=0, kind=kind, observations="Inspect the source headings and unit prices."
+            )
+        ]
+    )
 
 
 def fake_client(header=1, columns=None, status="completed"):
@@ -31,7 +48,12 @@ def fake_client(header=1, columns=None, status="completed"):
             )
         ]
     )
-    parse = Mock(return_value=SimpleNamespace(status=status, output_parsed=parsed))
+
+    def respond(**kwargs):
+        value = understanding() if kwargs["text_format"] is Understanding else parsed
+        return SimpleNamespace(status=status, output_parsed=value)
+
+    parse = Mock(side_effect=respond)
     return SimpleNamespace(responses=SimpleNamespace(parse=parse))
 
 
@@ -162,6 +184,8 @@ def test_local_ollama_mapping_promotes_description_to_name(monkeypatch):
 
     def fake_ollama(**kwargs):
         calls.append(kwargs["model"])
+        if kwargs["schema_type"] is Understanding:
+            return understanding()
         return Layouts(
             sheets=[
                 Layout(
@@ -189,7 +213,7 @@ def test_local_ollama_mapping_promotes_description_to_name(monkeypatch):
         }
     ]
     result = suggest_layouts(sheets, model="gemma4:e4b")
-    assert calls == ["gemma4:e4b"]
+    assert calls == ["gemma4:e4b", "gemma4:e4b"]
     assert result.sheets[0].header == 1
     by_field = {c.field: c.column for c in result.sheets[0].columns}
     assert by_field == {"name": 1, "item": 0, "description": 1, "price": 2}
@@ -201,7 +225,9 @@ def test_local_ollama_gatekeeper_escalates_to_challenger(monkeypatch):
 
     def fake_ollama(**kwargs):
         calls.append((kwargs["model"], kwargs["user_prompt"]))
-        if len(calls) == 1:
+        if kwargs["schema_type"] is Understanding:
+            return understanding()
+        if len(calls) == 2:
             return Layouts(
                 sheets=[
                     Layout(
@@ -241,7 +267,7 @@ def test_local_ollama_gatekeeper_escalates_to_challenger(monkeypatch):
         }
     ]
     result = suggest_layouts(sheets, model="gemma4:e4b")
-    assert [m for m, _ in calls] == ["gemma4:e4b", "qwen3.5:4b"]
-    assert "GATEKEEPER CRITIQUE" in calls[1][1]
+    assert [m for m, _ in calls] == ["gemma4:e4b", "gemma4:e4b", "qwen3.5:4b"]
+    assert "GATEKEEPER CRITIQUE" in calls[2][1]
     by_field = {c.field: c.column for c in result.sheets[0].columns}
     assert by_field == {"supplier": 0, "name": 1, "price": 2}
