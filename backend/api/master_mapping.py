@@ -82,7 +82,7 @@ code, 'Giá' a unit rate, 'Tiền' a line amount, and 'Diễn giải' may be a r
 A receipt history is not automatically an agreed price list: flag repeated items or prices.
 Describe evidence only; never invent values, prices, product equivalences or agreements.
 Return JSON in this exact shape (one object per input sheet, with its actual index):
-{"sheets":[{"sheet":0,"kind":"goods_receipts","observations":"Column 2 is the item code; column 3 is the product name; column 6 is a unit rate."}]}
+{"sheets":[{"sheet":0,"kind":"goods_receipts","observations":"Describe the observed column roles and any ambiguity using the actual source indices."}]}
 Allowed kind values: price_list, goods_receipts, invoice_register, other, uncertain.
 Do not return header/columns/mapping fields in this exploration response.
 """
@@ -103,6 +103,11 @@ both unit price and total price. Do not invent quantity=1 or map an unrelated co
 quantity is optional and is the actual quantity column
 (never a row number, item code, package size or unit). Other fields are optional.
 item means SKU/part code; unit means UOM; supplier means supplier name; po means PO reference.
+Optional fields must have their actual business meaning; never choose the closest substitute.
+A receipt number, document number or invoice number is NOT a purchase order. Omit `po` unless
+an actual purchase-order field exists. Description is human-readable product/service text,
+never a numeric amount or total. It may share the product-name column; otherwise omit it
+when absent. A receipt memo is not automatically a product description.
 tax means the agreed tax/GST rate, not a tax amount. discount means a rate, not an amount.
 Do not invent a column for a missing field or extract constants from title text.
 Omit mappings you cannot identify confidently; return header=null and no columns if there
@@ -245,6 +250,28 @@ def _find_layout_critiques(result: Layouts, sheets: list[dict]) -> list[str]:
             continue
         headings = [_norm_heading(cell) for cell in rows[layout.header]]
         by_field = {c.field: c.column for c in layout.columns}
+        identifiers = {
+            "supplier id",
+            "vendor id",
+            "customer id",
+            "item code",
+            "part number",
+            "sku",
+            "receipt number",
+            "receipt no",
+            "document number",
+            "document no",
+            "invoice number",
+            "invoice no",
+            "ma vat tu",
+            "ma khach",
+            "ma nha cung cap",
+            "ma c tu",
+            "so c tu",
+            "so hoa don",
+            "so phieu",
+            "so phieu nhap",
+        }
         if "name" not in by_field or "price" not in by_field:
             critiques.append(
                 f"Sheet {layout.sheet} ({sheets[layout.sheet]['name']}) is missing required `name` or `price` mapping."
@@ -257,8 +284,23 @@ def _find_layout_critiques(result: Layouts, sheets: list[dict]) -> list[str]:
                 )
         sup_col = by_field.get("supplier")
         if sup_col is not None and 0 <= sup_col < len(headings):
-            if headings[sup_col] in {"supplier id", "vendor id"} and any(
-                h in {"supplier", "supplier name", "vendor", "vendor name"} for h in headings
+            if headings[sup_col] in {
+                "supplier id",
+                "vendor id",
+                "customer id",
+                "ma khach",
+                "ma nha cung cap",
+            } and any(
+                h
+                in {
+                    "supplier",
+                    "supplier name",
+                    "vendor",
+                    "vendor name",
+                    "ten nha cung cap",
+                    "ten khach hang",
+                }
+                for h in headings
             ):
                 critiques.append(
                     f"Sheet {layout.sheet}: `supplier` was mapped to '{rows[layout.header][sup_col]}' (column {sup_col}); map it to the supplier company name column instead of the ID column."
@@ -280,6 +322,30 @@ def _find_layout_critiques(result: Layouts, sheets: list[dict]) -> list[str]:
                 f"Sheet {layout.sheet}: `quantity` column {quantity_col} is a row/document/item identifier, not the actual quantity."
             )
         samples = sampled_indices(rows, start=layout.header + 1)
+        po_col = by_field.get("po")
+        if po_col is not None and headings[po_col] in identifiers:
+            critiques.append(
+                f"Sheet {layout.sheet}: `po` column {po_col} is a receipt/document/item identifier, not a purchase-order reference. Omit `po` when no purchase-order column exists."
+            )
+        desc_col = by_field.get("description")
+        if desc_col is not None and samples:
+            numeric_descriptions = sum(
+                desc_col < len(rows[i]) and number(rows[i][desc_col]) is not None for i in samples
+            )
+            if numeric_descriptions >= len(samples) * 0.8:
+                critiques.append(
+                    f"Sheet {layout.sheet}: `description` column {desc_col} contains numeric amounts/codes, not product text. Use the item-name column or omit description."
+                )
+        price_col = by_field.get("price")
+        if price_col is not None and headings[price_col] in identifiers | {
+            "quantity",
+            "qty",
+            "so luong",
+            "stt",
+        }:
+            critiques.append(
+                f"Sheet {layout.sheet}: `price` column {price_col} is an identifier or quantity, not a unit rate."
+            )
         for field in ("price", "quantity"):
             column = by_field.get(field)
             if column is None or not samples:

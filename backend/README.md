@@ -85,7 +85,8 @@ Set the Cloud Run service's request timeout to 900 seconds so the platform allow
 load to finish. The transport also retries a platform 504 during loading within the original
 startup deadline. Increasing the client timeout alone does not change Cloud Run's timeout.
 Interactive master-list suggestions share a shorter 45-second budget across exploration,
-mapping and at most one repair. Local schema retries are disabled for these calls. If a model is still starting, preview returns editable manual mappings
+mapping and at most one repair. Local schema retries are disabled for these calls. If a model
+is still starting, preview returns editable manual mappings
 within the browser's 60-second preview limit. The longer startup allowance applies to
 background invoice processing.
 
@@ -95,7 +96,8 @@ from the first 50 rows, up to ten reproducible samples spread across the full wo
 supported quantity × rate = amount relationships. A separate structured mapping call then
 uses that analysis. Source row/column indices are retained; cell values are never rewritten.
 Deterministic gates reject inconsistent numeric columns, identifier-as-quantity mappings,
-and line/document totals mapped as unit rates when quantities are present. A failed repair
+and line/document totals mapped as unit rates when quantities are present. Receipt/document
+numbers cannot substitute for purchase orders, and numeric amounts cannot be descriptions. A failed repair
 returns editable manual suggestions instead of accepting the rejected mapping. Payloads are
 bounded to 150,000 characters (12,000 for the local model's context). Manual import still
 validates every row; ten samples cannot establish that every source row is valid.

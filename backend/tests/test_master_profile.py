@@ -160,6 +160,24 @@ def test_row_identifier_is_not_accepted_as_quantity():
         suggest_layouts([{"name": "T1", "rows": rows}], client=model, model="test")
 
 
+@pytest.mark.parametrize("field,column", [("po", 2), ("description", 7)])
+def test_missing_optional_fields_cannot_be_replaced_by_codes_or_amounts(field, column):
+    bad = mapping()
+    bad.sheets[0].columns.append(Column(field=field, column=column))
+    model = client(understanding(), bad, bad)
+    with pytest.raises(ValueError, match="needs review"):
+        suggest_layouts([{"name": "T1", "rows": receipts()}], client=model, model="test")
+
+
+def test_numeric_identifier_is_not_accepted_as_price():
+    rows = receipts()
+    for i, row in enumerate(rows[1:]):
+        row[0] = str(1000 + i)
+    model = client(understanding(), mapping(price=0), mapping(price=0))
+    with pytest.raises(ValueError, match="not a unit rate"):
+        suggest_layouts([{"name": "T1", "rows": rows}], client=model, model="test")
+
+
 def test_numeric_gate_examines_rows_beyond_the_ui_preview():
     rows = receipts()
     for row in rows[51:]:
