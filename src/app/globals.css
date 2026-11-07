@@ -267,6 +267,7 @@ a { color: var(--accent); }
 .ic-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ic-page { width: 100%; max-width: 1240px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 20px; }
 .ic-page--narrow { max-width: 760px; }
+.ic-master-page { width: 80%; padding-inline: 0; }
 .ic-h1 { margin: 0; font-size: calc((30px) * var(--text-scale)); line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
 .ic-h1--pane { font-size: calc((22px) * var(--text-scale)); }
 .ic-headrow { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
