@@ -64,19 +64,19 @@ function MasterListView() {
   }, [items, q, supplier]);
 
   if (projectsLoading || loading) return <p className="ic-empty">Loading…</p>;
-  if (projectError || error) return <div className="ic-page"><p role="alert">{projectError ?? error}</p><button onClick={reload}>Retry</button></div>;
+  if (projectError || error) return <div className="ic-page ic-master-page"><p role="alert">{projectError ?? error}</p><button onClick={reload}>Retry</button></div>;
   const created = (p: Project) => {
     reloadProjects();
     router.push(p.comparison_mode === "master_list" ? `/master-list?project=${encodeURIComponent(p.id)}` : `/invoices?project=${encodeURIComponent(p.id)}`);
   };
-  if (!eligible.length) return <div className="ic-page ic-page--narrow">
+  if (!eligible.length) return <div className="ic-page ic-master-page ic-page--narrow">
     <div className="ic-titleblock">
       <h1 className="ic-h1">Create an invoice group</h1>
       <p className="muted" style={{ fontSize: "calc(14px * var(--text-scale))" }}>A master list belongs to an invoice group. Create one that compares with a master list to upload your price sheet.</p>
     </div>
     <div><CreateProject onCreated={created} label="Create invoice group" defaultMode="master_list" /></div>
   </div>;
-  if (!project) return <div className="ic-page ic-page--narrow">
+  if (!project) return <div className="ic-page ic-master-page ic-page--narrow">
     <div className="ic-headrow">
       <div className="ic-titleblock">
         <h1 className="ic-h1">Choose an invoice group</h1>
@@ -92,7 +92,7 @@ function MasterListView() {
       ))}
     </div>
   </div>;
-  if (!masterList) return <div className="ic-page ic-page--narrow">{crumb}<h1 className="ic-h1">Upload master list</h1>
+  if (!masterList) return <div className="ic-page ic-master-page ic-page--narrow">{crumb}<h1 className="ic-h1">Upload master list</h1>
     <MasterImport key={project.id} projectId={project.id} onSaved={() => { reload(); router.replace(`${base}&uploaded=1`); }} />
   </div>;
 
@@ -100,7 +100,7 @@ function MasterListView() {
     setReplace(false);
     if (params.get("replace")) router.replace(base);
   };
-  if (replaceOpen) return <div className="ic-page ic-page--narrow" style={{ paddingTop: 40 }}>
+  if (replaceOpen) return <div className="ic-page ic-master-page ic-page--narrow" style={{ paddingTop: 40 }}>
     {crumb}
     <div className="ic-headrow"><h1 className="ic-h1">Replace master list</h1>
       <button className="ic-btn ic-btn--secondary" type="button" onClick={closeReplacement}>Cancel replacement</button>
@@ -110,7 +110,7 @@ function MasterListView() {
   </div>;
 
   return (
-    <div className="ic-page" style={{ height: "calc(100vh - var(--header-height))" }}>
+    <div className="ic-page ic-master-page" style={{ height: "calc(100vh - var(--header-height))" }}>
       {crumb}
       {uploaded ? (
         <Notice>
