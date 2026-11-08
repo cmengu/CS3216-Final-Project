@@ -229,6 +229,18 @@ export async function retryInvoice(inv: SupplierInvoice): Promise<SupplierInvoic
   return uploadInvoice(file, inv.projectId ?? undefined);
 }
 
+/** Re-run the stored source in place; the invoice ID and project remain unchanged. */
+export async function reprocessInvoice(inv: SupplierInvoice): Promise<SupplierInvoice> {
+  const response = await fetch(`${SERVICE_URL}/invoices/${inv.id}/reprocess`, {
+    method: "POST", credentials: "include", headers: sessionHeaders(undefined, true),
+  });
+  const answer = await response.json().catch(() => null);
+  if (response.ok || (response.status === 422 && answer?.id === inv.id)) {
+    return toSupplierInvoice(answer as ServiceInvoice);
+  }
+  throw new Error(typeof answer?.detail === "string" ? answer.detail : broken);
+}
+
 /** One plain sentence for a decision the service refused. */
 export function decisionFailure(status: number, detail?: unknown): string {
   if (status === 404 && detail === "Invoice not found") return "No invoice with this link. It may have been removed.";

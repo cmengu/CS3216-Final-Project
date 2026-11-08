@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { invoiceFileUrl, decideInvoice, rememberInvoice, retryInvoice } from "@/checker/api";
+import { invoiceFileUrl, decideInvoice, rememberInvoice, reprocessInvoice, retryInvoice } from "@/checker/api";
 import {
   decision,
   failureSentence,
@@ -166,19 +165,15 @@ export function CheckPane({
   const [dialog, setDialog] = useState<"pay" | "raise" | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const [recheckError, setRecheckError] = useState<string | null>(null);
-  const router = useRouter();
   const outdated = hasNewerMasterList(inv, masterList);
   const reprocess = async () => {
     setRechecking(true);
     setRecheckError(null);
     try {
-      const checked = await retryInvoice(inv);
+      const checked = await reprocessInvoice(inv);
       rememberInvoice(checked);
-      const params = new URLSearchParams(window.location.search);
-      params.set("id", checked.id);
-      params.delete("view");
-      if (checked.projectId) params.set("project", checked.projectId);
-      router.replace(`/invoices?${params}`, { scroll: false });
+      // Reprocessing updates this ID in place; publish the response to every open list.
+      // Keep selection, group and dev-mode URL parameters unchanged.
     } catch (error) {
       setRecheckError(error instanceof Error ? error.message : "The invoice couldn’t be checked again.");
     } finally {
