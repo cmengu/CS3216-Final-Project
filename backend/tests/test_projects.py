@@ -6,9 +6,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from test_api import DATA, lightweight_reader
+from test_api import DATA
 from test_extract import FakeClient, completed
-from test_live import invoice
+from test_live import invoice, lightweight_reader
 from test_uploaded_master import OPTIONS
 
 from api.app import create_app
