@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import type { Project } from "@/checker/projects";
 import { CreateProject } from "./CreateProject";
@@ -11,10 +12,15 @@ import { Icon } from "@/components/icons";
 import { Notice, Pill, Search } from "@/components/ui";
 
 function Card({ inv, current, done }: { inv: SupplierInvoice; current: boolean; done: boolean }) {
+  const params = useSearchParams();
+  const query = new URLSearchParams(params.toString());
+  query.set("project", inv.projectId ?? "");
+  query.set("id", inv.id);
+  query.delete("view");
   const attn = done ? null : queueAttention(inv);
   const pill = statusPill(inv);
   return (
-    <Link className="ic-qcard" href={`/invoices?project=${encodeURIComponent(inv.projectId ?? "")}&id=${inv.id}`} aria-current={current ? "true" : undefined} scroll={false}>
+    <Link className="ic-qcard" href={`/invoices?${query}`} aria-current={current ? "true" : undefined} scroll={false}>
       <span className="r1">
         <b>{inv.supplier ?? inv.fileName}</b>
         <span className="muted num" style={{ whiteSpace: "nowrap" }}>

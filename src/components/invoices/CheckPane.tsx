@@ -155,10 +155,12 @@ export function CheckPane({
   masterList,
   activeLine,
   onShow,
+  devMode = false,
 }: {
   inv: SupplierInvoice;
   masterList: MasterList | null;
   activeLine: number | null;
+  devMode?: boolean;
   onShow: (n: number) => void;
 }) {
   const [dialog, setDialog] = useState<"pay" | "raise" | null>(null);
@@ -166,6 +168,23 @@ export function CheckPane({
   const [recheckError, setRecheckError] = useState<string | null>(null);
   const router = useRouter();
   const outdated = hasNewerMasterList(inv, masterList);
+  const reprocess = async () => {
+    setRechecking(true);
+    setRecheckError(null);
+    try {
+      const checked = await retryInvoice(inv);
+      rememberInvoice(checked);
+      const params = new URLSearchParams(window.location.search);
+      params.set("id", checked.id);
+      params.delete("view");
+      if (checked.projectId) params.set("project", checked.projectId);
+      router.replace(`/invoices?${params}`, { scroll: false });
+    } catch (error) {
+      setRecheckError(error instanceof Error ? error.message : "The invoice couldn’t be checked again.");
+    } finally {
+      setRechecking(false);
+    }
+  };
   const cur = inv.currency;
   const failed = inv.state === "failed";
   const meta = failed
@@ -188,20 +207,19 @@ export function CheckPane({
           </div>
         </div>
 
+        {devMode ? <div>
+          <button type="button" className="ic-btn ic-btn--secondary"
+            disabled={rechecking || inv.state === "checking"} onClick={() => void reprocess()}>
+            {rechecking ? "Reprocessing…" : "Reprocess document"}
+          </button>
+          {recheckError ? <p className="ic-hint ic-hint--error" role="alert">{recheckError}</p> : null}
+        </div> : null}
+
         {outdated ? (
           <section className="ic-card ic-card--tight" aria-label="Master list updated">
             <p className="ic-hint" style={{ marginBottom: 8 }}>The master list has changed. These results keep the prices used for the original check.</p>
-            <button className="ic-btn ic-btn--secondary" type="button" disabled={rechecking} onClick={async () => {
-              setRechecking(true); setRecheckError(null);
-              try {
-                const checked = await retryInvoice(inv);
-                rememberInvoice(checked);
-                router.replace(`/invoices?id=${encodeURIComponent(checked.id)}`, { scroll: false });
-              } catch (error) {
-                setRecheckError(error instanceof Error ? error.message : "The invoice couldn’t be checked again.");
-              } finally { setRechecking(false); }
-            }}>{rechecking ? "Checking…" : "Recheck with current master list"}</button>
-            {recheckError ? <p className="ic-hint ic-hint--error" role="alert">{recheckError}</p> : null}
+            <button className="ic-btn ic-btn--secondary" type="button" disabled={rechecking} onClick={() => void reprocess()}>{rechecking ? "Checking…" : "Recheck with current master list"}</button>
+            {!devMode && recheckError ? <p className="ic-hint ic-hint--error" role="alert">{recheckError}</p> : null}
           </section>
         ) : null}
 
