@@ -182,6 +182,12 @@ One invoice in full.
 - **200:** `SavedInvoice`.
 - **404:** `{"detail": "Invoice not found"}`. A non-UUID ID gets FastAPI's `422`.
 
+### `POST /invoices/{invoice_id}/reprocess`
+
+Reprocesses the authenticated owner's stored source through reading, extraction and applicable checking. Keeps the invoice ID, source file and project; clears previous extraction, check, error and audit decision. Uses the current project master-list version. Optional `force_ocr=true` follows upload OCR behaviour.
+
+Returns the updated `SavedInvoice` (200), or the same saved record with status `failed` (422). Missing invoice/source: 404; an already-processing invoice: 409; busy processing capacity: 429. The dev-mode invoice button calls this endpoint without creating another invoice.
+
 ### `GET /invoices/{invoice_id}/file`
 
 The original PDF or XML exactly as uploaded.

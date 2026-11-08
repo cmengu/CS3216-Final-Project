@@ -10,6 +10,7 @@ import {
   rememberInvoice,
   rememberInvoices,
   retryInvoice,
+  reprocessInvoice,
   setActiveSessionId,
   uploadFailure,
   uploadInvoice,
@@ -418,4 +419,16 @@ it("preserves project destination on uploads and retries", async () => {
   expect(String(fetchMock.mock.calls[0][0])).toContain("/invoices?project_id=project-a");
   await retryInvoice(first);
   expect(String(fetchMock.mock.calls[2][0])).toContain("/invoices?project_id=project-a");
+});
+
+
+it("reprocesses the existing invoice without downloading or uploading another file", async () => {
+  const record = saved("Reprocessed supplier", "605.06");
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(record)));
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await reprocessInvoice(toSupplierInvoice(record));
+  expect(result.id).toBe(record.id);
+  expect(result.supplier).toBe("Reprocessed supplier");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/invoices/${record.id}/reprocess`), expect.objectContaining({method: "POST", credentials: "include"}));
 });

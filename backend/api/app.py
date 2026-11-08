@@ -546,6 +546,74 @@ def create_app(
             raise HTTPException(404, "Invoice not found")
         return saved
 
+    @app.post("/invoices/{invoice_id}/reprocess", response_model=SavedInvoice)
+    def reprocess_invoice(invoice_id: UUID, request: Request, force_ocr: bool = False):
+        sid = _request_session_id(request)
+        store = app.state.store
+        saved = store.get(str(invoice_id), session_id=sid)
+        if saved is None:
+            raise HTTPException(404, "Invoice not found")
+        selected = app.state.stages
+        if selected is None:
+            raise HTTPException(503, "Processing is not configured")
+        path = store.path(str(invoice_id))
+        if not path.is_file():
+            raise HTTPException(404, "Original invoice is unavailable")
+        totals_only = saved.comparison_mode == "totals_only"
+        if isinstance(selected, UploadedMasterStages):
+            try:
+                selected = selected.bind(
+                    store, session_id=sid, project_id=saved.project_id, totals_only=totals_only
+                )
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+        if not app.state.slot.acquire(blocking=False):
+            raise HTTPException(
+                429,
+                "An invoice is processing; retry after it finishes",
+                headers={"Retry-After": "5"},
+            )
+        capacity = None
+        try:
+            if app.state.fleet is not None:
+                capacity = app.state.fleet.acquire("processing", sid)
+            if not store.restart(
+                str(invoice_id), "" if totals_only else selected.price_sheet_version, session_id=sid
+            ):
+                raise HTTPException(409, "Invoice is already processing")
+            execute = app.state.executor.execute if app.state.executor else process_stored_invoice
+            options = (
+                {
+                    "cancel": capacity.lost,
+                    "timeout": app.state.fleet.remaining(capacity.id, capacity.owner),
+                }
+                if app.state.executor and capacity
+                else {}
+            )
+            completed = execute(
+                path,
+                saved.filename,
+                saved.document_hash,
+                selected,
+                **({"reader": reader} if app.state.executor is None else {}),
+                save=lambda status, **values: store.update(str(invoice_id), status, **values),
+                force_ocr=force_ocr,
+                totals_only=totals_only,
+                **options,
+            )
+            result = store.get(str(invoice_id), session_id=sid)
+            return (
+                result
+                if completed
+                else JSONResponse(result.model_dump(mode="json"), status_code=422)
+            )
+        finally:
+            if capacity:
+                capacity.close(
+                    release=app.state.executor is None or app.state.executor.safe_to_release
+                )
+            app.state.slot.release()
+
     @app.get("/invoices/{invoice_id}/file")
     def invoice_file(invoice_id: UUID, request: Request, session_id: str | None = None):
         saved = invoice(invoice_id, request, session_id)

@@ -292,6 +292,18 @@ class Store(ProjectStore):
                 ),
             )
 
+    def restart(self, invoice_id, version, *, session_id):
+        with self.connect() as db:
+            result = db.execute(
+                """UPDATE invoices SET status='reading', updated_at=?, error=NULL,
+                document=NULL, invoice=NULL, check_result=NULL, outcome=NULL,
+                outcome_reason=NULL, decided_at=NULL, price_sheet_version=?
+                WHERE id=? AND session_id=?
+                AND status NOT IN ('queued','reading','extracting','checking')""",
+                (now(), version, invoice_id, normalize_session_id(session_id)),
+            )
+            return result.rowcount == 1
+
     def decide(
         self,
         invoice_id: str,
@@ -725,6 +737,18 @@ class PostgresStore(ProjectStore):
                 check_result=COALESCE(%s::jsonb, check_result) WHERE id=%s""",
                 (status, now(), error, blob(document), blob(invoice), blob(check), invoice_id),
             )
+
+    def restart(self, invoice_id, version, *, session_id):
+        with self.connect() as db:
+            result = db.execute(
+                f"""UPDATE {self.schema}.invoices SET status='reading', updated_at=%s,
+                error=NULL, document=NULL, invoice=NULL, check_result=NULL, outcome=NULL,
+                outcome_reason=NULL, decided_at=NULL, price_sheet_version=%s
+                WHERE id=%s AND session_id=%s
+                AND status NOT IN ('queued','reading','extracting','checking')""",
+                (now(), version, invoice_id, normalize_session_id(session_id)),
+            )
+            return result.rowcount == 1
 
     def decide(
         self,

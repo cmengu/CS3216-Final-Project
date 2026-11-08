@@ -578,6 +578,7 @@ Initial invoice browsing still reads the complete history, rather than paginatin
 | GET | `/invoice-batches/{id}` | Private batch progress |
 | GET | `/invoices?limit=50&offset=0` | Newest-first summaries; limit 1–100 |
 | GET | `/invoices/{id}` | Saved full record including read output, fields and results |
+| POST | `/invoices/{id}/reprocess` | Re-runs the stored source in place; keeps ID/project, resets results and decision, uses current project master list. Returns 200 or saved failure with 422; 409 if already processing. |
 | GET | `/invoices/{id}/file` | Original PDF (inline) or XML (download) |
 | PUT | `/invoices/{id}/outcome` | JSON `{"outcome", "reason"}`; saves or clears the clerk's decision (proposed) |
 
