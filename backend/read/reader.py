@@ -11,6 +11,7 @@ from threading import Lock
 from pypdf import PdfReader
 
 from .models import Location, PageRead, ParsedDocument, SourceBlock
+from .text_recovery import recover_missing_text
 
 _log = logging.getLogger(__name__)
 
@@ -103,7 +104,7 @@ def validate_pdf(path: Path) -> tuple[str, int]:
 
 def document_blocks(document) -> list[SourceBlock]:
     blocks = []
-    for item, _depth in document.iterate_items():
+    for item, _depth in document.iterate_items(traverse_pictures=True):
         # Tables retain their structure in the model input. Their provenance is table-level,
         # not a promise of precise per-cell bounding boxes.
         if getattr(item, "label", None) == "table":
@@ -403,6 +404,8 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
                     location.page = index
             ocr_cells = sum(1 for p in result.pages for cell in p.cells if cell.from_ocr)
             markdown = result.document.export_to_markdown()
+            # Picture regions can contain correctly recognised text that Markdown hides.
+            markdown, _ = recover_missing_text(markdown, (b.text for b in page_blocks))
             display_rotation = 0
             if use_ocr and _is_sideways_page(page_blocks):
                 recovered = _recover_sideways_page(path, index)
@@ -421,6 +424,15 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
                     )
                 except Exception:
                     pass
+            # Embedded text is an independent completeness check for digital PDFs.
+            # Preserve missing lines verbatim; do not fabricate table structure or coordinates.
+            markdown, embedded_missing = recover_missing_text(markdown, [text])
+            if embedded_missing:
+                page_blocks.append(SourceBlock(
+                    id=f"page-{index}:embedded-recovery",
+                    text="\n".join(embedded_missing),
+                    locations=[Location(page=index)],
+                ))
             warnings = []
             if not page_blocks:
                 warnings.append("No readable content on this page; human review required")

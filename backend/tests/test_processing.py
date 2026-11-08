@@ -211,7 +211,7 @@ def test_docling_table_provenance_adapter():
         prov=[SimpleNamespace(page_no=2, bbox=bbox)],
     )
     document = SimpleNamespace(
-        iterate_items=lambda: [(table, 0)],
+        iterate_items=lambda **kwargs: [(table, 0)],
         pages={2: SimpleNamespace(size=SimpleNamespace(width=100, height=200))},
     )
     blocks = document_blocks(document)

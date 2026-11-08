@@ -58,11 +58,11 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
   const picker = useFilePicker(INVOICE_ACCEPT, true, (files) => { if (canUpload) enqueue(files, known, project.id); });
   const selectProject = (id: string) => {
     setQ("");
-    router.push(`/invoices?project=${encodeURIComponent(id)}`, { scroll: false });
+    router.push(`/invoices?project=${encodeURIComponent(id)}${params.get("mode") === "dev" ? "&mode=dev" : ""}`, { scroll: false });
   };
   const backToProjects = () => {
     setQ("");
-    router.push("/invoices?view=projects", { scroll: false });
+    router.push(`/invoices?view=projects${params.get("mode") === "dev" ? "&mode=dev" : ""}`, { scroll: false });
   };
 
   // Each upload that finishes while this page is open is selected.
@@ -140,6 +140,7 @@ function Workspace({ onOutlook }: { onOutlook: (projectId: string) => void }) {
           key={inv.id}
           inv={inv}
           masterList={masterList}
+          devMode={params.get("mode") === "dev"}
           activeLine={pdfOpen ? (focus?.n ?? null) : null}
           onShow={(n) => {
             setPdfId(inv.id);
