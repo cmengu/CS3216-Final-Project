@@ -428,11 +428,13 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             # Preserve missing lines verbatim; do not fabricate table structure or coordinates.
             markdown, embedded_missing = recover_missing_text(markdown, [text])
             if embedded_missing:
-                page_blocks.append(SourceBlock(
-                    id=f"page-{index}:embedded-recovery",
-                    text="\n".join(embedded_missing),
-                    locations=[Location(page=index)],
-                ))
+                page_blocks.append(
+                    SourceBlock(
+                        id=f"page-{index}:embedded-recovery",
+                        text="\n".join(embedded_missing),
+                        locations=[Location(page=index)],
+                    )
+                )
             warnings = []
             if not page_blocks:
                 warnings.append("No readable content on this page; human review required")
