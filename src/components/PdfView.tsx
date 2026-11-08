@@ -13,7 +13,7 @@ import type { SourceBlock, SupplierInvoice } from "@/checker/types";
 import { InvoicePreview, PreviewZoom, PREVIEW_ZOOMS as ZOOMS } from "./InvoicePreview";
 import { blockFor } from "./pdfEvidence";
 import { wholeItemRow } from "./pdfRow";
-import { projectBox, textRotation } from "./pdfRotation";
+import { pageRotation, projectBox } from "./pdfRotation";
 import { Icon } from "./icons";
 
 export interface Mark {
@@ -129,6 +129,12 @@ export function PdfView({
   const scroller = useRef<HTMLDivElement>(null);
   const canvases = useRef<(HTMLCanvasElement | null)[]>([]);
 
+  // API refreshes can recreate this object without changing any angles. Reload only
+  // when the values change, otherwise a refresh resets manual rotation mid-render.
+  const rotationKey = JSON.stringify(Object.fromEntries(
+    Object.entries(rotations ?? {}).sort(([a], [b]) => Number(a) - Number(b)),
+  ));
+
   // Load the document. The parent remounts this view for each invoice, so state starts fresh.
   useEffect(() => {
     let live = true;
@@ -141,13 +147,14 @@ export function PdfView({
         task = loading;
         const loaded = await loading.promise;
         if (!live) return;
+        const corrections = JSON.parse(rotationKey) as Record<number, number>;
         const s: PageSize[] = [];
         for (let i = 1; i <= loaded.numPages; i++) {
           const pg = await loaded.getPage(i);
-          let rotation = (pg.rotate + (rotations?.[i] ?? 0)) % 360;
+          let rotation = (pg.rotate + (corrections[i] ?? 0)) % 360;
           try {
             const content = await pg.getTextContent();
-            rotation = textRotation(content.items.flatMap((it) => "str" in it ? [it] : []), rotation);
+            rotation = pageRotation(content.items.flatMap((it) => "str" in it ? [it] : []), pg.rotate, corrections[i]);
           } catch { /* Image-only or damaged text: keep OCR/page rotation. */ }
           const v = pg.getViewport({ scale: 1, rotation });
           s.push({ w: v.width, h: v.height, viewport: v });
@@ -163,7 +170,7 @@ export function PdfView({
       live = false;
       void task?.destroy();
     };
-  }, [url, rotations]);
+  }, [url, rotationKey]);
 
   // Place highlights once the document is in.
   useEffect(() => {
@@ -171,7 +178,7 @@ export function PdfView({
     let live = true;
     void placeMarks(doc, marks, blocks).then((p) => {
       if (live) setPlaced(p);
-    });
+    }).catch(() => { /* A document refresh can cancel text lookup with the old worker. */ });
     return () => {
       live = false;
     };
@@ -201,13 +208,27 @@ export function PdfView({
         const pg = await doc.getPage(i);
         const viewport = sizes[i - 1].viewport.clone({ scale: scaleFor(sizes[i - 1].w) * (window.devicePixelRatio || 1) });
         if (!live) return;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const task = pg.render({ canvas, viewport });
+        // PDF.js cancellation settles asynchronously. Render into an isolated buffer
+        // so a superseded task cannot reset or repaint the visible canvas.
+        const buffer = document.createElement("canvas");
+        buffer.width = viewport.width;
+        buffer.height = viewport.height;
+        const task = pg.render({ canvas: buffer, viewport });
         tasks.push(task);
-        await task.promise.catch(() => undefined);
+        try {
+          await task.promise;
+          if (!live) return;
+          canvas.width = buffer.width;
+          canvas.height = buffer.height;
+          canvas.getContext("2d")?.drawImage(buffer, 0, 0);
+        } finally {
+          buffer.width = 0;
+          buffer.height = 0;
+        }
       }
-    })();
+    })().catch(() => {
+      if (live) setError("The PDF couldn’t be rendered. Try reopening it.");
+    });
     return () => {
       live = false;
       tasks.forEach((t) => t.cancel());

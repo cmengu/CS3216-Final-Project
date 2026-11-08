@@ -2,6 +2,8 @@
 export function textRotation(items: { str: string; transform: number[] }[], fallback: number): number {
   const votes = [0, 0, 0, 0];
   for (const item of items) {
+    // Scanner branding may be the only selectable text on an image-only receipt.
+    if (/cam\s*scanner|scanned\s+with/i.test(item.str)) continue;
     const weight = item.str.trim().length;
     const angle = Math.atan2(item.transform[1], item.transform[0]) * 180 / Math.PI;
     const quarter = Math.round(angle / 90);
@@ -19,4 +21,10 @@ export function projectBox(transform: number[], box: { x1: number; y1: number; x
     .map(([x, y]) => [a * x + c * y + e, b * x + d * y + f]);
   const xs = points.map(([x]) => x), ys = points.map(([, y]) => y);
   return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+}
+
+/** A backend OCR correction describes the document image, including image-only scans. */
+export function pageRotation(items: { str: string; transform: number[] }[], pdfRotation: number, correction?: number): number {
+  const fallback = ((pdfRotation + (correction ?? 0)) % 360 + 360) % 360;
+  return correction ? fallback : textRotation(items, fallback);
 }
