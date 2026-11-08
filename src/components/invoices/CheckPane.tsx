@@ -172,8 +172,8 @@ export function CheckPane({
     try {
       const checked = await reprocessInvoice(inv);
       rememberInvoice(checked);
-      // Reprocessing updates this ID in place; publish the response to every open list.
-      // Keep selection, group and dev-mode URL parameters unchanged.
+      // Reload all server-backed data while retaining the current invoice/group URL.
+      window.location.reload();
     } catch (error) {
       setRecheckError(error instanceof Error ? error.message : "The invoice couldn’t be checked again.");
     } finally {

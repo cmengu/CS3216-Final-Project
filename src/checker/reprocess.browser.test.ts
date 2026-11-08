@@ -27,7 +27,11 @@ it.skipIf(!process.env.INVOICE_BROWSER_URL)("updates the current invoice after d
     });
     await page.goto(`${origin}/invoices?project=test&group=Test+group&id=${oldId}&mode=dev`);
     const button=page.getByRole("button",{name:"Reprocess document",exact:true});
-    await button.waitFor();await button.click();
+    await button.waitFor();
+    let navigations = 0;
+    page.on("framenavigated", frame => { if (frame === page.mainFrame()) ++navigations; });
+    await button.click();
+    await expect.poll(() => navigations).toBe(1);
     await expect.poll(()=>new URL(page.url()).searchParams.get("id"),{timeout:15000}).toBe(newId);
     await expect.poll(()=>page.locator('.ic-check').innerText()).toContain("Recovered Raspberry Pi");
     expect(new URL(page.url()).searchParams.get("mode")).toBe("dev");
