@@ -50,5 +50,54 @@ export function blockFor(m: { part: string | null; description: string }, blocks
     })).sort((a, b) => b.score - a.score);
     if (ranked.length) return { block: ranked[0].block, key };
   }
+  return wrappedBlockFor(m, blocks);
+}
+
+
+/** Match wrapped OCR descriptions without requiring identical spaces or punctuation. */
+function wrappedBlockFor(m: { part: string | null; description: string }, blocks: SourceBlock[]) {
+  const compact = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const key = compact(m.description).slice(0, 40);
+  if (key.length < 12) return null;
+  const located = blocks.flatMap(block => block.locations.flatMap(location => {
+    const b = location.bbox;
+    if (!b || !location.pageHeight) return [];
+    const topLeft = (b.coord_origin ?? "BOTTOMLEFT").toUpperCase() === "TOPLEFT";
+    return [{ block, location, l: b.l, r: b.r,
+      top: topLeft ? b.t : location.pageHeight - b.t,
+      bottom: topLeft ? b.b : location.pageHeight - b.b }];
+  }));
+  for (const seed of located) {
+    const height = seed.bottom - seed.top;
+    if (height <= 0 || seed.block.kind === "table-row") continue;
+    const chain = [seed];
+    let text = compact(seed.block.text);
+    if (!text || !key.startsWith(text.slice(0, Math.min(text.length, key.length)))) continue;
+    for (let step = 0; step < 4; ++step) {
+      if (text.includes(key)) {
+        const bottom = Math.max(...chain.map(item => item.bottom));
+        // Include quantity/pricing on the same row, but not neighbouring summary rows.
+        const row = located.filter(item => item.location.page === seed.location.page
+          && item.top >= seed.top - height * 0.3 && item.bottom <= bottom + height * 0.3);
+        const members = [...chain, ...row];
+        const block: SourceBlock = { text: chain.map(item => item.block.text).join(" "), kind: "table-row",
+          locations: [{ ...seed.location, bbox: {
+            l: Math.min(...members.map(item => item.l)), r: Math.max(...members.map(item => item.r)),
+            t: Math.min(...members.map(item => item.top)), b: Math.max(...members.map(item => item.bottom)),
+            coord_origin: "TOPLEFT",
+          } }] };
+        return { block, key };
+      }
+      const last = chain[chain.length - 1];
+      const next = located.filter(item => item.location.page === seed.location.page
+        && !chain.includes(item) && Math.abs(item.l - seed.l) <= height
+        && item.top >= last.bottom - height * 0.2 && item.top - last.bottom <= height * 0.8
+        && item.bottom - item.top <= height * 1.8)
+        .sort((a, b) => a.top - b.top)[0];
+      if (!next) break;
+      chain.push(next);
+      text += compact(next.block.text);
+    }
+  }
   return null;
 }

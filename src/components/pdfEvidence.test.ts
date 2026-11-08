@@ -18,3 +18,26 @@ it("selects the Freight charge row over FREIGHT TERMS and includes all pricing c
 it("does not use unrecovered table geometry on sideways OCR pages", () => {
   expect(tableRows({ page_documents: [{ page_number: 1, document: {} }] }, [1])).toEqual([]);
 });
+
+it("joins a split receipt description and includes its price without the subtotal", () => {
+  const block = (text: string, l: number, r: number, t: number, b: number) => ({text,
+    locations: [{page:1,pageWidth:595,pageHeight:842,bbox:{l,r,t,b,coord_origin:"BOTTOMLEFT"}}]});
+  const blocks = [
+    block("3M STRONG D.S.MOUNTING T",142,387,572,547),
+    block("13.20",445,503,575,547),
+    block("APE/OUTDOOR 19MMX1.5M",141,358,546,521),
+    block("SUBTOTAL TOTAL",161,266,468,415),
+    block("13.20 13.20",387,492,469,415),
+  ];
+  const found=blockFor({part:null,description:"3M STRONG D.S.MOUNTING TAPE/OUTDOOR 19MMX1.5M"},blocks);
+  expect(found?.block.kind).toBe("table-row");
+  expect(found?.block.locations[0].bbox).toEqual({l:141,r:503,t:267,b:321,coord_origin:"TOPLEFT"});
+});
+
+it("does not join unrelated descriptions across pages or distant rows", () => {
+  const blocks=[
+    {text:"3M STRONG D.S.MOUNTING T",locations:[{page:1,pageWidth:595,pageHeight:842,bbox:{l:142,r:387,t:572,b:547}}]},
+    {text:"APE/OUTDOOR 19MMX1.5M",locations:[{page:2,pageWidth:595,pageHeight:842,bbox:{l:141,r:358,t:546,b:521}}]},
+  ];
+  expect(blockFor({part:null,description:"3M STRONG D.S.MOUNTING TAPE/OUTDOOR 19MMX1.5M"},blocks)).toBeNull();
+});
