@@ -6,9 +6,10 @@ import os
 from functools import lru_cache
 from importlib.metadata import version
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Lock
 
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 
 from .models import Location, PageRead, ParsedDocument, SourceBlock
 from .text_recovery import recover_missing_text
@@ -267,7 +268,11 @@ def _recover_sideways_page(
     best_image = None
     best_rotation = 0
     best_score = -1
-    for transpose_op in (Image.Transpose.ROTATE_270, Image.Transpose.ROTATE_90):
+    for transpose_op in (
+        Image.Transpose.ROTATE_270,
+        Image.Transpose.ROTATE_90,
+        Image.Transpose.ROTATE_180,
+    ):
         rotated = pil_image.transpose(transpose_op)
         out = engine(np.array(rotated))
         txts = getattr(out, "txts", None)
@@ -281,7 +286,11 @@ def _recover_sideways_page(
             best_score = score
             best_out = out
             best_image = rotated
-            best_rotation = 90 if transpose_op == Image.Transpose.ROTATE_270 else 270
+            best_rotation = {
+                Image.Transpose.ROTATE_270: 90,
+                Image.Transpose.ROTATE_90: 270,
+                Image.Transpose.ROTATE_180: 180,
+            }[transpose_op]
         if kw_hits >= 4:
             break
 
@@ -372,7 +381,7 @@ def _recover_sideways_page(
     return "\n".join(lines_md), blocks, len(items), _encode_page_image(best_image), best_rotation
 
 
-def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
+def _read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
     document_hash, page_count = validate_pdf(path)
     from docling.datamodel.base_models import ConversionStatus
     from docling.exceptions import ConversionError
@@ -380,6 +389,7 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
     source = PdfReader(path)
     blocks, pages, documents = [], [], []
     page_images: dict[str, str] = {}
+    region_diagnostics: dict[str, list] = {}
     # GPU/CPU models are cached in memory and used serially. Each textless page takes the
     # full-page OCR branch, so ocr_ran describes an executed stage, not merely configuration.
     with _conversion_lock:
@@ -407,7 +417,7 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             # Picture regions can contain correctly recognised text that Markdown hides.
             markdown, _ = recover_missing_text(markdown, (b.text for b in page_blocks))
             display_rotation = 0
-            if use_ocr and _is_sideways_page(page_blocks):
+            if use_ocr and (not page_blocks or _is_sideways_page(page_blocks)):
                 recovered = _recover_sideways_page(path, index)
                 if recovered is not None:
                     upright_md, upright_blocks, upright_cells, image_data_url, display_rotation = (
@@ -424,6 +434,13 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
                     )
                 except Exception:
                     pass
+            region_warnings = []
+            if use_ocr:
+                from .region_integration import apply_region_recovery
+
+                markdown, page_blocks, region_warnings, region_diagnostics[str(index)] = (
+                    apply_region_recovery(path, index, display_rotation, markdown, page_blocks)
+                )
             # Embedded text is an independent completeness check for digital PDFs.
             # Preserve missing lines verbatim; do not fabricate table structure or coordinates.
             markdown, embedded_missing = recover_missing_text(markdown, [text])
@@ -435,7 +452,7 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
                         locations=[Location(page=index)],
                     )
                 )
-            warnings = []
+            warnings = list(region_warnings)
             if not page_blocks:
                 warnings.append("No readable content on this page; human review required")
             if use_ocr and not ocr_cells:
@@ -457,7 +474,7 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
             documents.append({"page_number": index, "document": result.document.export_to_dict()})
     if not blocks:
         raise ValueError("No readable text or tables; retry with --force-ocr or review manually")
-    docling_payload: dict = {"page_documents": documents}
+    docling_payload: dict = {"page_documents": documents, "region_recovery": region_diagnostics}
     if page_images:
         docling_payload["page_images"] = page_images
     return ParsedDocument(
@@ -470,3 +487,59 @@ def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
         pages=pages,
         docling_document=docling_payload,
     )
+
+
+def read_pdf(path: Path, *, force_ocr: bool = False) -> ParsedDocument:
+    """Classify scanned pages before reading; preserve the original source and coordinates."""
+    from dataclasses import asdict
+
+    from .orientation import detect_orientation, to_original_bbox
+
+    original_hash, _ = validate_pdf(path)
+    source = PdfReader(path)
+    rotations, diagnostics = {}, {}
+    for index, page in enumerate(source.pages, 1):
+        if force_ocr or not (page.extract_text() or "").strip():
+            decision = detect_orientation(_render_page_pil(path, index, scale=1.0))
+            diagnostics[str(index)] = asdict(decision)
+            if decision.accepted and decision.clockwise:
+                rotations[index] = decision.clockwise
+    if not rotations:
+        result = _read_pdf(path, force_ocr=force_ocr)
+    else:
+        with TemporaryDirectory(prefix="invoice-upright-") as directory:
+            upright = Path(directory) / "upright.pdf"
+            writer = PdfWriter()
+            for index, page in enumerate(source.pages, 1):
+                copied = writer.add_page(page)
+                if index in rotations:
+                    copied.rotate(rotations[index])
+            with upright.open("wb") as stream:
+                writer.write(stream)
+            result = _read_pdf(upright, force_ocr=force_ocr)
+        for block in result.blocks:
+            for loc in block.locations:
+                if loc.page not in rotations or not loc.bbox:
+                    continue
+                # Rapid recovery already returns original PDF coordinates.
+                if "#/upright/" in block.id or "#/crop/" in block.id:
+                    continue
+                width, height = loc.page_width, loc.page_height
+                if not width or not height:
+                    continue
+                box = dict(loc.bbox)
+                if str(box.get("coord_origin", "")).upper() == "BOTTOMLEFT":
+                    box["t"], box["b"] = height - box["t"], height - box["b"]
+                page = source.pages[loc.page - 1]
+                W, H = float(page.mediabox.width), float(page.mediabox.height)
+                loc.bbox = to_original_bbox(
+                    box, width, height, W, H, int(page.rotation) + rotations[loc.page]
+                )
+                loc.page_width, loc.page_height = W, H
+        for page in result.pages:
+            page.display_rotation = (
+                page.display_rotation + rotations.get(page.page_number, 0)
+            ) % 360
+    result.filename, result.document_hash = path.name, original_hash
+    result.docling_document["orientation"] = diagnostics
+    return result

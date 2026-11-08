@@ -44,10 +44,10 @@ def process_stored_invoice(
                 invoice = selected.extract(document)
             check_budget()
             if totals_only:
-                save("completed", invoice=invoice)
+                save("completed", invoice=invoice, document=document)
                 return True
             stage = "checking"
-            save(stage, invoice=invoice)
+            save(stage, invoice=invoice, document=document)
             check = selected.check(invoice)
             check_budget()
             if is_xml and invoice.warnings:

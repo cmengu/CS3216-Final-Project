@@ -29,6 +29,8 @@ dependencies = [
 # torch and torchvision are docling's; they are named here so [tool.uv.sources] can pick the
 # CPU build on Linux, which only applies to dependencies the project declares itself.
 docling = ["docling==2.137.0", "onnxruntime>=1.20,<2", "torch>=2.6,<3", "torchvision>=0.21,<1"]
+# Optional local handwriting/orientation models; provision weights before enabling recovery.
+handwriting = ["paddlepaddle>=3.2,<4", "paddleocr>=3.3,<4", "transformers>=5.6,<6", "torch>=2.6,<3"]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 dummy = ["weasyprint>=68,<71", "pypdfium2>=5,<6", "pillow>=12,<13", "openpyxl>=3.1,<4"]
 
