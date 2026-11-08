@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectBox, textRotation } from "./pdfRotation";
+import { pageRotation, projectBox, textRotation } from "./pdfRotation";
 const item = (angle: number, str = "Invoice description quantity total") => ({ str, transform: [Math.cos(angle * Math.PI / 180), Math.sin(angle * Math.PI / 180), 0, 1, 0, 0] });
 describe("PDF text orientation", () => {
   it("corrects each quarter turn", () => {
@@ -26,5 +26,18 @@ describe("highlight rotation", () => {
   });
   it("scales and offsets highlights with the viewport", () => {
     expect(projectBox([0, 2, 2, 0, 5, 7], box)).toEqual({ left: 45, top: 27, width: 20, height: 60 });
+  });
+});
+
+describe("scanned receipt orientation", () => {
+  it("ignores sideways scanner branding on an otherwise image-only receipt", () => {
+    expect(textRotation([item(90, "Scanned with CamScanner")], 270)).toBe(270);
+  });
+  it("keeps a backend image correction when a small text layer points another way", () => {
+    expect(pageRotation([item(90)], 0, 270)).toBe(270);
+    expect(pageRotation([item(90)], 90, 180)).toBe(270);
+  });
+  it("still uses native invoice text when there is no OCR correction", () => {
+    expect(pageRotation([item(90)], 0, 0)).toBe(90);
   });
 });

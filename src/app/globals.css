@@ -312,7 +312,7 @@ a { color: var(--accent); }
 .ic-doc-bar .name { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ic-doc-bar .sp { flex: 1; }
 .ic-doc-bar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
-.ic-doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 20px 0; }
+.ic-doc-scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 20px 0; }
 .ic-pdfpage { position: relative; margin: 0 auto 20px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
 .ic-pdfpage canvas { display: block; }
 /* One solid line just outside the box, so it never covers the printed text. PdfView sets its width from the row's height. */
