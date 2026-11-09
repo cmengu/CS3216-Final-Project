@@ -397,6 +397,19 @@ account; Outlook must be reconnected separately:
 This refuses to reassign another approved account’s workspace, move unfinished jobs, or merge
 over an existing target workspace. Keep a database/files backup before an operator recovery.
 
+### Landing page contact form
+
+`POST /contact` takes `{name, email, company?, message, website?}` from the public landing
+page and emails it through the same delivery provider to `CONTACT_EMAIL`, or to
+`AUTH_ADMIN_EMAIL` when `CONTACT_EMAIL` is unset. Nothing is stored. It needs
+`X-Requested-With: InvoiceChecker` and a trusted Origin, allows 5 messages per IP per hour and
+100 a day overall, and returns 503 when no recipient or provider is configured. A filled
+`website` field (a hidden spam trap) is accepted and dropped.
+
+```ini
+CONTACT_EMAIL=gtm@example.com
+```
+
 ## Background batches and usage limits
 
 `POST /invoice-batches` accepts multipart `files` (1–500 PDF/XML files, at most 20 MiB each

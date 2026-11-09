@@ -9,7 +9,7 @@ from read.reader import MAX_BYTES
 def request_body_limit(path):
     if path.rstrip("/") == "/invoice-batches":
         return 101 * 1024 * 1024
-    if path.startswith(("/auth/", "/admin/")):
+    if path.startswith(("/auth/", "/admin/")) or path.rstrip("/") == "/contact":
         return 16 * 1024
     return MAX_BYTES + 65536
 

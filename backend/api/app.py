@@ -38,6 +38,7 @@ from .auth import (
 )
 from .batches import router as batch_router
 from .body_limits import BodyLimitMiddleware, request_body_limit
+from .contact import router as contact_router
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .execution import InvoiceExecutor
 from .jobs import InvoiceJobs, InvoiceWorker
@@ -199,6 +200,7 @@ def create_app(
     app.include_router(master_list_router)
     app.include_router(projects_router)
     app.include_router(outlook_router)
+    app.include_router(contact_router)
 
     @app.middleware("http")
     async def advertised_size(request, call_next):
@@ -228,6 +230,7 @@ def create_app(
                     "/auth/setup",
                     "/auth/mfa/verify",
                     "/auth/mfa/resend",
+                    "/contact",
                 }
             )
             if browser_mutation:
