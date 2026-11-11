@@ -7,9 +7,9 @@ from decimal import Decimal as D
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
-from test_api import DATA, lightweight_reader
+from test_api import DATA
 from test_extract import FakeClient, completed
-from test_live import invoice
+from test_live import invoice, lightweight_reader
 
 from api.app import create_app
 from api.csv_live import LiveStages, PriceSheet

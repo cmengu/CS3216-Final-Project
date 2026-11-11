@@ -820,3 +820,15 @@ configuration, preview returns editable manual mappings and a visible message.
 Confirmed imports use the submitted mapping without a second model call. Models
 never supply imported cell values. Complex layouts, headers after row 50, and
 multiple independent tables on one sheet still require manual cleanup/selection.
+
+### Extraction evidence
+
+Before price checking (also for totals-only projects), `extract/evidence.py` rejects
+items without supporting source text and numeric values absent from the matching
+item region. Summary fields, dates, currency, and checking context also need source
+evidence. One existing refinement pass may recover a supported reading; unresolved
+unsupported output fails extraction instead of creating invented items. Ambiguous numeric dates stay null. Successful
+line evidence is retained in `extraction_evidence`. This checks transcription
+support, not semantic correctness of the original invoice. Existing missing-tax
+and missing-subtotal UI calculations still run **after** this gate; printed values
+are preserved even when arithmetic disagrees.

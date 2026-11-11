@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from test_api import DATA, lightweight_reader
+from test_api import DATA
+from test_api import lightweight_reader as empty_reader
 from test_extract import FakeClient, completed
 
 from api.app import create_app
@@ -17,6 +18,16 @@ MASTER = """key,supplier,po,item,description,uom,currency,unit_price,discount,ta
 A,Supplier,PO-1,PART,Part,PC,SGD,10,0.05,0.09,2026-10-01,2026-10-31
 B,Supplier,PO-1,FEE,Freight,JOB,SGD,20,0,0.09,2026-10-01,2026-10-31
 """
+
+
+def lightweight_reader(path, *, force_ocr=False):
+    doc = empty_reader(path, force_ocr=force_ocr)
+    doc.markdown = (
+        "Supplier Invoice INV-1 PO-1 2026-10-05 SGD\n"
+        "| PART Part | 2 PC | 12 | 5% | 22.80 |\n"
+        "Subtotal 22.80 Tax 9% 2.05 Total 24.85"
+    )
+    return doc
 
 
 @pytest.fixture
@@ -172,6 +183,9 @@ def test_live_api_persists_extended_fields_without_fixture_lookup(sheet, tmp_pat
         assert saved["invoice"]["purchase_order"] == "PO-1"
         assert saved["invoice"]["lines"][0]["discount_rate"] == "0.05"
         assert saved["check"]["overcharge_total"] == "3.80"
+        evidence = saved["document"]["docling_document"]["extraction_evidence"]
+        assert evidence[0]["fields"]["unit_price"] == "12"
+        assert "PART" in evidence[0]["source_text"]
         assert http.get(f"/invoices/{saved['id']}").json() == saved
     call = client.calls[0]
     assert call["text_format"] is CheckingInvoice
