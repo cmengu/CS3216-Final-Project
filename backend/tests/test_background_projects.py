@@ -3,10 +3,10 @@
 import pytest
 from fastapi.testclient import TestClient
 from test_accounts import ADMIN, HEADERS, add_member, login
-from test_api import DATA
+from test_api import DATA, lightweight_reader
 from test_background_batches import wait_completed
 from test_extract import FakeClient, completed
-from test_live import invoice, lightweight_reader
+from test_live import invoice
 from test_xml_invoice import XML
 
 from api.app import create_app

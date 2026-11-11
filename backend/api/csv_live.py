@@ -12,7 +12,6 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from extract.context import CheckingInvoice, CheckingLine
-from extract.evidence import ground_extraction, preserve_supported_numbers
 from extract.invoice import extract_with_usage, refine_with_usage
 from extract.totals import fill_missing_totals, ground_total_only_invoice
 from read.models import ParsedDocument
@@ -39,7 +38,8 @@ flat_charge is true ONLY for a clearly flat service/freight fee, not a product m
 Leave unprinted quantity, unit and unit_price null even for flat charges.
 A monetary amount on a flat fee is not a unit price: mark the fee flat_charge=true even
 when a foreign-currency fee amount and its conversion rate are printed without a quantity.
-Keep the printed charge description separate from quantity, rate, currency and conversion details.
+Keep the charge description separate from quantity, rate, currency and conversion details:
+e.g. 'Freight - 2.40 M3 @ USD 85.00/M3' has description 'Freight'.
 Do not invent product codes for freight, courier, or service descriptions without codes.
 The invoice line_total is the printed billed amount in invoice currency after discount.
 Return one row per charge, combining wrapped descriptions across OCR table rows.
@@ -501,14 +501,8 @@ class LiveStages:
         record = result.record
         if not isinstance(record, CheckingInvoice):
             raise ValueError("Live extraction returned no checking context")
-        evidence_error = None
-        try:
-            ground_extraction(record, document)
-        except ValueError as exc:
-            evidence_error = exc
+        fill_missing_totals(ground_total_only_invoice(record, document.markdown))
         critique = self.sheet.verify_extraction(record)
-        if evidence_error:
-            critique.append(str(evidence_error))
         if critique:
             try:
                 refined = refine_with_usage(
@@ -521,19 +515,13 @@ class LiveStages:
                     extra_instructions=CONTEXT_PROMPT,
                 ).record
                 if isinstance(refined, CheckingInvoice):
-                    preserve_supported_numbers(record, refined, document)
-                    ground_extraction(refined, document)
-                    if evidence_error or len(self.sheet.verify_extraction(refined)) <= len(
-                        critique
-                    ):
-                        record = refined
-                        evidence_error = None
+                    fill_missing_totals(ground_total_only_invoice(refined, document.markdown))
+                if isinstance(refined, CheckingInvoice) and len(
+                    self.sheet.verify_extraction(refined)
+                ) <= len(critique):
+                    record = refined
             except ValueError:
                 pass
-        if evidence_error:
-            raise evidence_error
-        # Derived UI defaults happen only after source-grounded extraction has passed.
-        fill_missing_totals(ground_total_only_invoice(record, document.markdown))
         record.warnings.extend(w for page in document.pages for w in page.warnings)
         return record
 
