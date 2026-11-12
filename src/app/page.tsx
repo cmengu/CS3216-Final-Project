@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/Brand";
-import { useUser } from "@/auth";
 import { Icon } from "@/components/icons";
 import { sendContact, type ContactForm } from "@/lib/contact";
 import "./landing.css";
@@ -38,12 +37,12 @@ const CLOUD = <path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 8.5a4.75 4.75 0 0 1
 const TICK = <path d="m5 12 5 5 9-10" />;
 const CROSS = <path d="M6 6l12 12M18 6 6 18" />;
 
+/*
+ * The page renders the same for everyone and never reads the session. The session cookie belongs to the
+ * service, so the session is only known after a request from the browser; swapping the header then made
+ * "Sign in" vanish a moment after load. /sign-in sends someone already signed in straight to the workspace.
+ */
 export default function LandingPage() {
-  const user = useUser();
-  const signedIn = Boolean(user);
-  const workspaceHref = signedIn ? "/invoices" : "/sign-in";
-  const ctaLabel = signedIn ? "Open workspace" : "Sign in to workspace";
-
   const [openQ, setOpenQ] = useState(0);
 
   return (
@@ -58,26 +57,20 @@ export default function LandingPage() {
             <a href="#faq">Questions</a>
             <a href="#contact">Contact</a>
           </nav>
-          {signedIn ? (
-            <Link className="lp-btn lp-btn--glow lp-btn--sm" href={workspaceHref}>
-              Open workspace
-            </Link>
-          ) : (
-            <span className="lp-nav-ctas">
-              <Link className="lp-nav-signin" href={workspaceHref}>Sign in</Link>
-              <a className="lp-btn lp-btn--glow lp-btn--sm" href="#contact">Contact sales</a>
-            </span>
-          )}
+          <span className="lp-nav-ctas">
+            <Link className="lp-nav-signin" href="/sign-in">Sign in</Link>
+            <a className="lp-btn lp-btn--glow lp-btn--sm" href="#contact">Contact sales</a>
+          </span>
         </header>
       </div>
 
       <main>
-        <Hero ctaLabel={ctaLabel} workspaceHref={workspaceHref} signedIn={signedIn} />
+        <Hero />
         <UseCases />
         <Privacy />
         <Steps />
         <Questions open={openQ} onToggle={(i) => setOpenQ((o) => (o === i ? -1 : i))} />
-        <Close ctaLabel={ctaLabel} workspaceHref={workspaceHref} />
+        <Close />
       </main>
 
       <footer className="lp-foot">
@@ -96,7 +89,7 @@ export default function LandingPage() {
 
 /* ----------------------------------------------------------------------- */
 
-function Hero({ ctaLabel, workspaceHref, signedIn }: { ctaLabel: string; workspaceHref: string; signedIn: boolean }) {
+function Hero() {
   return (
     <section className="lp-hero lp-mesh-ink" aria-labelledby="lp-h1">
       <div className="lp-hero-in">
@@ -113,22 +106,13 @@ function Hero({ ctaLabel, workspaceHref, signedIn }: { ctaLabel: string; workspa
             Every invoice line, checked against the price you agreed. <b>Unsure lines come to you.</b>
           </p>
           <div className="lp-ctas">
-            {signedIn ? (
-              <Link className="lp-btn lp-btn--glow" href={workspaceHref}>
-                {ctaLabel}
-                <Icon name="arrowR" arrow />
-              </Link>
-            ) : (
-              <>
-                <a className="lp-btn lp-btn--glow" href="#contact">
-                  Contact sales
-                  <Icon name="arrowR" arrow />
-                </a>
-                <a className="lp-btn lp-btn--white" href="#cases">
-                  See real cases ↓
-                </a>
-              </>
-            )}
+            <a className="lp-btn lp-btn--glow" href="#contact">
+              Contact sales
+              <Icon name="arrowR" arrow />
+            </a>
+            <a className="lp-btn lp-btn--white" href="#cases">
+              See real cases ↓
+            </a>
           </div>
         </div>
 
@@ -462,7 +446,7 @@ function Questions({ open, onToggle }: { open: number; onToggle: (i: number) => 
   );
 }
 
-function Close({ ctaLabel, workspaceHref }: { ctaLabel: string; workspaceHref: string }) {
+function Close() {
   return (
     <section id="contact" className="lp-close lp-mesh-band" aria-labelledby="lp-close-h">
       <div className="lp-close-in">
@@ -472,8 +456,8 @@ function Close({ ctaLabel, workspaceHref }: { ctaLabel: string; workspaceHref: s
             <span className="lp-serif lp-chrome">next invoice.</span>
           </h2>
           <p>New to Linecheck? Tell us about your invoices and we&apos;ll set your team up. Already a customer? Sign in.</p>
-          <Link className="lp-btn lp-btn--cream" href={workspaceHref}>
-            {ctaLabel === "Open workspace" ? ctaLabel : "Sign in"}
+          <Link className="lp-btn lp-btn--cream" href="/sign-in">
+            Sign in
             <Icon name="arrowR" arrow />
           </Link>
         </div>
