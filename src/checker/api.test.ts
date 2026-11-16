@@ -296,7 +296,7 @@ describe("decideInvoice", () => {
 });
 
 describe("session isolation headers and URLs", () => {
-  it("attaches X-Invoice-Session header and session_id query param when a session is active", async () => {
+  it("keeps session credentials in request headers and out of file URLs", async () => {
     const store = new Map<string, string>();
     const storage = {
       getItem: (k: string) => store.get(k) ?? null,
@@ -306,7 +306,7 @@ describe("session isolation headers and URLs", () => {
     vi.stubGlobal("window", { sessionStorage: storage, localStorage: storage });
 
     setActiveSessionId("sess-user-42");
-    expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file\\?session_id=sess-user-42$`));
+    expect(invoiceFileUrl(id)).toMatch(new RegExp(`/invoices/${id}/file$`));
 
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
       new Response(JSON.stringify(saved("Supplier", "0.00")), { status: 201 }),

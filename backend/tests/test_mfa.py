@@ -213,7 +213,7 @@ def test_email_change_is_operator_only_and_revokes_sessions_and_pending_codes(ap
             client.post(
                 "/auth/mfa/replace", headers=HEADERS, json={"email": "attacker@example.com"}
             ).status_code
-            == 404
+            == 401
         )
         cooldown(app)
         fresh = start(client)

@@ -1,6 +1,6 @@
 "use client";
 
-import { getActiveSessionId, SERVICE_URL, sessionHeaders } from "./api";
+import { SERVICE_URL, sessionHeaders } from "./api";
 
 export interface OutlookStatus {
   configured: boolean;
@@ -72,8 +72,6 @@ async function parseErrorDetail(res: Response, fallback: string): Promise<string
 
 export function outlookLoginUrl(returnTo = "/invoices"): string {
   const params = new URLSearchParams({ return_to: returnTo });
-  const sid = getActiveSessionId();
-  if (sid) params.set("session_id", sid);
   return `${SERVICE_URL}/auth/outlook/login?${params.toString()}`;
 }
 

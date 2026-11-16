@@ -33,10 +33,10 @@ from .storage import DEFAULT_SESSION_ID, Store, normalize_session_id
 from .storage import request_session_id as request_workspace_id
 
 
-def request_session_id(request: Request, query_session_id=None):
+def request_session_id(request: Request):
     # Mailboxes belong to a person; invoice ownership uses the person's private workspace.
-    claims = extract_request_claims(request, query_session_id)
-    return claims["user_id"] if claims else request_workspace_id(request, query_session_id)
+    claims = extract_request_claims(request)
+    return claims["user_id"] if claims else request_workspace_id(request)
 
 
 router = APIRouter(tags=["outlook"])

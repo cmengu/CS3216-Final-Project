@@ -69,6 +69,96 @@ def provider(monkeypatch):
     return exchange
 
 
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_api_documentation_is_unavailable_even_after_sign_in(secure_app, authenticated):
+    with TestClient(secure_app) as client:
+        if authenticated:
+            login(client)
+        assert client.get("/health").status_code == 200
+        assert client.get("/invoices").status_code == (200 if authenticated else 401)
+        # Vercel strips /api before forwarding these same paths to the backend.
+        for path in ("/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"):
+            for suffix in ("", "/", "?probe=1"):
+                for method in ("GET", "HEAD", "POST", "OPTIONS"):
+                    response = client.request(method, path + suffix, follow_redirects=False)
+                    assert response.status_code == 404, (method, path + suffix, response.text)
+                    if method != "HEAD":
+                        assert response.json() == {"detail": "Not Found"}
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/future-private"),
+        ("GET", "/auth/setup/future-private"),
+        ("GET", "/health/future-private"),
+        ("GET", "/auth/sign-in"),
+        ("OPTIONS", "/future-private"),
+    ],
+)
+def test_new_routes_require_authentication_by_default(secure_app, method, path):
+    called = []
+
+    @secure_app.api_route(path, methods=[method])
+    def private_route():
+        called.append(True)
+        return {"private": True}
+
+    with TestClient(secure_app) as client:
+        for suffix in ("", "/", "?probe=1"):
+            response = client.request(method, path + suffix, follow_redirects=False)
+            assert response.status_code == 401
+            assert response.headers["Cache-Control"] == "no-store"
+        assert called == []
+        login(client)
+        response = client.request(method, path)
+        assert response.json() == {"private": True}
+        assert response.headers["Cache-Control"] == "no-store"
+        assert called == [True]
+
+
+def test_query_credentials_cannot_authenticate_and_cookies_and_headers_still_work(secure_app):
+    with TestClient(secure_app) as client:
+        token = login(client)
+        owner = client.get("/auth/me").json()["user"]["id"]
+        invoice_id = "11111111-1111-4111-8111-111111111111"
+        store = secure_app.state.store
+        store.insert(invoice_id, "private.pdf", "private-hash", "fixture", "v1", session_id=owner)
+        store.update(invoice_id, "failed", error="reading: synthetic")
+        store.path(invoice_id).write_bytes(b"%PDF-1.4 synthetic")
+        paths = [
+            ("/invoices", 200),
+            (f"/invoices/{invoice_id}", 200),
+            (f"/invoices/{invoice_id}/file", 200),
+            ("/auth/me", 200),
+            ("/admin/accounts", 200),
+            ("/auth/outlook/login", 302),
+        ]
+        # A URL parameter cannot override an existing authenticated browser session.
+        assert (
+            client.get("/invoices", params={"session_id": "ic1.invalid.token"}).status_code == 200
+        )
+        client.cookies.clear()
+        for path, _ in paths:
+            response = client.get(path, params={"session_id": token}, follow_redirects=False)
+            assert response.status_code == 401, path
+        for headers in (
+            {"Authorization": f"Bearer {token}"},
+            {"X-Invoice-Session": token},
+            {"Cookie": f"{COOKIE_NAME}={token}"},
+        ):
+            for path, status in paths:
+                response = client.get(path, headers=headers, follow_redirects=False)
+                assert response.status_code == status, path
+        # Trusted CORS preflight never authorizes the following operation.
+        preflight = client.options(
+            "/invoices",
+            headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
+        )
+        assert preflight.status_code == 200
+        assert client.get("/invoices").status_code == 401
+
+
 @pytest.mark.parametrize("path", ["/auth/sign-in", "/auth/sign-out"])
 def test_auth_mutations_require_header_even_without_cookie(secure_app, path):
     with TestClient(secure_app) as client:
