@@ -582,6 +582,24 @@ Initial invoice browsing still reads the complete history, rather than paginatin
 
 ## HTTP contract for Nam
 
+Automatic API discovery is disabled in every environment: `/openapi.json`, `/docs`,
+`/redoc`, and `/docs/oauth2-redirect` return 404, including after sign-in. This also
+blocks their `/api/...` equivalents through the frontend's Vercel rewrite and direct
+requests to the backend host.
+
+Every API route requires authentication by default. `PUBLIC_ENDPOINTS` in `api/app.py`
+explicitly permits only the method/path pairs needed for health checks, setup status,
+sign-in/out, email verification, first-administrator setup, invitation enrollment,
+password recovery, the Outlook callback, and the landing-page contact form. Their
+existing proof, CSRF, rate-limit and setup-lock checks still apply. CORS preflight
+requests remain available, but do not authorize the subsequent operation. New API
+routes are private unless deliberately added to this list.
+
+Sessions are accepted only through the HttpOnly cookie, `Authorization: Bearer`, or
+`X-Invoice-Session` header. A `session_id` URL parameter never authenticates a request
+or selects a workspace. File and Outlook navigation use the existing browser cookie;
+links created by older clients with URL-only credentials require signing in again.
+
 | Method | Path | Result |
 | --- | --- | --- |
 | GET | `/health` | Active mode and whether processing is configured |

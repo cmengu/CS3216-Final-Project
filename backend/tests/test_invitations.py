@@ -75,7 +75,8 @@ def test_approval_emails_personal_link_and_link_creates_only_that_email(client, 
     assert "token" not in approval and token(environment) not in str(approval)
     assert len(client.app.state.accounts.list_users()) == 1
     client.cookies.clear()
-    assert client.get("/auth/enroll/invitation").status_code == 405
+    # Only POST is public; other methods require authentication first.
+    assert client.get("/auth/enroll/invitation").status_code == 401
     proof = claim(client, token(environment))
     assert proof.status_code == 200 and proof.json()["email"] == EMAIL
     assert "ic_session" not in client.cookies and len(client.app.state.accounts.list_users()) == 1

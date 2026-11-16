@@ -48,16 +48,14 @@ def normalize_session_id(session_id: str | None) -> str:
     return cleaned
 
 
-def request_session_id(request: Request, query_session_id: str | None = None) -> str:
-    claims = extract_request_claims(request, query_session_id)
+def request_session_id(request: Request) -> str:
+    claims = extract_request_claims(request)
     if claims is not None:
         return normalize_session_id(claims["workspace_id"])
     if is_auth_required():
         return DEFAULT_SESSION_ID
     candidates = (
         request.headers.get("x-invoice-session"),
-        query_session_id,
-        request.query_params.get("session_id"),
         request.cookies.get("ic_session"),
     )
     for raw in candidates:
