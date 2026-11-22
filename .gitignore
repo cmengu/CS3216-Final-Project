@@ -41,7 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 # Documents stay local, except invented fixtures and the dummy invoice set.
-*.pdf
 *.xlsx
 !fixtures/**/*.pdf
 !fixtures/**/*.xlsx
