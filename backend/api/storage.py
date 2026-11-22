@@ -110,6 +110,11 @@ class Store(ProjectStore):
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(JOB_SCHEMA.format(prefix=""))
+            job_columns = {row["name"] for row in db.execute("PRAGMA table_info(invoice_jobs)")}
+            if "force_ocr" not in job_columns:
+                db.execute(
+                    "ALTER TABLE invoice_jobs ADD COLUMN force_ocr INTEGER NOT NULL DEFAULT 0"
+                )
             db.execute("""CREATE TABLE IF NOT EXISTS revoked_sessions (
                 session_id TEXT PRIMARY KEY, expires_at BIGINT NOT NULL
             )""")
@@ -497,6 +502,7 @@ CREATE INDEX IF NOT EXISTS master_lists_session_idx ON {schema}.master_lists (se
 
 
 POSTGRES_TABLES += JOB_SCHEMA.replace("{prefix}", "{schema}.")
+POSTGRES_TABLES += "ALTER TABLE {schema}.invoice_jobs ADD COLUMN IF NOT EXISTS force_ocr INTEGER NOT NULL DEFAULT 0;"
 
 
 class PostgresStore(ProjectStore):

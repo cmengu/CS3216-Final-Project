@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS {prefix}invoice_batches (
 CREATE TABLE IF NOT EXISTS {prefix}invoice_jobs (
     invoice_id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
     status TEXT NOT NULL, master_version TEXT NOT NULL, created_at TEXT NOT NULL,
-    owner TEXT, lease_until BIGINT NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0
+    owner TEXT, lease_until BIGINT NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
+    force_ocr INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS invoice_job_queue ON {prefix}invoice_jobs (status, lease_until, created_at);
 CREATE INDEX IF NOT EXISTS invoice_job_workspace_queue ON {prefix}invoice_jobs (workspace_id,status,created_at,invoice_id);

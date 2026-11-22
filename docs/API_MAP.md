@@ -186,7 +186,7 @@ One invoice in full.
 
 Reprocesses the authenticated owner's stored source through reading, extraction and applicable checking. Keeps the invoice ID, source file and project; clears previous extraction, check, error and audit decision. Uses the current project master-list version. Optional `force_ocr=true` follows upload OCR behaviour.
 
-Returns the updated `SavedInvoice` (200), or the same saved record with status `failed` (422). Missing invoice/source: 404; an already-processing invoice: 409; busy processing capacity: 429. The dev-mode invoice button calls this endpoint without creating another invoice.
+Returns the accepted `SavedInvoice` (200) with status `queued`; background processing updates the existing record through reading/extracting/checking/completed/failed. Both Try again and the dev-mode reprocess button use this route without creating another invoice. The job persists `force_ocr` and the master version selected at acceptance, survives restart, and shares the batch scheduler and capacity limits. Missing invoice/source: 404; an already-queued/processing invoice: 409; a full queue: 503 with `Retry-After`; an explicitly configured checking quota: 429. Admission and the reset of results/decisions are atomic, so refusal preserves the previous record.
 
 ### `GET /invoices/{invoice_id}/file`
 
@@ -201,7 +201,7 @@ The original PDF or XML exactly as uploaded.
 
 **There is no separate check endpoint.** The check runs inside `POST /invoices` against the master list loaded at start-up, and its result is stored on the invoice as `SavedInvoice.check`.
 
-- **To re-check, upload the PDF again.** The frontend's "Try again" (`retryInvoice`) downloads `/file` and re-uploads it, which **creates a new invoice ID**. The old record is kept.
+- **To re-check, queue the stored source.** The frontend's "Try again" (`retryInvoice`) calls `/invoices/{id}/reprocess`, retaining the invoice ID and group. Polling replaces the queued state with the completed result or failure reason.
 - **The service guarantees:**
   - exactly one `LineResult` per extracted invoice line (`line_index` 0…n-1);
   - `check.price_sheet_version` equals the loaded sheet's version.
