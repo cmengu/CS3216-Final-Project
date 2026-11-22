@@ -38,6 +38,7 @@ from .auth import (
 )
 from .batches import router as batch_router
 from .body_limits import BodyLimitMiddleware, request_body_limit
+from .contact import router as contact_router
 from .contracts import InvoiceSummary, OutcomeRequest, SavedInvoice
 from .execution import InvoiceExecutor
 from .jobs import InvoiceJobs, InvoiceWorker
@@ -55,6 +56,37 @@ from .uploaded_master import UploadedMasterStages
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
+
+# New routes require authentication unless this exact method/path pair is public.
+PUBLIC_ENDPOINTS = frozenset(
+    {
+        ("GET", "/health"),
+        ("GET", "/auth/setup-status"),
+        ("GET", "/auth/outlook/callback"),
+        ("POST", "/auth/sign-in"),
+        ("POST", "/auth/sign-out"),
+        ("POST", "/auth/mfa/verify"),
+        ("POST", "/auth/mfa/resend"),
+        ("POST", "/auth/setup"),  # Retired endpoint returns 410.
+        ("POST", "/auth/setup/start"),
+        ("POST", "/auth/setup/verify"),
+        ("POST", "/auth/setup/resend"),
+        ("POST", "/auth/setup/complete"),
+        ("POST", "/auth/enroll/invitation"),
+        ("POST", "/auth/enroll/start"),
+        ("POST", "/auth/enroll/verify"),
+        ("POST", "/auth/enroll/resend"),
+        ("POST", "/auth/enroll/complete"),
+        ("POST", "/auth/password-reset/start"),
+        ("POST", "/auth/password-reset/verify"),
+        ("POST", "/auth/password-reset/resend"),
+        ("POST", "/auth/password-reset/complete"),
+        ("POST", "/contact"),
+    }
+)
+DISABLED_DOCUMENTATION_PATHS = frozenset(
+    {"/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"}
+)
 
 
 def _load_dotenv() -> None:
@@ -74,8 +106,8 @@ def _load_dotenv() -> None:
             os.environ.setdefault(key.strip(), value)
 
 
-def _request_session_id(request: Request, query_session_id: str | None = None) -> str:
-    return request_session_id(request, query_session_id)
+def _request_session_id(request: Request) -> str:
+    return request_session_id(request)
 
 
 def _slot_wait_seconds() -> float:
@@ -173,7 +205,16 @@ def create_app(
 
     trusted_origin_pattern = re.compile(cors_origin_regex) if cors_origin_regex else None
 
-    app = FastAPI(title="Invoice Checker", version="0.1.0", lifespan=lifespan)
+    # Disable discovery at the source, including direct access outside the /api proxy.
+    app = FastAPI(
+        title="Invoice Checker",
+        version="0.1.0",
+        lifespan=lifespan,
+        openapi_url=None,
+        docs_url=None,
+        redoc_url=None,
+        swagger_ui_oauth2_redirect_url=None,
+    )
 
     @app.exception_handler(StorageUnavailable)
     async def storage_unavailable(request, exc):
@@ -199,6 +240,7 @@ def create_app(
     app.include_router(master_list_router)
     app.include_router(projects_router)
     app.include_router(outlook_router)
+    app.include_router(contact_router)
 
     @app.middleware("http")
     async def advertised_size(request, call_next):
@@ -215,6 +257,11 @@ def create_app(
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
         path = request.url.path
+        normalized_path = path.rstrip("/") or "/"
+        if normalized_path in DISABLED_DOCUMENTATION_PATHS:
+            return JSONResponse(
+                {"detail": "Not Found"}, status_code=404, headers={"Cache-Control": "no-store"}
+            )
         # Custom headers cannot be submitted by cross-site HTML forms. Browser AJAX from
         # other origins additionally has to pass the credentialed CORS preflight allowlist.
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -228,6 +275,7 @@ def create_app(
                     "/auth/setup",
                     "/auth/mfa/verify",
                     "/auth/mfa/resend",
+                    "/contact",
                 }
             )
             if browser_mutation:
@@ -282,18 +330,8 @@ def create_app(
                 )
             except StorageUnavailable as exc:
                 return await storage_unavailable(request, exc)
-        protected = path.startswith(
-            (
-                "/projects",
-                "/invoices",
-                "/master-list",
-                "/outlook",
-                "/auth/outlook/login",
-                "/admin",
-                "/invoice-batches",
-            )
-        )
-        if protected and request.method != "OPTIONS":
+        protected = (request.method, normalized_path) not in PUBLIC_ENDPOINTS
+        if protected:
             # Session/rate-limit checks use synchronous database connections. Keep
             # those waits off the event loop so one slow request cannot stall sign-in.
             try:
@@ -356,7 +394,7 @@ def create_app(
         finally:
             if admission:
                 app.state.batch_upload_slot.release()
-        if path.startswith(
+        if protected or path.startswith(
             (
                 "/projects",
                 "/master-list",
@@ -539,8 +577,8 @@ def create_app(
         return rows
 
     @app.get("/invoices/{invoice_id}", response_model=SavedInvoice)
-    def invoice(invoice_id: UUID, request: Request, session_id: str | None = None):
-        sid = _request_session_id(request, session_id)
+    def invoice(invoice_id: UUID, request: Request):
+        sid = _request_session_id(request)
         saved = app.state.store.get(str(invoice_id), session_id=sid)
         if saved is None:
             raise HTTPException(404, "Invoice not found")
@@ -615,8 +653,8 @@ def create_app(
             app.state.slot.release()
 
     @app.get("/invoices/{invoice_id}/file")
-    def invoice_file(invoice_id: UUID, request: Request, session_id: str | None = None):
-        saved = invoice(invoice_id, request, session_id)
+    def invoice_file(invoice_id: UUID, request: Request):
+        saved = invoice(invoice_id, request)
         path = app.state.store.path(str(invoice_id))
         if not path.is_file():
             raise HTTPException(404, "Original invoice is unavailable")
@@ -636,7 +674,7 @@ def create_app(
     def decide(invoice_id: UUID, request_body: OutcomeRequest, request: Request):
         """Save the AP clerk's decision, or clear it with a null outcome. The clerk alone decides."""
         sid = _request_session_id(request)
-        saved = invoice(invoice_id, request, sid)
+        saved = invoice(invoice_id, request)
         reason = (request_body.reason or "").strip() or None
         refusal = _outcome_refusal(saved, request_body.outcome, reason)
         if refusal:

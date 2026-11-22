@@ -418,10 +418,11 @@ def test_session_isolation_prevents_other_sessions_from_viewing_or_deciding_docu
             == 404
         )
 
-        # Bob can download via session_id query param and decide his own invoice
+        # URL session selectors are ignored; Bob downloads with his session header.
         assert (
-            client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-bob").status_code == 200
+            client.get(f"/invoices/{bob_doc['id']}/file?session_id=session-bob").status_code == 404
         )
+        assert client.get(f"/invoices/{bob_doc['id']}/file", headers=bob_headers).status_code == 200
         assert (
             client.put(
                 f"/invoices/{bob_doc['id']}/outcome",
@@ -569,7 +570,8 @@ def test_session_isolation_for_master_list_and_outlook(tmp_path, monkeypatch):
 
         # 2. Outlook OAuth isolation: Alice connects Outlook; Bob remains disconnected
         login_res = client.get(
-            "/auth/outlook/login?return_to=/invoices&session_id=session-alice",
+            "/auth/outlook/login?return_to=/invoices",
+            headers=alice_headers,
             follow_redirects=False,
         )
         assert login_res.status_code == 302

@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "src/app/landing.css"
+        ],
+        "createdAt": "2026-11-09T09:19:22.528Z",
+        "reason": "user confirmed: asked for 'shiny texts' on the landing page (2026-11-09)"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-11-09T09:26:54.518Z",
+        "reason": "DESIGN.md (locked) specifies Geist as the app font; its section 8 records the detector's Geist flag as noted, not acted on"
+      }
+    ]
+  }
+}

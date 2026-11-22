@@ -211,11 +211,7 @@ export async function uploadInvoice(file: File, projectId?: string): Promise<Sup
 }
 
 /** Where the service keeps the PDF exactly as it was uploaded. */
-export const invoiceFileUrl = (id: string) => {
-  const sid = getActiveSessionId();
-  const base = `${SERVICE_URL}/invoices/${id}/file`;
-  return sid ? `${base}?session_id=${encodeURIComponent(sid)}` : base;
-};
+export const invoiceFileUrl = (id: string) => `${SERVICE_URL}/invoices/${id}/file`;
 
 /**
  * Send a failed invoice's own PDF through the check again. The service keeps the first attempt,

@@ -27,3 +27,7 @@ Seen: 2026-11-07, `backend/api/limits.py`, `jobs.py`, `storage.py`.
 ## A timeout must release the resource doing the work
 Timing out a future does not kill native OCR in its thread. Use a killable subprocess and share a deadline across the invoice's model/check steps.
 Seen: 2026-11-07, `backend/read/bounded.py`, `budget.py`, `api/processing.py`.
+
+## Never swallow a worker's error
+A child that sends a bare "error" or dies silently leaves only "Invoice worker failed". Report the error type and where it was raised (never its message), and log the exit code.
+Seen: 2026-11-11, `backend/api/execution.py` (1 in ~300 invoices failed at reading with no cause).

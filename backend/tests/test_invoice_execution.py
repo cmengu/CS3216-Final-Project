@@ -1,6 +1,8 @@
 """Use real child processes to prove reuse, hard termination, and next-job recovery."""
 
 import hashlib
+import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -19,6 +21,20 @@ class StuckStages(FixtureStages):
     def extract(self, document):
         while True:
             pass
+
+
+class EscapingError(BaseException):
+    """Like SystemExit or KeyboardInterrupt from a native library: not an Exception."""
+
+
+class EscapingStages(FixtureStages):
+    def extract(self, document):
+        raise EscapingError("document text must not reach the log")
+
+
+class DyingStages(FixtureStages):
+    def extract(self, document):
+        os._exit(7)  # a worker that disappears, as in a native crash
 
 
 def execute(executor, stages, saved, **kwargs):
@@ -67,5 +83,39 @@ def test_lost_ownership_stops_the_child_without_publishing_a_failure():
             execute(executor, StuckStages(DATA), saved, timeout=5, cancel=cancelled)
         assert executor.process is None
         assert saved == []
+    finally:
+        executor.close()
+
+
+def test_an_escaped_worker_error_is_logged_with_its_type_and_place(caplog):
+    executor = InvoiceExecutor()
+    try:
+        failed = []
+        with caplog.at_level(logging.ERROR, logger="api.execution"):
+            assert execute(executor, EscapingStages(DATA), failed, timeout=20) is False
+        assert failed[-1] == (
+            "failed",
+            {"error": "extracting: Invoice worker failed; upload again to retry"},
+        )
+        logged = caplog.text
+        assert "EscapingError" in logged
+        assert "test_invoice_execution.py" in logged and "extract" in logged
+        assert "worker exit code 1" in logged
+        assert "document text" not in logged
+        assert execute(executor, FixtureStages(DATA), [], timeout=20)
+    finally:
+        executor.close()
+
+
+def test_a_worker_that_dies_is_logged_with_its_exit_code(caplog):
+    executor = InvoiceExecutor()
+    try:
+        failed = []
+        with caplog.at_level(logging.ERROR, logger="api.execution"):
+            assert execute(executor, DyingStages(DATA), failed, timeout=20) is False
+        assert failed[-1][1]["error"] == "extracting: Invoice worker failed; upload again to retry"
+        assert "worker process ended without reporting an error" in caplog.text
+        assert "worker exit code 7" in caplog.text
+        assert execute(executor, FixtureStages(DATA), [], timeout=20)
     finally:
         executor.close()

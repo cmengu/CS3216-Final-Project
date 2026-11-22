@@ -6,6 +6,8 @@ import os
 import queue
 import threading
 import time
+import traceback
+from pathlib import Path
 
 from fastapi import HTTPException
 
@@ -13,6 +15,15 @@ from .fleet import count, seconds
 from .processing import LostLease, process_stored_invoice
 
 log = logging.getLogger(__name__)
+
+
+def _describe(exc):
+    """Error type and where it was raised. No message: it could quote document content."""
+    frames = traceback.extract_tb(exc.__traceback__)[-8:]
+    where = " <- ".join(
+        f"{Path(frame.filename).name}:{frame.lineno} {frame.name}" for frame in reversed(frames)
+    )
+    return f"{type(exc).__module__}.{type(exc).__qualname__} at {where or 'unknown'}"
 
 
 def _child(connection):
@@ -68,8 +79,15 @@ def _child(connection):
                 totals_only=totals_only,
             )
             connection.send(("done", completed))
-        except Exception:
-            connection.send(("error",))
+        except BaseException as exc:
+            # Errors that escape the pipeline's own handling (including SystemExit and
+            # KeyboardInterrupt from native libraries) are reported, not silently lost.
+            try:
+                connection.send(("error", _describe(exc)))
+            except Exception:
+                pass
+            if not isinstance(exc, Exception):
+                raise
 
 
 class InvoiceExecutor:
@@ -110,10 +128,15 @@ class InvoiceExecutor:
                             break
                         except queue.Full:
                             pass
-            except (EOFError, OSError):
+            except (EOFError, OSError) as exc:
+                reason = (
+                    "worker process ended without reporting an error"
+                    if isinstance(exc, EOFError)
+                    else f"worker pipe failed: {type(exc).__name__}"
+                )
                 while not closed.is_set():
                     try:
-                        messages.put(("error",), timeout=0.1)
+                        messages.put(("error", reason), timeout=0.1)
                         break
                     except queue.Full:
                         pass
@@ -144,6 +167,14 @@ class InvoiceExecutor:
         if self.receiver is not None:
             self.receiver.join(timeout=1)
             self.receiver = None
+
+    def _exitcode(self):
+        """A worker that is dying reports its exit code within a moment; a live one gives None."""
+        process = self.process
+        if process is None:
+            return None
+        process.join(timeout=1)
+        return process.exitcode
 
     def close(self):
         self.stopping.set()
@@ -240,14 +271,29 @@ class InvoiceExecutor:
                             self._stop()
                         return message[1]
                     else:
-                        raise RuntimeError("Invoice worker stopped unexpectedly")
+                        detail = (
+                            message[1]
+                            if message[0] == "error" and len(message) > 1
+                            else f"unexpected worker message {message[0]!r}"
+                        )
+                        raise RuntimeError(f"Invoice worker stopped unexpectedly: {detail}")
             except LostLease:
                 self.warm = False
                 self._stop()
                 raise
             except Exception as exc:
                 self.warm = False
+                exitcode = self._exitcode() if isinstance(exc, RuntimeError) else None
                 self._stop()
+                # The saved error stays generic for the clerk; the log names the cause.
+                log.error(
+                    "Invoice worker failed at stage=%s: %s; worker exit code %s",
+                    stage,
+                    str(exc) if isinstance(exc, (RuntimeError, TimeoutError)) else _describe(exc),
+                    "still running"
+                    if exitcode is None
+                    else f"{exitcode} (0x{exitcode & 0xFFFFFFFF:08X})",
+                )
                 if not terminal_saved:
                     reason = (
                         str(exc.detail)

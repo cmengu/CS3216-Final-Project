@@ -397,6 +397,19 @@ account; Outlook must be reconnected separately:
 This refuses to reassign another approved account’s workspace, move unfinished jobs, or merge
 over an existing target workspace. Keep a database/files backup before an operator recovery.
 
+### Landing page contact form
+
+`POST /contact` takes `{name, email, company?, message, website?}` from the public landing
+page and emails it through the same delivery provider to `CONTACT_EMAIL`, or to
+`AUTH_ADMIN_EMAIL` when `CONTACT_EMAIL` is unset. Nothing is stored. It needs
+`X-Requested-With: InvoiceChecker` and a trusted Origin, allows 5 messages per IP per hour and
+100 a day overall, and returns 503 when no recipient or provider is configured. A filled
+`website` field (a hidden spam trap) is accepted and dropped.
+
+```ini
+CONTACT_EMAIL=gtm@example.com
+```
+
 ## Background batches and usage limits
 
 `POST /invoice-batches` accepts multipart `files` (1–500 PDF/XML files, at most 20 MiB each
@@ -568,6 +581,24 @@ suggestions have their own shorter timeout/allowances and are not invoice worker
 Initial invoice browsing still reads the complete history, rather than paginating the UI.
 
 ## HTTP contract for Nam
+
+Automatic API discovery is disabled in every environment: `/openapi.json`, `/docs`,
+`/redoc`, and `/docs/oauth2-redirect` return 404, including after sign-in. This also
+blocks their `/api/...` equivalents through the frontend's Vercel rewrite and direct
+requests to the backend host.
+
+Every API route requires authentication by default. `PUBLIC_ENDPOINTS` in `api/app.py`
+explicitly permits only the method/path pairs needed for health checks, setup status,
+sign-in/out, email verification, first-administrator setup, invitation enrollment,
+password recovery, the Outlook callback, and the landing-page contact form. Their
+existing proof, CSRF, rate-limit and setup-lock checks still apply. CORS preflight
+requests remain available, but do not authorize the subsequent operation. New API
+routes are private unless deliberately added to this list.
+
+Sessions are accepted only through the HttpOnly cookie, `Authorization: Bearer`, or
+`X-Invoice-Session` header. A `session_id` URL parameter never authenticates a request
+or selects a workspace. File and Outlook navigation use the existing browser cookie;
+links created by older clients with URL-only credentials require signing in again.
 
 | Method | Path | Result |
 | --- | --- | --- |
@@ -808,52 +839,7 @@ Confirmed imports use the submitted mapping without a second model call. Models
 never supply imported cell values. Complex layouts, headers after row 50, and
 multiple independent tables on one sheet still require manual cleanup/selection.
 
-### Optional orientation and handwriting recovery
-
-Scanned pages can use **PP-LCNet_x1_0_doc_ori** before Docling OCR. The classifier
-predicts a quarter-turn; scores below 0.90 leave the page unchanged. Empty/sideways
-OCR can still trigger the bounded rotation fallback. Digital pages with embedded
-text retain their existing path. Original PDFs are never modified, and evidence
-boxes are mapped back to original PDF coordinates.
-
-From `backend/`, install and provision the optional models before enabling them:
-
-```sh
-uv sync --extra docling --extra handwriting
-python -m read.setup_handwriting
-```
-
-Orientation detection and handwriting recovery run automatically for scanned pages.
-The crop limit (4) and total retry budget (60 seconds) are application constants in
-`read/regions.py`; no enable flags or budget environment variables are required.
-Orientation classification is used when PaddleOCR is installed. If the optional
-handwriting dependencies or cached weights are unavailable, uncertain crops retain
-review warnings and the standard OCR result is preserved.
-
-The only model-path setting is optional: `INVOICE_PADDLE_MODEL` can point to an
-absolute local model snapshot; otherwise the provisioned Hugging Face cache is used.
-No additional API key is needed.
-
-Docker builds currently install the `docling` extra only. Install the `handwriting`
-extra and provision its models in the image/volume for automatic recovery there.
-`uv.lock` includes both configurations.
-
-Recovery uses RapidOCR **detection-only** boxes, retaining regions even if recognition
-fails. It checks up to 120 crops against a contrast-enhanced reading. Empty text,
-confidence below 0.85, malformed currency tokens, or disagreement trigger a retry;
-these are conservative starting thresholds, not calibrated accuracy guarantees.
-Scanner watermarks and identifiable boilerplate do not consume the retry budget.
-At most four crops receive PaddleOCR-VL-1.5
-transcription, each checked against a second enhanced view. Conflicts and truncated
-output are not accepted. Each generation has a 96-token / 30-second stopping
-budget, inside a 60-second total crop-retry budget; the existing killable OCR/process deadline remains the hard outer limit.
-Recovered text always carries a manual-review warning: two agreeing readings can
-still be wrong. No arithmetic-based correction is applied to OCR text.
-
-`document.docling_document.orientation` records angle/confidence/decision;
-`region_recovery` retains crop bounds, both RapidOCR readings, retry reasons,
-Paddle candidate, and acceptance. These contain document data and should remain
-inside the owner's invoice storage, not public logs.
+### Extraction evidence
 
 Before price checking (also for totals-only projects), `extract/evidence.py` rejects
 items without supporting source text and numeric values absent from the matching

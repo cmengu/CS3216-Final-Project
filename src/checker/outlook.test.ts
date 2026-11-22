@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SERVICE_URL } from "./api";
+import { SERVICE_URL, setActiveSessionId } from "./api";
 import {
   disconnectOutlook,
   downloadOutlookAttachmentFile,
@@ -11,6 +11,7 @@ import {
 } from "./outlook";
 
 afterEach(() => {
+  setActiveSessionId(null);
   vi.unstubAllGlobals();
 });
 
@@ -20,6 +21,12 @@ describe("outlook client", () => {
     expect(outlookLoginUrl("/invoices")).toBe(
       "http://127.0.0.1:8001/auth/outlook/login?return_to=%2Finvoices"
     );
+  });
+
+  it("keeps session credentials out of the Outlook redirect URL", () => {
+    setActiveSessionId("ic1.signed.session-token");
+    const url = new URL(outlookLoginUrl("/invoices"));
+    expect([...url.searchParams.entries()]).toEqual([["return_to", "/invoices"]]);
   });
 
   it("fetches connection status and inbox messages", async () => {

@@ -147,15 +147,12 @@ def _bearer_token(request: Request) -> str | None:
     return None
 
 
-def extract_request_claims(
-    request: Request, query_session_id: str | None = None
-) -> dict[str, Any] | None:
+def extract_request_claims(request: Request) -> dict[str, Any] | None:
+    # Credentials belong in cookies or headers, never in URLs.
     candidates = (
         request.cookies.get(COOKIE_NAME),
         _bearer_token(request),
         request.headers.get("x-invoice-session"),
-        query_session_id,
-        request.query_params.get("session_id"),
     )
     for raw in candidates:
         claims = _request_token_claims(request, raw)
@@ -164,25 +161,19 @@ def extract_request_claims(
     return None
 
 
-def has_invalid_auth_token(request: Request, query_session_id: str | None = None) -> bool:
+def has_invalid_auth_token(request: Request) -> bool:
     cookie_val = request.cookies.get(COOKIE_NAME)
     if cookie_val and _request_token_claims(request, cookie_val) is None:
         return True
     bearer_val = _bearer_token(request)
     if bearer_val and _request_token_claims(request, bearer_val) is None:
         return True
-    for raw in (
-        request.headers.get("x-invoice-session"),
-        query_session_id,
-        request.query_params.get("session_id"),
-    ):
-        if (
-            raw
-            and raw.strip().startswith(f"{TOKEN_PREFIX}.")
-            and _request_token_claims(request, raw) is None
-        ):
-            return True
-    return False
+    raw = request.headers.get("x-invoice-session")
+    return bool(
+        raw
+        and raw.strip().startswith(f"{TOKEN_PREFIX}.")
+        and _request_token_claims(request, raw) is None
+    )
 
 
 def is_auth_required() -> bool:
