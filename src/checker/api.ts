@@ -213,19 +213,12 @@ export async function uploadInvoice(file: File, projectId?: string): Promise<Sup
 /** Where the service keeps the PDF exactly as it was uploaded. */
 export const invoiceFileUrl = (id: string) => `${SERVICE_URL}/invoices/${id}/file`;
 
-/**
- * Send a failed invoice's own PDF through the check again. The service keeps the first attempt,
- * so this saves a new invoice; the list sets the failed attempt aside once a newer one exists.
- */
+/** Queue another attempt using the stored source, preserving its invoice ID and group. */
 export async function retryInvoice(inv: SupplierInvoice): Promise<SupplierInvoice> {
-  const response = await read(`/invoices/${inv.id}/file`);
-  if (response.status === 404) throw new Error("The original PDF is no longer kept, so it cannot be checked again. Upload it again.");
-  if (!response.ok) throw new Error(broken);
-  const file = new File([await response.blob()], inv.fileName, { type: /\.xml$/i.test(inv.fileName) ? "application/xml" : "application/pdf" });
-  return uploadInvoice(file, inv.projectId ?? undefined);
+  return reprocessInvoice(inv);
 }
 
-/** Re-run the stored source in place; the invoice ID and project remain unchanged. */
+/** Queue the stored source for reprocessing; results arrive through the existing polling loop. */
 export async function reprocessInvoice(inv: SupplierInvoice): Promise<SupplierInvoice> {
   const response = await fetch(`${SERVICE_URL}/invoices/${inv.id}/reprocess`, {
     method: "POST", credentials: "include", headers: sessionHeaders(undefined, true),

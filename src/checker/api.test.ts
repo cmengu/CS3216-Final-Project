@@ -252,19 +252,17 @@ describe("service invoice retrieval", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("retries by fetching the original PDF and posting it as a new invoice", async () => {
-    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url) =>
-      url.endsWith("/file")
-        ? new Response("%PDF-original", { status: 200, headers: { "Content-Type": "application/pdf" } })
-        : new Response(JSON.stringify(saved("Supplier", "0.00")), { status: 201 }));
+  it("queues a failed invoice in place without downloading or re-uploading its file", async () => {
+    const record = { ...saved("Supplier", "0.00"), status: "queued", invoice: null, check: null };
+    const fetchMock = vi.fn(async () => Response.json(record));
     vi.stubGlobal("fetch", fetchMock);
-    const invoice = toSupplierInvoice(saved("Supplier", "0.00"));
-    await retryInvoice(invoice);
-    expect(fetchMock.mock.calls[0][0]).toMatch(new RegExp(`/invoices/${id}/file$`));
-    expect(fetchMock.mock.calls[1][0]).toMatch(/\/invoices$/);
-    expect(fetchMock.mock.calls[1][1]?.method).toBe("POST");
-    const file = (fetchMock.mock.calls[1][1]?.body as FormData).get("file") as File;
-    expect(await file.text()).toBe("%PDF-original");
+    const invoice = toSupplierInvoice({ ...record, status: "failed" });
+    const queued = await retryInvoice(invoice);
+    expect(queued.id).toBe(invoice.id);
+    expect(queued.state).toBe("checking");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/invoices/${id}/reprocess`),
+      expect.objectContaining({ method: "POST", credentials: "include", headers: { "X-Requested-With": "InvoiceChecker" } }));
   });
 });
 
@@ -418,7 +416,7 @@ it("preserves project destination on uploads and retries", async () => {
   expect(first.comparisonMode).toBe("totals_only");
   expect(String(fetchMock.mock.calls[0][0])).toContain("/invoices?project_id=project-a");
   await retryInvoice(first);
-  expect(String(fetchMock.mock.calls[2][0])).toContain("/invoices?project_id=project-a");
+  expect(String(fetchMock.mock.calls[1][0])).toContain(`/invoices/${first.id}/reprocess`);
 });
 
 

@@ -7,8 +7,11 @@ import threading
 import time
 from uuid import uuid4
 
+from fastapi import HTTPException
+
 from .access_store import AccessStore
 from .fleet import Fleet
+from .limits import invoice_allowances
 from .processing import LostLease, process_stored_invoice
 from .storage import _saved, now
 from .uploaded_master import UploadedMasterStages
@@ -172,6 +175,67 @@ class InvoiceJobs(AccessStore):
                         cursor.close()
         return batch_id, accepted, duplicates
 
+    def retry(self, workspace, invoice_id, master_version, *, force_ocr=False, limits=None):
+        """Reset the stored invoice and enqueue its next attempt in one transaction."""
+        with self.connect() as db:
+            self.fleet.lock(db)
+            saved = self.execute(
+                db,
+                f"SELECT * FROM {self.table('invoices')} WHERE id=? AND session_id=?",
+                (invoice_id, workspace),
+            ).fetchone()
+            if saved is None:
+                raise HTTPException(404, "Invoice not found")
+            if saved["status"] in {"queued", "reading", "extracting", "checking"}:
+                raise HTTPException(409, "Invoice is already processing")
+            self.fleet.admit(db, workspace, 1)
+            if limits is not None:
+                limits.take_many(
+                    invoice_allowances(
+                        workspace, 1, not saved["filename"].lower().endswith(".xml")
+                    ),
+                    db=db,
+                )
+            at = now()
+            row = self.execute(
+                db,
+                f"""UPDATE {self.table("invoices")} SET status='queued', updated_at=?, error=NULL,
+                document=NULL, invoice=NULL, check_result=NULL, outcome=NULL,
+                outcome_reason=NULL, decided_at=NULL, price_sheet_version=?
+                WHERE id=? AND session_id=?
+                AND status NOT IN ('queued','reading','extracting','checking') RETURNING *""",
+                (at, master_version, invoice_id, workspace),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(409, "Invoice is already processing")
+            previous = self.execute(
+                db,
+                f"SELECT batch_id FROM {self.table('invoice_jobs')} WHERE invoice_id=?",
+                (invoice_id,),
+            ).fetchone()
+            batch_id = previous["batch_id"] if previous else str(uuid4())
+            if previous is None:
+                self.execute(
+                    db,
+                    f"INSERT INTO {self.table('invoice_batches')} (id,workspace_id,created_at) VALUES (?,?,?)",
+                    (batch_id, workspace, at),
+                )
+            self.execute(
+                db,
+                f"""INSERT INTO {self.table("invoice_jobs")}
+                (invoice_id,batch_id,workspace_id,status,master_version,created_at,force_ocr)
+                VALUES (?,?,?,'queued',?,?,?) ON CONFLICT(invoice_id) DO UPDATE SET
+                status='queued',master_version=excluded.master_version,created_at=excluded.created_at,
+                owner=NULL,lease_until=0,attempts=0,force_ocr=excluded.force_ocr""",
+                (invoice_id, batch_id, workspace, master_version, at, int(force_ocr)),
+            )
+            self.execute(
+                db,
+                f"INSERT INTO {self.table('fleet_workspaces')} (workspace_id) VALUES (?) ON CONFLICT(workspace_id) DO NOTHING",
+                (workspace,),
+            )
+            return _saved(row, invoice_id)
+
     def batch(self, batch_id, workspace):
         with self.connect() as db:
             exists = self.execute(
@@ -312,7 +376,7 @@ class InvoiceJobs(AccessStore):
                 WHERE invoice_id=(SELECT j.invoice_id FROM {table} j WHERE workspace_id=? AND (status='queued' OR (status='running' AND lease_until<=?)) AND attempts<?
                     AND NOT EXISTS (SELECT 1 FROM {self.table("fleet_leases")} l WHERE l.id=j.invoice_id AND (l.lease_until>? OR l.safe_until>?)) ORDER BY created_at,invoice_id LIMIT 1)
                 AND (status='queued' OR (status='running' AND lease_until<=?))
-                RETURNING invoice_id,workspace_id,master_version""",
+                RETURNING invoice_id,workspace_id,master_version,force_ocr""",
                 (owner, at + LEASE_SECONDS, workspace, at, MAX_ATTEMPTS, at, at, at),
             ).fetchone()
             if row:
@@ -524,6 +588,7 @@ class InvoiceWorker:
                 ),
                 save=save,
                 totals_only=saved.comparison_mode == "totals_only",
+                force_ocr=bool(job["force_ocr"]),
             )
         except LostLease:
             pass

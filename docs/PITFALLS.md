@@ -31,3 +31,7 @@ Seen: 2026-11-07, `backend/read/bounded.py`, `budget.py`, `api/processing.py`.
 ## Never swallow a worker's error
 A child that sends a bare "error" or dies silently leaves only "Invoice worker failed". Report the error type and where it was raised (never its message), and log the exit code.
 Seen: 2026-11-11, `backend/api/execution.py` (1 in ~300 invoices failed at reading with no cause).
+
+## Route every retry through the durable scheduler
+A synchronous retry bypasses fair scheduling and refuses work when a batch owns the processing slot. Queue the stored source atomically and persist its options.
+Seen: 2026-11-22, `backend/api/app.py` reprocess and `src/checker/api.ts` Try again.

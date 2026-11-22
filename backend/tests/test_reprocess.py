@@ -3,13 +3,16 @@ from test_api import DATA, lightweight_reader
 
 from api.app import create_app
 from api.contracts import CheckResult
+from api.jobs import InvoiceWorker
 from api.stages import FixtureStages
 from schema import InvoiceRecord
 
 
 def test_reprocess_replaces_results_without_creating_invoice(tmp_path):
     stages = FixtureStages(DATA)
-    app = create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    app = create_app(
+        storage_dir=tmp_path, stages=stages, reader=lightweight_reader, start_worker=False
+    )
     with TestClient(app) as client:
         original = client.post(
             "/invoices",
@@ -24,6 +27,10 @@ def test_reprocess_replaces_results_without_creating_invoice(tmp_path):
         stages.check = lambda record: CheckResult.model_validate(original["check"])
         result = client.post(f"/invoices/{iid}/reprocess")
         assert result.status_code == 200, result.text
+        assert result.json()["status"] == "queued"
+        worker = InvoiceWorker(app)
+        worker.process(app.state.jobs.claim(worker.owner))
+        result = client.get(f"/invoices/{iid}")
         assert result.json()["id"] == iid
         assert result.json()["invoice"]["supplier_name"] == "Refreshed supplier"
         assert len(client.get("/invoices").json()) == 1
@@ -38,7 +45,11 @@ def test_reprocess_replaces_results_without_creating_invoice(tmp_path):
 
         stages.extract = fail
         failed = client.post(f"/invoices/{iid}/reprocess")
-        assert failed.status_code == 422
+        assert failed.status_code == 200
+        assert failed.json()["status"] == "queued"
+        worker.process(app.state.jobs.claim(worker.owner))
+        failed = client.get(f"/invoices/{iid}")
+        assert failed.json()["status"] == "failed"
         assert failed.json()["id"] == iid
         assert failed.json()["invoice"] is None
         assert failed.json()["check"] is None
@@ -47,7 +58,9 @@ def test_reprocess_replaces_results_without_creating_invoice(tmp_path):
 
 def test_reprocess_cannot_restart_active_invoice(tmp_path):
     stages = FixtureStages(DATA)
-    app = create_app(storage_dir=tmp_path, stages=stages, reader=lightweight_reader)
+    app = create_app(
+        storage_dir=tmp_path, stages=stages, reader=lightweight_reader, start_worker=False
+    )
     with TestClient(app) as client:
         original = client.post(
             "/invoices",
