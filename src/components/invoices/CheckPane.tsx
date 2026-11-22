@@ -115,6 +115,12 @@ function Failed({ inv, onShow }: { inv: SupplierInvoice; onShow: () => void }) {
       <div>
         <h2 id="fail-h">Couldn’t read this invoice</h2>
         <p>{failureSentence(inv)} No lines were checked.</p>
+        {inv.error ? (
+          <details>
+            <summary>Failure details</summary>
+            <p style={{ overflowWrap: "anywhere" }}>{inv.error}</p>
+          </details>
+        ) : null}
         <div className="acts">
           <button type="button" className="ic-btn ic-btn--primary" onClick={onShow}>
             <Icon name="eye" size="ui" />
